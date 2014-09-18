@@ -1,0 +1,45 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node name="/de/tahifi/streamplayer">
+    <interface name="de.tahifi.Streamplayer.URLFIFO">
+        <method name="Clear">
+            <arg name="keep_first_n_entries" type="n" direction="in"/>
+        </method>
+        <method name="Next"/>
+        <method name="Push">
+            <arg name="stream_id" type="q" direction="in"/>
+            <arg name="stream_url" type="s" direction="in"/>
+            <arg name="start_position" type="x" direction="in"/>
+            <arg name="start_units" type="s" direction="in"/>
+            <arg name="stop_position" type="x" direction="in"/>
+            <arg name="stop_units" type="s" direction="in"/>
+            <arg name="keep_first_n_entries" type="n" direction="in"/>
+            <arg name="fifo_overflow" type="b" direction="out"/>
+        </method>
+    </interface>
+
+    <interface name="de.tahifi.Streamplayer.Playback">
+        <method name="Start"/>
+        <method name="Stop"/>
+        <method name="Pause"/>
+
+        <signal name="NowPlaying">
+            <arg name="id" type="q"/>
+            <arg name="url" type="s"/>
+            <arg name="url_fifo_is_full" type="b"/>
+            <arg name="meta_data" type="a(ss)"/>
+        </signal>
+        <signal name="Stopped"/>
+        <signal name="Paused"/>
+        <signal name="MetaDataChanged">
+            <arg name="meta_data" type="a(ss)"/>
+        </signal>
+        <signal name="PositionChanged">
+            <arg name="position" type="x" direction="out"/>
+            <arg name="units" type="s" direction="out"/>
+        </signal>
+        <signal name="SpeedChanged">
+            <arg name="speed_factor" type="d"/>
+        </signal>
+    </interface>
+</node>
