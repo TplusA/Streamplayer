@@ -14,7 +14,9 @@ AC_ARG_VAR([CRELAXEDWARNINGS], [options for relaxing some compiler warnings for 
 AC_PROG_CC
 AC_PROG_RANLIB
 AM_PROG_AR
+PKG_PROG_PKG_CONFIG([0.26])
 AC_CHECK_PROGS([MARKDOWN], [markdown])
+AC_CHECK_PROGS([DOXYGEN], [doxygen])
 AC_CHECK_PROGS([GDBUS_CODEGEN], [gdbus-codegen])
 
 # Checks for libraries.
@@ -26,5 +28,5 @@ PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0
 
 # Checks for library functions.
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile Doxyfile])
 AC_OUTPUT
