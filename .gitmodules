@@ -1,0 +1,3 @@
+[submodule "dbus_interfaces"]
+	path = dbus_interfaces
+	url = ../dbus_interfaces
