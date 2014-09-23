@@ -8,7 +8,7 @@ CLEANFILES = README.html
 
 streamplayer_SOURCES = \
     streamplayer.c messages.c messages.h dbus_iface.c dbus_iface.h \
-    streamtime.h
+    streamtime.h urlfifo.c urlfifo.h
 
 AM_CFLAGS = $(CWARNINGS)
 
