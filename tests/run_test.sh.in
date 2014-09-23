@@ -1,0 +1,3 @@
+#! /bin/sh
+
+exec $CUTTER -s "@srcdir@" --xml-report=test_report.xml "$@" .

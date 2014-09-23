@@ -1,3 +1,7 @@
+SUBDIRS = . tests
+
+ACLOCAL_AMFLAGS = -I m4
+
 bin_PROGRAMS = streamplayer
 
 html_DATA = README.html
@@ -8,23 +12,25 @@ CLEANFILES = README.html
 
 streamplayer_SOURCES = \
     streamplayer.c messages.c messages.h dbus_iface.c dbus_iface.h \
-    streamtime.h urlfifo.c urlfifo.h
+    streamtime.h
 
 AM_CFLAGS = $(CWARNINGS)
 
 AM_CPPFLAGS = $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
 
-streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) libstreamplayer_dbus.a
+noinst_LTLIBRARIES = libstreamplayer_dbus.la liburlfifo.la
 
-noinst_LIBRARIES = libstreamplayer_dbus.a
+streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) $(noinst_LTLIBRARIES)
 
-nodist_libstreamplayer_dbus_a_SOURCES = streamplayer_dbus.c streamplayer_dbus.h
+liburlfifo_la_SOURCES = urlfifo.c urlfifo.h
 
-libstreamplayer_dbus_a_CFLAGS = $(CRELAXEDWARNINGS)
+nodist_libstreamplayer_dbus_la_SOURCES = streamplayer_dbus.c streamplayer_dbus.h
+
+libstreamplayer_dbus_la_CFLAGS = $(CRELAXEDWARNINGS)
 
 EXTRA_DIST += dbus_interfaces/extract_documentation.py dbus_interfaces/de_tahifi_streamplayer.xml
 
-BUILT_SOURCES = $(nodist_libstreamplayer_dbus_a_SOURCES) de_tahifi_streamplayer.h de_tahifi_streamplayer.md streamplayer_dbus.stamp
+BUILT_SOURCES = $(nodist_libstreamplayer_dbus_la_SOURCES) de_tahifi_streamplayer.h de_tahifi_streamplayer.md streamplayer_dbus.stamp
 
 CLEANFILES += $(BUILT_SOURCES)
 
