@@ -10,6 +10,30 @@
 #include "streamplayer_dbus.h"
 #include "messages.h"
 
+static gboolean playback_start(tdbussplayPlayback *object,
+                               GDBusMethodInvocation *invocation)
+{
+    msg_info("Got Playback.Start message");
+    tdbus_splay_playback_complete_start(object, invocation);
+    return TRUE;
+}
+
+static gboolean playback_stop(tdbussplayPlayback *object,
+                              GDBusMethodInvocation *invocation)
+{
+    msg_info("Got Playback.Stop message");
+    tdbus_splay_playback_complete_stop(object, invocation);
+    return TRUE;
+}
+
+static gboolean playback_pause(tdbussplayPlayback *object,
+                               GDBusMethodInvocation *invocation)
+{
+    msg_info("Got Playback.Pause message");
+    tdbus_splay_playback_complete_pause(object, invocation);
+    return TRUE;
+}
+
 struct dbus_data
 {
     GThread *thread;
@@ -53,6 +77,13 @@ static void bus_acquired(GDBusConnection *connection,
 
     data->playback_iface = tdbus_splay_playback_skeleton_new();
     data->urlfifo_iface = tdbus_splay_urlfifo_skeleton_new();
+
+    g_signal_connect(data->playback_iface, "handle-start",
+                     G_CALLBACK(playback_start), NULL);
+    g_signal_connect(data->playback_iface, "handle-stop",
+                     G_CALLBACK(playback_stop), NULL);
+    g_signal_connect(data->playback_iface, "handle-pause",
+                     G_CALLBACK(playback_pause), NULL);
 
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->playback_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->urlfifo_iface));
