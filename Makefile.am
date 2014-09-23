@@ -7,7 +7,8 @@ EXTRA_DIST = README.md
 CLEANFILES = README.html
 
 streamplayer_SOURCES = \
-    streamplayer.c messages.c messages.h dbus_iface.c dbus_iface.h
+    streamplayer.c messages.c messages.h dbus_iface.c dbus_iface.h \
+    streamtime.h
 
 AM_CFLAGS = $(CWARNINGS)
 

@@ -56,10 +56,10 @@ next entry, i.e., the FIFO becomes empty, then playback is stopped.
 The <tt>Push</tt> message adds one new entry to the end of the URL FIFO. The
 entry comprises of a stream ID, a stream URL, a start position, and a stop
 position including units. The stream ID can be freely chosen by the caller and
-is reported in <tt>NowPlaying</tt> signals. A stop position of -1 ms or a stop
-position earlier than the start position means that the stream should be played
-to its very end. In case the URL FIFO is full, the <tt>Push</tt> message
-returns a corresponding return code in one of its arguments.
+is reported in <tt>NowPlaying</tt> signals. A stop position of
+<code>INT64_MAX</code> means that the stream should be played to its very end.
+In case the URL FIFO is full, the <tt>Push</tt> message returns a corresponding
+return code in one of its arguments.
 
 > **Note:** Absolute start position for <tt>Push</tt> might be OK, but allowing
 >     a relative stop position (i.e., a duration) instead of only an absolute
