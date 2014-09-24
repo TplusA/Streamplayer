@@ -28,10 +28,16 @@ AC_CHECK_COVERAGE
 PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0])
 
 # Checks for header files.
+save_CPPFLAGS="$CPPFLAGS"
+CPPFLAGS="$pkg_cv_CUTTER_CFLAGS"
+AC_CHECK_HEADER([cutter.h], [], [ac_cv_use_cutter=no])
+CPPFLAGS="$save_CPPFLAGS"
 
 # Checks for typedefs, structures, and compiler characteristics.
 
 # Checks for library functions.
+
+AM_CONDITIONAL([WITH_CUTTER], [test "x$ac_cv_use_cutter" = "xyes"])
 
 AC_CONFIG_FILES([Makefile tests/Makefile Doxyfile])
 AC_CONFIG_FILES([tests/run_test.sh], [chmod +x tests/run_test.sh])
