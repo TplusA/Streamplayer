@@ -38,6 +38,16 @@ struct urlfifo_item
 };
 
 /*!
+ * Lock access to the URL FIFO.
+ */
+void urlfifo_lock(void);
+
+/*!
+ * Unlock access to the URL FIFO.
+ */
+void urlfifo_unlock(void);
+
+/*!
  * Clear URL FIFO, keep number of item on top untouched.
  *
  * \param keep_first_n The number of items to keep untouched. If set to 0, then
