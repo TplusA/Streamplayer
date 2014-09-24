@@ -80,6 +80,17 @@ size_t urlfifo_push_item(uint16_t id, const char *url,
  */
 size_t urlfifo_get_size(void);
 
+/*!
+ * Initialization for unit tests.
+ *
+ * There is static data inside the URL FIFO implementation to simplify the
+ * interface and avoid needless dynamic memory allocation. This function
+ * emulates the static initialization usually done by the C startup code.
+ *
+ * \note Calling this function is not required for production code.
+ */
+void urlfifo_setup(void);
+
 /*!@}*/
 
 #endif /* !URLFIFO_H */
