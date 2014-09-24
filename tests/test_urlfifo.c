@@ -48,6 +48,13 @@ void test_push_single_item(void);
  */
 void test_push_multiple_items(void);
 
+/*!\test
+ * Adding more item to the FIFO than it has slots available results in an error
+ * returned by #urlfifo_push_item(). The FIFO is expected to remain changed
+ * after such an overflow.
+ */
+void test_push_many_items_does_not_trash_fifo(void);
+
 /*!@}*/
 
 
@@ -120,4 +127,21 @@ void test_push_multiple_items(void)
     }
 
     cut_assert_equal_size(3, urlfifo_get_size());
+}
+
+void test_push_many_items_does_not_trash_fifo(void)
+{
+    /* we need this little implementation detail */
+    static const size_t fifo_max_size = 4;
+
+    for(unsigned int i = 0; i < fifo_max_size; ++i)
+    {
+        cut_assert_equal_size(i + 1, urlfifo_push_item(0, "http://ta-hifi.de/",
+                                                       NULL, NULL, SIZE_MAX));
+    }
+
+    cut_assert_equal_size(fifo_max_size, urlfifo_get_size());
+    cut_assert_equal_size(0, urlfifo_push_item(0, "http://ta-hifi.de/",
+                                               NULL, NULL, SIZE_MAX));
+    cut_assert_equal_size(fifo_max_size, urlfifo_get_size());
 }
