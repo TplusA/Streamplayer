@@ -1,7 +1,7 @@
 if WITH_CUTTER
 TESTS = run_test.sh
 
-TESTS_ENVIRONMENT = CUTTER="$(CUTTER)"
+AM_TESTS_ENVIRONMENT = CUTTER="$(CUTTER)"
 
 AM_LDFLAGS = -module -rpath $(libdir) -avoid-version -no-undefined
 
