@@ -29,6 +29,14 @@
  */
 /*!@{*/
 
+/*!
+ * Opaque identifier for items in the URL FIFO.
+ */
+typedef size_t urlfifo_item_id_t;
+
+/*!
+ * URL FIFO item data.
+ */
 struct urlfifo_item
 {
     uint16_t id;
@@ -61,10 +69,10 @@ size_t urlfifo_clear(size_t keep_first_n);
 /*!
  * Append new item to URL FIFO.
  *
- * \param id Any ID to be associated with the item. The ID is assigned by
- *     external processes and not assumed to be a true ID; therefore, it is not
- *     used internally for anything except passing it around.
- * \param url The stream URL to play.
+ * \param external_id Any ID to be associated with the item. The ID is assigned
+ *     by external processes and not assumed to be a true ID; therefore, it is
+ *     not used internally for anything except passing it around.
+ * \param url The stream URL to play. This parameter may not be \c NULL.
  * \param start, stop The start and stop position of the stretch in a stream to
  *     be played. These may be \c NULL to indicate "natural start of stream"
  *     and "natural end of stream", respectively. A #streamtime with type
@@ -74,16 +82,37 @@ size_t urlfifo_clear(size_t keep_first_n);
  * \param keep_first_n The number of items to keep untouched. If set to 0, then
  *     the whole FIFO will be cleared before adding the new item. If set to
  *     \c SIZE_MAX, then no existing items will be removed.
+ * \param item_id Opaque identifier of the newly added item. If this function
+ *     fails to insert a new item, then the memory pointed to remains
+ *     unchanged. This parameter may be \c NULL in case the caller is not
+ *     interested in the identifier.
  *
  * \returns The number of items in the FIFO after inserting the new one, or 0
  *     in case the URL FIFO was full, even after considering \p keep_first_n.
  *     In the latter case, no new item is created and the URL FIFO remains
  *     untouched.
  */
-size_t urlfifo_push_item(uint16_t id, const char *url,
+size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
-                         size_t keep_first_n);
+                         size_t keep_first_n, urlfifo_item_id_t *item_id);
+
+/*!
+ * Retrieve item stored in URL FIFO.
+ *
+ * This function returns a pointer to the stored data inside the FIFO.
+ *
+ * \param item_id The identifier of the stored item as returned by
+ *     #urlfifo_push_item().
+ *
+ * \returns A pointer to the stored data.
+ *
+ * \note The URL FIFO must be locked using #urlfifo_lock() before this function
+ *     can be called safely. If the locking is omitted, then the returned
+ *     pointer may point to invalid data in the instant this function is
+ *     returning.
+ */
+const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id);
 
 /*!
  * Return the number of items in the URL FIFO.
