@@ -84,9 +84,9 @@ keep the URL FIFO filled.
 
 Whenever a new stream URL starts playing or its playback speed is changed, the
 <tt>de.tahifi.Streamplayer.Playback.NowPlaying</tt> signal is sent. It contains
-the stream ID and URL, any meta data, and a flag that tells whether or not the
-URL FIFO is full. The flag allows _drcpd_ to determine whether or not it makes
-sense to try and push the next stream URL.
+the stream ID and URL, and a flag that tells whether or not the URL FIFO is
+full. The flag allows _drcpd_ to determine whether or not it makes sense to try
+and push the next stream URL.
 
 Whenever a stream is stopped or paused, a corresponding
 <tt>de.tahifi.Streamplayer.Playback.Stopped</tt> or
@@ -98,11 +98,11 @@ sent so that the user interface can update its time display.
 
 ## Stream meta data
 
-Any meta data such as artist, title, album name, stream name are sent together
-with the <tt>de.tahifi.Streamplayer.Playback.NowPlaying</tt> signal. In case
-the meta data has changed during playback (as is the case with many internet
+Any meta data such as artist, title, album name, stream name are sent with the
+<tt>de.tahifi.Streamplayer.Playback.MetaDataChanged</tt> signal. In case the
+meta data changes during playback (as is frequently the case with many internet
 radio stations), a <tt>de.tahifi.Streamplayer.Playback.MetaDataChanged</tt>
-signal containing all meta data is sent.
+signal containing all meta data is sent again.
 
 > **Note:** Cover art (pictures showing the album cover or optical medium) is
 >     _not_ handled directly by _streamplayer_ since this is a topic complex

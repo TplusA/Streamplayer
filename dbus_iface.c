@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include "dbus_iface.h"
+#include "dbus_iface_deep.h"
 #include "streamplayer_dbus.h"
 #include "streamer.h"
 #include "urlfifo.h"
@@ -199,4 +200,14 @@ void dbus_shutdown(GMainLoop *loop)
     g_main_loop_unref(loop);
     g_object_unref(dbus_data.playback_iface);
     g_object_unref(dbus_data.urlfifo_iface);
+}
+
+tdbussplayURLFIFO *dbus_get_urlfifo_iface(void)
+{
+    return dbus_data.urlfifo_iface;
+}
+
+tdbussplayPlayback *dbus_get_playback_iface(void)
+{
+    return dbus_data.playback_iface;
 }
