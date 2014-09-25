@@ -9,6 +9,7 @@
 #include "dbus_iface.h"
 #include "streamplayer_dbus.h"
 #include "streamer.h"
+#include "urlfifo.h"
 #include "messages.h"
 
 static gboolean playback_start(tdbussplayPlayback *object,
@@ -35,6 +36,48 @@ static gboolean playback_pause(tdbussplayPlayback *object,
     msg_info("Got Playback.Pause message");
     tdbus_splay_playback_complete_pause(object, invocation);
     streamer_pause();
+    return TRUE;
+}
+
+static gboolean fifo_clear(tdbussplayURLFIFO *object,
+                           GDBusMethodInvocation *invocation,
+                           gint16 keep_first_n_entries)
+{
+    msg_info("Got URLFIFO.Clear message");
+    tdbus_splay_urlfifo_complete_clear(object, invocation);
+
+    if(keep_first_n_entries >= 0)
+        urlfifo_clear(keep_first_n_entries);
+
+    return TRUE;
+}
+
+static gboolean fifo_next(tdbussplayURLFIFO *object,
+                          GDBusMethodInvocation *invocation)
+{
+    msg_info("Got URLFIFO.Next message");
+    tdbus_splay_urlfifo_complete_next(object, invocation);
+    streamer_next();
+    return TRUE;
+}
+
+static gboolean fifo_push(tdbussplayURLFIFO *object,
+                          GDBusMethodInvocation *invocation,
+                          guint16 stream_id, const gchar *stream_url,
+                          gint64 start_position, const gchar *start_units,
+                          gint64 stop_position, const gchar *stop_units,
+                          gint16 keep_first_n_entries)
+{
+    msg_info("Got URLFIFO.Push message %u \"%s\"", stream_id, stream_url);
+
+    const size_t keep =
+        (keep_first_n_entries < 0) ? SIZE_MAX : (size_t)keep_first_n_entries;
+    const bool failed = (urlfifo_push_item(stream_id, stream_url, NULL, NULL,
+                                           keep, NULL) == 0);
+    tdbus_splay_urlfifo_complete_push(object, invocation, failed);
+
+    msg_info("Have %zu FIFO entries", urlfifo_get_size());
+
     return TRUE;
 }
 
@@ -76,6 +119,13 @@ static void bus_acquired(GDBusConnection *connection,
                      G_CALLBACK(playback_stop), NULL);
     g_signal_connect(data->playback_iface, "handle-pause",
                      G_CALLBACK(playback_pause), NULL);
+
+    g_signal_connect(data->urlfifo_iface, "handle-clear",
+                     G_CALLBACK(fifo_clear), NULL);
+    g_signal_connect(data->urlfifo_iface, "handle-next",
+                     G_CALLBACK(fifo_next), NULL);
+    g_signal_connect(data->urlfifo_iface, "handle-push",
+                     G_CALLBACK(fifo_push), NULL);
 
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->playback_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->urlfifo_iface));
