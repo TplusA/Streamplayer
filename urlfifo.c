@@ -60,6 +60,11 @@ static void init_item(struct urlfifo_item *item, uint16_t external_id,
     item->end_time = (stop != NULL) ? *stop : end_of_stream;
 }
 
+static inline size_t add_to_id(size_t id, size_t inc)
+{
+    return (id + inc) % (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
+}
+
 size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
@@ -76,8 +81,7 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
     }
 
     urlfifo_item_id_t id =
-        ((fifo_data.first_item + fifo_data.num_of_items) %
-         (sizeof(fifo_data.items) / sizeof(fifo_data.items[0])));
+        add_to_id(fifo_data.first_item, fifo_data.num_of_items);
 
     size_t retval = ++fifo_data.num_of_items;
 
@@ -105,9 +109,7 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest)
 
     memcpy(dest, &fifo_data.items[fifo_data.first_item], sizeof(*dest));
 
-    fifo_data.first_item =
-        ((fifo_data.first_item + 1) %
-         (sizeof(fifo_data.items) / sizeof(fifo_data.items[0])));
+    fifo_data.first_item = add_to_id(fifo_data.first_item, 1);
     --fifo_data.num_of_items;
 
     size_t retval = fifo_data.num_of_items;
