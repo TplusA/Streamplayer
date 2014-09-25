@@ -8,6 +8,7 @@
 
 #include "dbus_iface.h"
 #include "streamplayer_dbus.h"
+#include "streamer.h"
 #include "messages.h"
 
 static gboolean playback_start(tdbussplayPlayback *object,
@@ -15,6 +16,7 @@ static gboolean playback_start(tdbussplayPlayback *object,
 {
     msg_info("Got Playback.Start message");
     tdbus_splay_playback_complete_start(object, invocation);
+    streamer_start();
     return TRUE;
 }
 
@@ -23,6 +25,7 @@ static gboolean playback_stop(tdbussplayPlayback *object,
 {
     msg_info("Got Playback.Stop message");
     tdbus_splay_playback_complete_stop(object, invocation);
+    streamer_stop();
     return TRUE;
 }
 
@@ -31,6 +34,7 @@ static gboolean playback_pause(tdbussplayPlayback *object,
 {
     msg_info("Got Playback.Pause message");
     tdbus_splay_playback_complete_pause(object, invocation);
+    streamer_pause();
     return TRUE;
 }
 
