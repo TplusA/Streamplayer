@@ -10,7 +10,9 @@
 
 #include <glib-object.h>
 #include <glib-unix.h>
+#include <gst/gst.h>
 
+#include "streamer.h"
 #include "dbus_iface.h"
 #include "messages.h"
 
@@ -90,6 +92,8 @@ int main(int argc, char *argv[])
     g_type_init();
 #endif
 
+    gst_init(&argc, &argv);
+
     static struct parameters parameters;
 
     int ret = process_command_line(argc, argv, &parameters);
@@ -112,8 +116,12 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if(streamer_setup(globals.loop) < 0)
+        return EXIT_FAILURE;
+
     if(dbus_setup(globals.loop, true) < 0)
     {
+        streamer_shutdown(globals.loop);
         return EXIT_FAILURE;
     }
 
@@ -125,6 +133,7 @@ int main(int argc, char *argv[])
     msg_info("Shutting down");
 
     dbus_shutdown(globals.loop);
+    streamer_shutdown(globals.loop);
 
     g_main_loop_unref(globals.loop);
 

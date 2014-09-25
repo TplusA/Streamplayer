@@ -25,7 +25,7 @@ AC_CHECK_GCUTTER
 AC_CHECK_COVERAGE
 
 # Checks for libraries.
-PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0])
+PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0 gstreamer-plugins-base-0.10])
 
 # Checks for header files.
 save_CPPFLAGS="$CPPFLAGS"
