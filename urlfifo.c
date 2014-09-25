@@ -91,6 +91,32 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
     return retval;
 }
 
+ssize_t urlfifo_pop_item(struct urlfifo_item *dest)
+{
+    assert(dest != NULL);
+
+    urlfifo_lock();
+
+    if(fifo_data.num_of_items == 0)
+    {
+        urlfifo_unlock();
+        return -1;
+    }
+
+    memcpy(dest, &fifo_data.items[fifo_data.first_item], sizeof(*dest));
+
+    fifo_data.first_item =
+        ((fifo_data.first_item + 1) %
+         (sizeof(fifo_data.items) / sizeof(fifo_data.items[0])));
+    --fifo_data.num_of_items;
+
+    size_t retval = fifo_data.num_of_items;
+
+    urlfifo_unlock();
+
+    return retval;
+}
+
 const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id)
 {
     assert(item_id < sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));

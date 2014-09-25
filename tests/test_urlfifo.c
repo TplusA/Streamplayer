@@ -1,5 +1,6 @@
 #include <cutter.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "urlfifo.h"
 
@@ -55,6 +56,22 @@ void test_push_multiple_items(void);
  * after such an overflow.
  */
 void test_push_many_items_does_not_trash_fifo(void);
+
+/*!\test
+ * Removing a non-existent first item from the URL FIFO results in an error
+ * returned by #urlfifo_pop_item().
+ */
+void test_pop_empty_fifo_detects_underflow(void);
+
+/*!\test
+ * Remove first item from the URL FIFO which contains a single item.
+ */
+void test_pop_item_from_single_item_fifo(void);
+
+/*!\test
+ * Remove first item from the URL FIFO which contains more that one item.
+ */
+void test_pop_item_from_multi_item_fifo(void);
 
 /*!@}*/
 
@@ -245,4 +262,67 @@ void test_push_many_items_does_not_trash_fifo(void)
     }
 
     urlfifo_unlock();
+}
+
+void test_pop_empty_fifo_detects_underflow(void)
+{
+    struct urlfifo_item dummy;
+    struct urlfifo_item expected;
+
+    memset(&dummy, 0x55, sizeof(dummy));
+    memset(&expected, 0x55, sizeof(expected));
+    cut_assert_equal_int(-1, urlfifo_pop_item(&dummy));
+
+    /* cut_assert_equal_memory() hangs on failure, so we'll use plain memcmp()
+     * instead */
+    if(memcmp(&expected, &dummy, sizeof(expected) != 0))
+        cut_fail("urlfifo_pop_item() trashed memory");
+}
+
+void test_pop_item_from_single_item_fifo(void)
+{
+    urlfifo_item_id_t id;
+
+    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
+                                               NULL, NULL, SIZE_MAX, &id));
+    cut_assert_equal_size(1, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item));
+    cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_uint(42, item.id);
+    cut_assert_equal_string(default_url, item.url);
+    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
+    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+}
+
+void test_pop_item_from_multi_item_fifo(void)
+{
+    urlfifo_item_id_t id_first;
+    urlfifo_item_id_t id_second;
+
+    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
+                                               NULL, NULL, SIZE_MAX, &id_first));
+    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
+                                               NULL, NULL, SIZE_MAX, &id_second));
+    cut_assert_equal_size(3, urlfifo_push_item(5, "third",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(2, urlfifo_pop_item(&item));
+    cut_assert_equal_size(2, urlfifo_get_size());
+    cut_assert_equal_uint(23, item.id);
+    cut_assert_equal_string("first", item.url);
+    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
+    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+
+    cut_assert_equal_size(1, urlfifo_pop_item(&item));
+    cut_assert_equal_size(1, urlfifo_get_size());
+    cut_assert_equal_uint(32, item.id);
+    cut_assert_equal_string("second", item.url);
+    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
+    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
 }

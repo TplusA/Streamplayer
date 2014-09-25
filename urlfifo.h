@@ -98,6 +98,18 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          size_t keep_first_n, urlfifo_item_id_t *item_id);
 
 /*!
+ * Remove first item in URL FIFO and return a copy in \p dest.
+ *
+ * \param dest Where to write a copy of the item. This parameter may not be
+ *     \c NULL. In case of error, the memory pointed to by \p dest remains
+ *     untouched.
+ *
+ * \returns The number of items remaining in the FIFO after removing the new
+ *     one, or -1 in case the URL FIFO was empty.
+ */
+ssize_t urlfifo_pop_item(struct urlfifo_item *dest);
+
+/*!
  * Retrieve item stored in URL FIFO.
  *
  * This function returns a pointer to the stored data inside the FIFO.
