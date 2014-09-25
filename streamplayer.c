@@ -75,8 +75,6 @@ static int process_command_line(int argc, char *argv[],
         }
     }
 
-#undef CHECK_ARGUMENT
-
     return 0;
 }
 
