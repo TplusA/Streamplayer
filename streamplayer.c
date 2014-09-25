@@ -6,26 +6,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <signal.h>
 #include <errno.h>
+
+#include <glib-object.h>
+#include <glib-unix.h>
 
 #include "dbus_iface.h"
 #include "messages.h"
 
-/*!
- * Global flag that gets cleared in the SIGTERM signal handler.
- *
- * For clean shutdown.
- */
-static volatile bool keep_running = true;
-
-static void main_loop(void)
+static struct
 {
-    while(keep_running)
-    {
-        /* burn cycles */
-    }
+    GMainLoop *loop;
 }
+globals;
 
 struct parameters
 {
@@ -87,13 +80,18 @@ static int process_command_line(int argc, char *argv[],
     return 0;
 }
 
-static void signal_handler(int signum, siginfo_t *info, void *ucontext)
+static gboolean signal_handler(gpointer user_data)
 {
-    keep_running = false;
+    g_main_loop_quit(user_data);
+    return G_SOURCE_REMOVE;
 }
 
 int main(int argc, char *argv[])
 {
+#if !GLIB_CHECK_VERSION(2, 36, 0)
+    g_type_init();
+#endif
+
     static struct parameters parameters;
 
     int ret = process_command_line(argc, argv, &parameters);
@@ -109,26 +107,28 @@ int main(int argc, char *argv[])
     if(setup(&parameters) < 0)
         return EXIT_FAILURE;
 
-    if(dbus_setup(true) < 0)
+    globals.loop = g_main_loop_new(NULL, FALSE);
+    if(globals.loop == NULL)
+    {
+        msg_error(ENOMEM, LOG_EMERG, "Failed creating GLib main loop");
+        return -1;
+    }
+
+    if(dbus_setup(globals.loop, true) < 0)
     {
         return EXIT_FAILURE;
     }
 
-    static struct sigaction action =
-    {
-        .sa_sigaction = signal_handler,
-        .sa_flags = SA_SIGINFO | SA_RESETHAND,
-    };
+    g_unix_signal_add(SIGINT, signal_handler, globals.loop);
+    g_unix_signal_add(SIGTERM, signal_handler, globals.loop);
 
-    sigemptyset(&action.sa_mask);
-    sigaction(SIGINT, &action, NULL);
-    sigaction(SIGTERM, &action, NULL);
-
-    main_loop();
+    g_main_loop_run(globals.loop);
 
     msg_info("Shutting down");
 
-    dbus_shutdown();
+    dbus_shutdown(globals.loop);
+
+    g_main_loop_unref(globals.loop);
 
     return EXIT_SUCCESS;
 }

@@ -36,8 +36,6 @@ static gboolean playback_pause(tdbussplayPlayback *object,
 
 struct dbus_data
 {
-    GThread *thread;
-    GMainLoop *loop;
     guint owner_id;
     int acquired;
     tdbussplayPlayback *playback_iface;
@@ -45,16 +43,6 @@ struct dbus_data
 };
 
 static struct dbus_data dbus_data;
-
-static gpointer process_dbus(gpointer user_data)
-{
-    struct dbus_data *data = user_data;
-
-    assert(data->loop != NULL);
-
-    g_main_loop_run(data->loop);
-    return NULL;
-}
 
 static void try_export_iface(GDBusConnection *connection,
                              GDBusInterfaceSkeleton *iface)
@@ -112,20 +100,9 @@ static void destroy_notification(gpointer data)
     msg_info("Bus destroyed.");
 }
 
-int dbus_setup(bool connect_to_session_bus)
+int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
 {
-#if !GLIB_CHECK_VERSION(2, 36, 0)
-    g_type_init();
-#endif
-
     memset(&dbus_data, 0, sizeof(dbus_data));
-
-    dbus_data.loop = g_main_loop_new(NULL, FALSE);
-    if(dbus_data.loop == NULL)
-    {
-        msg_error(ENOMEM, LOG_EMERG, "Failed creating GLib main loop");
-        return -1;
-    }
 
     GBusType bus_type =
         connect_to_session_bus ? G_BUS_TYPE_SESSION : G_BUS_TYPE_SYSTEM;
@@ -153,29 +130,19 @@ int dbus_setup(bool connect_to_session_bus)
     assert(dbus_data.playback_iface != NULL);
     assert(dbus_data.urlfifo_iface != NULL);
 
-    dbus_data.thread = g_thread_new("D-Bus I/O", process_dbus, &dbus_data);
-    if(dbus_data.thread == NULL)
-    {
-        msg_error(EAGAIN, LOG_EMERG, "Failed spawning D-Bus I/O thread");
-        return -1;
-    }
+    g_main_loop_ref(loop);
 
     return 0;
 }
 
-void dbus_shutdown(void)
+void dbus_shutdown(GMainLoop *loop)
 {
-    if(dbus_data.loop == NULL)
+    if(loop == NULL)
         return;
 
     g_bus_unown_name(dbus_data.owner_id);
 
-    g_main_loop_quit(dbus_data.loop);
-    (void)g_thread_join(dbus_data.thread);
-    g_main_loop_unref(dbus_data.loop);
-
+    g_main_loop_unref(loop);
     g_object_unref(dbus_data.playback_iface);
     g_object_unref(dbus_data.urlfifo_iface);
-
-    dbus_data.loop = NULL;
 }
