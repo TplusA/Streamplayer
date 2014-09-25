@@ -58,6 +58,29 @@ void test_push_multiple_items(void);
 void test_push_many_items_does_not_trash_fifo(void);
 
 /*!\test
+ * It is possible to replace the items in a non-empty URL FIFO by a single item
+ * by pushing the new item and specifying the number of items to keep as 0.
+ */
+void test_push_one_replace_all(void);
+
+/*!\test
+ * It is possible to replace the last few items in a non-empty URL FIFO by a
+ * single item by pushing the new item and specifying the number of items to
+ * keep as 1 (or greater).
+ */
+void test_push_one_keep_first(void);
+
+/*!\test
+ * Replacing the contents of an empty URL FIFO with a new item is possible.
+ */
+void test_push_one_replace_all_works_on_empty_fifo(void);
+
+/*!\test
+ * Replacing the contents of an overflown URL FIFO with a new item is possible.
+ */
+void test_push_one_replace_all_works_on_full_fifo(void);
+
+/*!\test
  * Removing a non-existent first item from the URL FIFO results in an error
  * returned by #urlfifo_pop_item().
  */
@@ -267,6 +290,86 @@ void test_push_many_items_does_not_trash_fifo(void)
     }
 
     urlfifo_unlock();
+}
+
+void test_push_one_replace_all(void)
+{
+    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(43, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(44, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    cut_assert_equal_size(1, urlfifo_push_item(45, default_url,
+                                               NULL, NULL, 0, NULL));
+    cut_assert_equal_size(1, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item));
+    cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_uint(45, item.id);
+}
+
+void test_push_one_keep_first(void)
+{
+    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(43, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(44, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    cut_assert_equal_size(2, urlfifo_push_item(45, default_url,
+                                               NULL, NULL, 1, NULL));
+    cut_assert_equal_size(2, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(1, urlfifo_pop_item(&item));
+    cut_assert_equal_size(1, urlfifo_get_size());
+    cut_assert_equal_uint(42, item.id);
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item));
+    cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_uint(45, item.id);
+}
+
+void test_push_one_replace_all_works_on_empty_fifo(void)
+{
+    cut_assert_equal_size(1, urlfifo_push_item(80, default_url,
+                                               NULL, NULL, 0, NULL));
+    cut_assert_equal_size(1, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item));
+    cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_uint(80, item.id);
+}
+
+void test_push_one_replace_all_works_on_full_fifo(void)
+{
+    static const uint16_t max_insertions = 10;
+
+    for(uint16_t id = 20; id < 20 + max_insertions; ++id)
+    {
+        if(urlfifo_push_item(id, default_url, NULL, NULL, SIZE_MAX, NULL) == 0)
+            break;
+    }
+
+    cut_assert_not_equal_size(max_insertions, urlfifo_get_size());
+
+    cut_assert_equal_size(1, urlfifo_push_item(90, default_url,
+                                               NULL, NULL, 0, NULL));
+    cut_assert_equal_size(1, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item));
+    cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_uint(90, item.id);
 }
 
 void test_pop_empty_fifo_detects_underflow(void)

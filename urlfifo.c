@@ -74,6 +74,9 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
 
     urlfifo_lock();
 
+    if(keep_first_n < fifo_data.num_of_items)
+        fifo_data.num_of_items = keep_first_n;
+
     if(fifo_data.num_of_items >= sizeof(fifo_data.items) / sizeof(fifo_data.items[0]))
     {
         urlfifo_unlock();
