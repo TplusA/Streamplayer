@@ -73,6 +73,11 @@ void test_pop_item_from_single_item_fifo(void);
  */
 void test_pop_item_from_multi_item_fifo(void);
 
+/*!\test
+ * Stress test push and pop to trigger internal wraparound handling code.
+ */
+void test_push_pop_chase(void);
+
 /*!@}*/
 
 
@@ -325,4 +330,37 @@ void test_pop_item_from_multi_item_fifo(void)
     cut_assert_equal_string("second", item.url);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+}
+
+void test_push_pop_chase(void)
+{
+    static const uint16_t id_base = 100;
+    static const unsigned int num_of_iterations = 10;
+
+    cut_assert_equal_size(1, urlfifo_push_item(id_base, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(id_base + 1, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    struct urlfifo_item item;
+
+    for(int i = 0; i < num_of_iterations; ++i)
+    {
+        cut_assert_equal_size(3, urlfifo_push_item(i + id_base + 2, default_url,
+                                                   NULL, NULL, SIZE_MAX,
+                                                   NULL));
+        cut_assert_equal_size(3, urlfifo_get_size());
+
+        cut_assert_equal_size(2, urlfifo_pop_item(&item));
+        cut_assert_equal_size(2, urlfifo_get_size());
+        cut_assert_equal_uint(i + id_base, item.id);
+    }
+
+    cut_assert_equal_size(1, urlfifo_pop_item(&item));
+    cut_assert_equal_size(1, urlfifo_get_size());
+    cut_assert_equal_uint(num_of_iterations + id_base + 0, item.id);
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item));
+    cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_uint(num_of_iterations + id_base + 1, item.id);
 }
