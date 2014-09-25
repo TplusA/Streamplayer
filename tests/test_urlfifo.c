@@ -101,6 +101,11 @@ void test_pop_item_from_multi_item_fifo(void);
  */
 void test_push_pop_chase(void);
 
+/*!\test
+ * Basic tests for #urlfifo_is_full().
+ */
+void test_urlfifo_is_full_interface(void);
+
 /*!@}*/
 
 
@@ -466,4 +471,31 @@ void test_push_pop_chase(void)
     cut_assert_equal_size(0, urlfifo_pop_item(&item));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(num_of_iterations + id_base + 1, item.id);
+}
+
+void test_urlfifo_is_full_interface(void)
+{
+    cut_assert_false(urlfifo_is_full());
+
+    for(uint16_t i = 0; i < 10; ++i)
+    {
+        if(urlfifo_is_full())
+        {
+            cut_assert_equal_size(0, urlfifo_push_item(0, default_url,
+                                                       NULL, NULL, SIZE_MAX,
+                                                       NULL));
+            break;
+        }
+
+        cut_assert_equal_size(i + 1, urlfifo_push_item(0, default_url,
+                                                       NULL, NULL, SIZE_MAX,
+                                                       NULL));
+    }
+
+    cut_assert_true(urlfifo_is_full());
+
+    struct urlfifo_item dummy;
+    (void)urlfifo_pop_item(&dummy);
+
+    cut_assert_false(urlfifo_is_full());
 }

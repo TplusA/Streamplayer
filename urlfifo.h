@@ -2,6 +2,7 @@
 #define URLFIFO_H
 
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "streamtime.h"
 
@@ -130,6 +131,11 @@ const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id);
  * Return the number of items in the URL FIFO.
  */
 size_t urlfifo_get_size(void);
+
+/*!
+ * Whether or not the FIFO is full.
+ */
+bool urlfifo_is_full(void);
 
 /*!
  * Initialization for unit tests.

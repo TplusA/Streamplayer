@@ -65,6 +65,11 @@ static inline size_t add_to_id(size_t id, size_t inc)
     return (id + inc) % (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
 }
 
+static inline bool urlfifo_unlocked_is_full(void)
+{
+    return fifo_data.num_of_items >= (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
+}
+
 size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
@@ -77,7 +82,7 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
     if(keep_first_n < fifo_data.num_of_items)
         fifo_data.num_of_items = keep_first_n;
 
-    if(fifo_data.num_of_items >= sizeof(fifo_data.items) / sizeof(fifo_data.items[0]))
+    if(urlfifo_unlocked_is_full())
     {
         urlfifo_unlock();
         return 0;
@@ -135,6 +140,15 @@ size_t urlfifo_get_size(void)
 
     size_t retval = fifo_data.num_of_items;
 
+    urlfifo_unlock();
+
+    return retval;
+}
+
+bool urlfifo_is_full(void)
+{
+    urlfifo_lock();
+    bool retval = urlfifo_unlocked_is_full();
     urlfifo_unlock();
 
     return retval;
