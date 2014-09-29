@@ -18,22 +18,40 @@ enum queue_mode
 struct streamer_data
 {
     GstElement *pipeline;
+
     struct urlfifo_item current_stream;
+    bool tags_are_for_queued_stream;
+    GstTagList *current_stream_tags;
+    GstTagList *queued_stream_tags;
 };
 
-static inline void invalidate_stream_url(struct urlfifo_item *item)
+static void invalidate_tag_list(GstTagList **list)
 {
-    item->url[0] = '\0';
+    if(*list == NULL)
+        return;
+
+    gst_tag_list_free(*list);
+    *list = NULL;
+}
+
+static void invalidate_current_stream(struct streamer_data *data)
+{
+    data->current_stream.url[0] = '\0';
+    invalidate_tag_list(&data->current_stream_tags);
+    invalidate_tag_list(&data->queued_stream_tags);
 }
 
 static bool try_queue_next_stream(GstElement *pipeline,
-                                  struct urlfifo_item *next_dest,
+                                  struct streamer_data *data,
                                   enum queue_mode queue_mode)
 {
-    if(urlfifo_pop_item(next_dest) < 0)
+    if(urlfifo_pop_item(&data->current_stream) < 0)
         return false;
 
-    msg_info("Queuing next stream: \"%s\"", next_dest->url);
+    msg_info("Queuing next stream: \"%s\"", data->current_stream.url);
+
+    data->tags_are_for_queued_stream =
+        (queue_mode == QUEUEMODE_JUST_UPDATE_URI || QUEUEMODE_START_PLAYING);
 
     if(queue_mode == QUEUEMODE_FORCE_SKIP)
     {
@@ -45,9 +63,10 @@ static bool try_queue_next_stream(GstElement *pipeline,
                       "return code %d", ret);
     }
 
-    g_object_set(G_OBJECT(pipeline), "uri", next_dest->url, NULL);
+    g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
 
-    if(queue_mode != QUEUEMODE_JUST_UPDATE_URI)
+    if(queue_mode == QUEUEMODE_START_PLAYING ||
+       queue_mode == QUEUEMODE_FORCE_SKIP)
     {
         GstStateChangeReturn ret = gst_element_set_state(pipeline,
                                                          GST_STATE_PLAYING);
@@ -82,14 +101,38 @@ static void handle_end_of_stream(GstBus *bus, GstMessage *message,
     invalidate_current_stream(data);
 }
 
+static void add_tuple_to_tags_variant_builder(const GstTagList *list,
+                                              const gchar *tag,
+                                              gpointer user_data)
+{
+    GVariantBuilder *builder = user_data;
+    const GValue *value = gst_tag_list_get_value_index(list, tag, 0);
+
+    if(value == NULL)
+        return;
+
+    if(G_VALUE_HOLDS_STRING(value))
+        g_variant_builder_add(builder, "(ss)", tag, g_value_get_string(value));
+    else if(G_VALUE_HOLDS_BOOLEAN(value))
+        g_variant_builder_add(builder, "(ss)", tag,
+                              g_value_get_boolean(value) ? "true" : "false");
+    else if(G_VALUE_HOLDS_UINT(value))
+    {
+        char buffer[256];
+
+        snprintf(buffer, sizeof(buffer), "%u", g_value_get_uint(value));
+        g_variant_builder_add(builder, "(ss)", tag, buffer);
+    }
+    else
+        msg_error(ENOSYS, LOG_ERR, "stream tag \"%s\" is not a string", tag);
+}
+
 /*!
  * \todo Check embedded comment. How should we go about the GVariant format
  *     string(s)?
  */
-static void start_of_new_stream(GstElement *elem, gpointer user_data)
+static GVariant *tag_list_to_g_variant(const GstTagList *list)
 {
-    struct urlfifo_item *data = user_data;
-
     /*
      * The proper way to get at the GVariant format string would be to call
      * #tdbus_splay_playback_interface_info() and inspect the
@@ -101,10 +144,58 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
      * indeed correct. Maybe the retrieval should really be implemented in
      * production code, but only be done in the startup code.
      */
-    GVariant *meta_data = g_variant_new("a(ss)", NULL);
+    GVariantBuilder builder;
+
+    g_variant_builder_init(&builder, G_VARIANT_TYPE("a(ss)"));
+    gst_tag_list_foreach(list, add_tuple_to_tags_variant_builder, &builder);
+
+    return g_variant_builder_end(&builder);
+}
+
+static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
+{
+    GstTagList *tags = NULL;
+    gst_message_parse_tag(message, &tags);
+
+    struct streamer_data *data = user_data;
+    GstTagList **list = (data->tags_are_for_queued_stream
+                         ? &data->queued_stream_tags
+                         : &data->current_stream_tags);
+
+    if(*list != NULL)
+    {
+        GstTagList *merged =
+            gst_tag_list_merge(*list, tags, GST_TAG_MERGE_PREPEND);
+        gst_tag_list_free(tags);
+        gst_tag_list_free(*list);
+        *list = merged;
+    }
+    else
+        *list = tags;
+
+    if(*list != NULL && !data->tags_are_for_queued_stream)
+    {
+        GVariant *meta_data = tag_list_to_g_variant(*list);
+
+        tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
+                                                    meta_data);
+    }
+}
+
+static void start_of_new_stream(GstElement *elem, gpointer user_data)
+{
+    struct streamer_data *data = user_data;
+
+    invalidate_tag_list(&data->current_stream_tags);
+    data->current_stream_tags = data->queued_stream_tags;
+    data->queued_stream_tags = NULL;
+    data->tags_are_for_queued_stream = false;
+
+    GVariant *meta_data = tag_list_to_g_variant(data->current_stream_tags);
 
     tdbus_splay_playback_emit_now_playing(dbus_get_playback_iface(),
-                                          data->id, data->url,
+                                          data->current_stream.id,
+                                          data->current_stream.url,
                                           urlfifo_is_full(), meta_data);
 }
 
@@ -122,24 +213,24 @@ int streamer_setup(GMainLoop *loop)
         return -1;
 
     g_signal_connect(streamer_data.pipeline, "about-to-finish",
-                     G_CALLBACK(queue_stream_from_url_fifo),
-                     &streamer_data.current_stream);
+                     G_CALLBACK(queue_stream_from_url_fifo), &streamer_data);
 
     g_signal_connect(streamer_data.pipeline, "audio-changed",
-                     G_CALLBACK(start_of_new_stream),
-                     &streamer_data.current_stream);
+                     G_CALLBACK(start_of_new_stream), &streamer_data);
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
     assert(bus != NULL);
     gst_bus_add_signal_watch(bus);
     g_signal_connect(bus, "message::eos",
                      G_CALLBACK(handle_end_of_stream), &streamer_data);
+    g_signal_connect(bus, "message::tag",
+                     G_CALLBACK(handle_tag), &streamer_data);
     gst_object_unref(bus);
 
     g_main_loop_ref(loop);
 
     gst_element_set_state(streamer_data.pipeline, GST_STATE_READY);
-    invalidate_stream_url(&streamer_data.current_stream);
+    invalidate_current_stream(&streamer_data);
 
     return 0;
 }
@@ -160,6 +251,8 @@ void streamer_shutdown(GMainLoop *loop)
 
     gst_object_unref(GST_OBJECT(streamer_data.pipeline));
     streamer_data.pipeline = NULL;
+
+    invalidate_current_stream(&streamer_data);
 }
 
 void streamer_start(void)
@@ -179,8 +272,7 @@ void streamer_start(void)
         return;
 
     if(state == GST_STATE_READY &&
-       !try_queue_next_stream(streamer_data.pipeline,
-                              &streamer_data.current_stream,
+       !try_queue_next_stream(streamer_data.pipeline, &streamer_data,
                               QUEUEMODE_START_PLAYING))
     {
         msg_info("Got playback request, but URL FIFO is empty");
@@ -192,7 +284,7 @@ void streamer_stop(void)
     msg_info("Stopping as requested");
     assert(streamer_data.pipeline != NULL);
     gst_element_set_state(streamer_data.pipeline, GST_STATE_READY);
-    invalidate_stream_url(&streamer_data.current_stream);
+    invalidate_current_stream(&streamer_data);
 }
 
 void streamer_pause(void)
@@ -224,9 +316,7 @@ void streamer_next(void)
         return;
     }
 
-    if(!try_queue_next_stream(streamer_data.pipeline,
-                              &streamer_data.current_stream,
+    if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
                               QUEUEMODE_FORCE_SKIP))
         msg_info("Cannot play next, URL FIFO is empty");
 }
-
