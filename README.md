@@ -10,12 +10,11 @@ implemented somewhere else.
 ## Communication with other system process
 
 The _streamplayer_ is primarily controlled over _D-Bus_ messages for
-manipulation of the URL FIFO and starting, stopping, or pausing the first item
-in the URL FIFO. The daemon does not react on most signals sent by _dcpd_
-because these signals merely represent user requests, not definitive commands.
-The _drcpd_ daemon takes these requests, and depending on the user interface
-state, they may or may not be turned into direct _D-Bus_ message sent to
-_streamplayer_.
+manipulation of the URL FIFO and starting, stopping, or pausing playback. The
+daemon does not react on most signals sent by _dcpd_ because these signals
+merely represent user requests, not definitive commands. The _drcpd_ daemon
+takes these requests, and depending on the user interface state, they may or
+may not be turned into direct _D-Bus_ message sent to _streamplayer_.
 
 If the playback status changes or the position in the currently played stream
 has changed, the _streamplayer_ announces these events as _D-Bus_ signals.
@@ -39,19 +38,26 @@ or set a direct URL via phone app). The URLs in the queue can be prefetched and
 preprocessed by the _streamplayer_ so that gapless playback of consecutive
 streams becomes possible.
 
+The first URL stored in the FIFO is not the one that is currently playing. When
+_streamplayer_ starts to play a URL, it removes the first URL from the FIFO and
+stores it internally.
+
 The FIFO content is manipulated using the _D-Bus_ messages
 <tt>de.tahifi.Streamplayer.URLFIFO.Clear</tt>,
 <tt>de.tahifi.Streamplayer.URLFIFO.Next</tt>, and
 <tt>de.tahifi.Streamplayer.URLFIFO.Push</tt>.
 
-The <tt>Clear</tt> message removes all entries from the URL FIFO and causes
-_streamplayer_ to stop playing back any streams. This message causes
-_streamplayer_ to completely forget about all streams, including the one
-currently playing (if any).
+The <tt>Clear</tt> message removes all entries from the URL FIFO. This message
+causes _streamplayer_ to completely forget about all streams, except the one
+currently playing (if any). Clearing the URL FIFO therefore does not stop the
+playback.
 
-The <tt>Next</tt> message removes the first entry from the URL FIFO and causes
-_streamplayer_ to start playing the new first entry, if any. If there is no
-next entry, i.e., the FIFO becomes empty, then playback is stopped.
+The <tt>Next</tt> message removes the first entry from the URL FIFO and, if a
+URL was playing already, causes _streamplayer_ to start playing this removed
+entry, if any. If the playback was stopped or paused, the player removes the
+first entry from the URL FIFO and takes it as new current stream, but otherwise
+the playback state is retained. If there is no next entry, i.e., the FIFO
+becomes empty, then nothing happens and the playback state is retained.
 
 The <tt>Push</tt> message adds one new entry to the end of the URL FIFO. The
 entry comprises of a stream ID, a stream URL, a start position, and a stop
@@ -65,13 +71,12 @@ return code in one of its arguments.
 >     a relative stop position (i.e., a duration) instead of only an absolute
 >     one might be useful to support.
 
-In some scenarios it is necessary to keep the first URL FIFO entry in place to
-keep the current stream playing, but to replace the rest of the FIFO by new
-entries. For this reason, both the <tt>Clear</tt> and <tt>Push</tt> methods
-take a parameter that instruct _streamplayer_ to keep the first *n* entries in
-the URL FIFO untouched by the operation (where *n* is frequently set to 0 or
-1). To keep all entries during a <tt>Push</tt> operation, *n* must be set to
--1.
+In some scenarios it is necessary to keep the first URL FIFO entry in place,
+but to replace the rest of the FIFO by new entries. For this reason, both the
+<tt>Clear</tt> and <tt>Push</tt> methods take a parameter that instruct
+_streamplayer_ to keep the first *n* entries in the URL FIFO untouched by the
+operation (where *n* is frequently set to 0 or 1). To keep all entries during a
+<tt>Push</tt> operation, *n* must be set to -1.
 
 To avoid race conditions and other headaches, there is explicitly no direct way
 to find out the maximum FIFO size. Instead, the result of a
@@ -103,6 +108,10 @@ Any meta data such as artist, title, album name, stream name are sent with the
 meta data changes during playback (as is frequently the case with many internet
 radio stations), a <tt>de.tahifi.Streamplayer.Playback.MetaDataChanged</tt>
 signal containing all meta data is sent again.
+
+The signal is also emitted in pause state so that any changes in meta data
+information sent from some internet radio station can be displayed even in
+pause mode.
 
 > **Note:** Cover art (pictures showing the album cover or optical medium) is
 >     _not_ handled directly by _streamplayer_ since this is a topic complex

@@ -43,7 +43,8 @@ static void invalidate_current_stream(struct streamer_data *data)
 
 static bool try_queue_next_stream(GstElement *pipeline,
                                   struct streamer_data *data,
-                                  enum queue_mode queue_mode)
+                                  enum queue_mode queue_mode,
+                                  GstState next_state)
 {
     if(urlfifo_pop_item(&data->current_stream) < 0)
         return false;
@@ -68,8 +69,7 @@ static bool try_queue_next_stream(GstElement *pipeline,
     if(queue_mode == QUEUEMODE_START_PLAYING ||
        queue_mode == QUEUEMODE_FORCE_SKIP)
     {
-        GstStateChangeReturn ret = gst_element_set_state(pipeline,
-                                                         GST_STATE_PLAYING);
+        GstStateChangeReturn ret = gst_element_set_state(pipeline, next_state);
         if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
             msg_error(ENOSYS, LOG_ERR,
                       "Play queued: unhandled gst_element_set_state() "
@@ -81,7 +81,8 @@ static bool try_queue_next_stream(GstElement *pipeline,
 
 static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 {
-    (void)try_queue_next_stream(elem, user_data, QUEUEMODE_JUST_UPDATE_URI);
+    (void)try_queue_next_stream(elem, user_data,
+                                QUEUEMODE_JUST_UPDATE_URI, GST_STATE_NULL);
 }
 
 static void handle_end_of_stream(GstBus *bus, GstMessage *message,
@@ -268,14 +269,35 @@ void streamer_start(void)
         return;
     }
 
-    if(state == GST_STATE_PLAYING)
-        return;
-
-    if(state == GST_STATE_READY &&
-       !try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                              QUEUEMODE_START_PLAYING))
+    switch(state)
     {
-        msg_info("Got playback request, but URL FIFO is empty");
+      case GST_STATE_PLAYING:
+        break;
+
+      case GST_STATE_READY:
+        if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                                  QUEUEMODE_START_PLAYING, GST_STATE_PLAYING))
+        {
+            msg_info("Got playback request, but URL FIFO is empty");
+        }
+
+        break;
+
+      case GST_STATE_PAUSED:
+        ret = gst_element_set_state(streamer_data.pipeline, GST_STATE_PLAYING);
+
+        if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
+            msg_error(ENOSYS, LOG_ERR,
+                      "Start: unhandled gst_element_set_state() return code %d",
+                      ret);
+
+        break;
+
+      case GST_STATE_NULL:
+      case GST_STATE_VOID_PENDING:
+        msg_error(ENOSYS, LOG_ERR,
+                  "Start: pipeline is in unhandled state %d", state);
+        break;
     }
 }
 
@@ -291,7 +313,48 @@ void streamer_pause(void)
 {
     msg_info("Pausing as requested");
     assert(streamer_data.pipeline != NULL);
-    gst_element_set_state(streamer_data.pipeline, GST_STATE_PAUSED);
+
+    GstState state;
+    GstStateChangeReturn ret =
+        gst_element_get_state(streamer_data.pipeline, &state, NULL, 0);
+
+    if(ret != GST_STATE_CHANGE_SUCCESS)
+    {
+        msg_error(ENOSYS, LOG_ERR,
+                  "Start: Unexpected gst_element_get_state() return code %d", ret);
+        return;
+    }
+
+    switch(state)
+    {
+      case GST_STATE_PAUSED:
+        return;
+
+      case GST_STATE_READY:
+        if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                                  QUEUEMODE_START_PLAYING, GST_STATE_PAUSED))
+        {
+            msg_info("Got pause request, but URL FIFO is empty");
+        }
+
+        break;
+
+      case GST_STATE_PLAYING:
+        ret = gst_element_set_state(streamer_data.pipeline, GST_STATE_PAUSED);
+
+        if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
+            msg_error(ENOSYS, LOG_ERR,
+                      "Pause: unhandled gst_element_set_state() return code %d",
+                      ret);
+
+        break;
+
+      case GST_STATE_NULL:
+      case GST_STATE_VOID_PENDING:
+        msg_error(ENOSYS, LOG_ERR,
+                  "Pause: pipeline is in unhandled state %d", state);
+        break;
+    }
 }
 
 void streamer_next(void)
@@ -310,13 +373,7 @@ void streamer_next(void)
         return;
     }
 
-    if(state != GST_STATE_PLAYING)
-    {
-        msg_info("Not playing, not skipping");
-        return;
-    }
-
     if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                              QUEUEMODE_FORCE_SKIP))
+                              QUEUEMODE_FORCE_SKIP, state))
         msg_info("Cannot play next, URL FIFO is empty");
 }
