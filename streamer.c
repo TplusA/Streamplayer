@@ -196,6 +196,59 @@ static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
     }
 }
 
+static void emit_now_playing(tdbussplayPlayback *playback_iface,
+                             struct streamer_data *data)
+{
+    if(playback_iface == NULL)
+        return;
+
+    GVariant *meta_data = tag_list_to_g_variant(data->current_stream_tags);
+
+    tdbus_splay_playback_emit_now_playing(playback_iface,
+                                          data->current_stream.id,
+                                          data->current_stream.url,
+                                          urlfifo_is_full(), meta_data);
+}
+
+static void handle_stream_state_change(GstBus *bus, GstMessage *message,
+                                       gpointer user_data)
+{
+    struct streamer_data *data = user_data;
+
+    if(GST_MESSAGE_SRC(message) != GST_OBJECT(data->pipeline))
+        return;
+
+    GstState state, pending;
+    gst_message_parse_state_changed(message, NULL, &state, &pending);
+
+    /* we are currently not interested in transients */
+    if(pending != GST_STATE_VOID_PENDING)
+        return;
+
+    tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
+
+    switch(state)
+    {
+      case GST_STATE_READY:
+      case GST_STATE_NULL:
+        if(dbus_playback_iface != NULL)
+            tdbus_splay_playback_emit_stopped(dbus_playback_iface);
+        break;
+
+      case GST_STATE_PAUSED:
+        if(dbus_playback_iface != NULL)
+            tdbus_splay_playback_emit_paused(dbus_playback_iface);
+        break;
+
+      case GST_STATE_PLAYING:
+        emit_now_playing(dbus_playback_iface, data);
+        break;
+
+      case GST_STATE_VOID_PENDING:
+        break;
+    }
+}
+
 static void start_of_new_stream(GstElement *elem, gpointer user_data)
 {
     struct streamer_data *data = user_data;
@@ -205,12 +258,14 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
     data->queued_stream_tags = NULL;
     data->tags_are_for_queued_stream = false;
 
-    GVariant *meta_data = tag_list_to_g_variant(data->current_stream_tags);
+    GstState state;
+    if(!get_stream_state(data->pipeline, &state, "New stream"))
+        return;
 
-    tdbus_splay_playback_emit_now_playing(dbus_get_playback_iface(),
-                                          data->current_stream.id,
-                                          data->current_stream.url,
-                                          urlfifo_is_full(), meta_data);
+    if(state != GST_STATE_PLAYING)
+        return;
+
+    emit_now_playing(dbus_get_playback_iface(), data);
 }
 
 static struct streamer_data streamer_data;
@@ -239,6 +294,8 @@ int streamer_setup(GMainLoop *loop)
                      G_CALLBACK(handle_end_of_stream), &streamer_data);
     g_signal_connect(bus, "message::tag",
                      G_CALLBACK(handle_tag), &streamer_data);
+    g_signal_connect(bus, "message::state-changed",
+                     G_CALLBACK(handle_stream_state_change), &streamer_data);
     gst_object_unref(bus);
 
     g_main_loop_ref(loop);
