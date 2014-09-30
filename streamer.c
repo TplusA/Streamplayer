@@ -460,6 +460,14 @@ void streamer_stop(void)
     invalidate_current_stream(&streamer_data);
 }
 
+/*!
+ * \bug Call it a bug in or a feature of GStreamer playbin, but the following
+ *     is anyway inconvenient: pausing an internet stream for a long time
+ *     causes skipping to the next stream in the FIFO when trying to resume.
+ *     There is probably some buffer overflow and connection timeout involved,
+ *     but playbin won't tell us. It is therefore not easy to determine if we
+ *     should reconnect or really take the next URL when asked to.
+ */
 void streamer_pause(void)
 {
     msg_info("Pausing as requested");
