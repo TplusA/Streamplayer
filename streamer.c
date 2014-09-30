@@ -82,7 +82,8 @@ static bool try_queue_next_stream(GstElement *pipeline,
     msg_info("Queuing next stream: \"%s\"", data->current_stream.url);
 
     data->tags_are_for_queued_stream =
-        (queue_mode == QUEUEMODE_JUST_UPDATE_URI || QUEUEMODE_START_PLAYING);
+        (queue_mode == QUEUEMODE_JUST_UPDATE_URI ||
+         queue_mode == QUEUEMODE_START_PLAYING);
 
     if(queue_mode == QUEUEMODE_FORCE_SKIP)
         set_stream_state(pipeline, GST_STATE_READY, "Force skip");
