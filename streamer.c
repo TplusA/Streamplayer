@@ -41,6 +41,36 @@ static void invalidate_current_stream(struct streamer_data *data)
     invalidate_tag_list(&data->queued_stream_tags);
 }
 
+static bool get_stream_state(GstElement *pipeline, GstState *state,
+                             const char *context)
+{
+    GstStateChangeReturn ret = gst_element_get_state(pipeline, state, NULL, 0);
+
+    if(ret != GST_STATE_CHANGE_SUCCESS)
+    {
+        msg_error(ENOSYS, LOG_ERR,
+                  "%s: Unexpected gst_element_get_state() return code %d",
+                  context, ret);
+        return false;
+    }
+
+    return true;
+}
+
+static void set_stream_state(GstElement *pipeline, GstState next_state,
+                             const char *context)
+{
+    GstStateChangeReturn ret = gst_element_set_state(pipeline, next_state);
+
+    if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
+    {
+        msg_error(ENOSYS, LOG_ERR,
+                  "%s: unhandled gst_element_set_state() return code %d",
+                  context, ret);
+        return;
+    }
+}
+
 static bool try_queue_next_stream(GstElement *pipeline,
                                   struct streamer_data *data,
                                   enum queue_mode queue_mode,
@@ -55,25 +85,14 @@ static bool try_queue_next_stream(GstElement *pipeline,
         (queue_mode == QUEUEMODE_JUST_UPDATE_URI || QUEUEMODE_START_PLAYING);
 
     if(queue_mode == QUEUEMODE_FORCE_SKIP)
-    {
-        GstStateChangeReturn ret = gst_element_set_state(pipeline,
-                                                         GST_STATE_READY);
-        if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
-            msg_error(ENOSYS, LOG_ERR,
-                      "Force skip: unhandled gst_element_set_state() "
-                      "return code %d", ret);
-    }
+        set_stream_state(pipeline, GST_STATE_READY, "Force skip");
 
     g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
 
     if(queue_mode == QUEUEMODE_START_PLAYING ||
        queue_mode == QUEUEMODE_FORCE_SKIP)
     {
-        GstStateChangeReturn ret = gst_element_set_state(pipeline, next_state);
-        if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
-            msg_error(ENOSYS, LOG_ERR,
-                      "Play queued: unhandled gst_element_set_state() "
-                      "return code %d", ret);
+        set_stream_state(pipeline, next_state, "Play queued");
     }
 
     return true;
@@ -91,14 +110,8 @@ static void handle_end_of_stream(GstBus *bus, GstMessage *message,
     msg_info("Finished playing all streams");
 
     struct streamer_data *data = user_data;
-    GstStateChangeReturn ret = gst_element_set_state(data->pipeline,
-                                                     GST_STATE_READY);
 
-    if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
-        msg_error(ENOSYS, LOG_ERR,
-                  "EOS: unhandled gst_element_set_state() return code %d",
-                  ret);
-
+    set_stream_state(data->pipeline, GST_STATE_READY, "EOS");
     invalidate_current_stream(data);
 }
 
@@ -230,7 +243,7 @@ int streamer_setup(GMainLoop *loop)
 
     g_main_loop_ref(loop);
 
-    gst_element_set_state(streamer_data.pipeline, GST_STATE_READY);
+    set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Setup");
     invalidate_current_stream(&streamer_data);
 
     return 0;
@@ -243,7 +256,7 @@ void streamer_shutdown(GMainLoop *loop)
 
     g_main_loop_unref(loop);
 
-    gst_element_set_state(streamer_data.pipeline, GST_STATE_NULL);
+    set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "Shutdown");
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
     assert(bus != NULL);
@@ -259,15 +272,8 @@ void streamer_shutdown(GMainLoop *loop)
 void streamer_start(void)
 {
     GstState state;
-    GstStateChangeReturn ret =
-        gst_element_get_state(streamer_data.pipeline, &state, NULL, 0);
-
-    if(ret != GST_STATE_CHANGE_SUCCESS)
-    {
-        msg_error(ENOSYS, LOG_ERR,
-                  "Start: Unexpected gst_element_get_state() return code %d", ret);
+    if(!get_stream_state(streamer_data.pipeline, &state, "Start"))
         return;
-    }
 
     switch(state)
     {
@@ -284,13 +290,7 @@ void streamer_start(void)
         break;
 
       case GST_STATE_PAUSED:
-        ret = gst_element_set_state(streamer_data.pipeline, GST_STATE_PLAYING);
-
-        if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
-            msg_error(ENOSYS, LOG_ERR,
-                      "Start: unhandled gst_element_set_state() return code %d",
-                      ret);
-
+        set_stream_state(streamer_data.pipeline, GST_STATE_PLAYING, "Start");
         break;
 
       case GST_STATE_NULL:
@@ -305,7 +305,7 @@ void streamer_stop(void)
 {
     msg_info("Stopping as requested");
     assert(streamer_data.pipeline != NULL);
-    gst_element_set_state(streamer_data.pipeline, GST_STATE_READY);
+    set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Stop");
     invalidate_current_stream(&streamer_data);
 }
 
@@ -315,15 +315,8 @@ void streamer_pause(void)
     assert(streamer_data.pipeline != NULL);
 
     GstState state;
-    GstStateChangeReturn ret =
-        gst_element_get_state(streamer_data.pipeline, &state, NULL, 0);
-
-    if(ret != GST_STATE_CHANGE_SUCCESS)
-    {
-        msg_error(ENOSYS, LOG_ERR,
-                  "Start: Unexpected gst_element_get_state() return code %d", ret);
+    if(!get_stream_state(streamer_data.pipeline, &state, "Pause"))
         return;
-    }
 
     switch(state)
     {
@@ -340,13 +333,7 @@ void streamer_pause(void)
         break;
 
       case GST_STATE_PLAYING:
-        ret = gst_element_set_state(streamer_data.pipeline, GST_STATE_PAUSED);
-
-        if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
-            msg_error(ENOSYS, LOG_ERR,
-                      "Pause: unhandled gst_element_set_state() return code %d",
-                      ret);
-
+        set_stream_state(streamer_data.pipeline, GST_STATE_PAUSED, "Pause");
         break;
 
       case GST_STATE_NULL:
@@ -363,15 +350,8 @@ void streamer_next(void)
     assert(streamer_data.pipeline != NULL);
 
     GstState state;
-    GstStateChangeReturn ret =
-        gst_element_get_state(streamer_data.pipeline, &state, NULL, 0);
-
-    if(ret != GST_STATE_CHANGE_SUCCESS)
-    {
-        msg_error(ENOSYS, LOG_ERR,
-                  "Next: Unexpected gst_element_get_state() return code %d", ret);
+    if(!get_stream_state(streamer_data.pipeline, &state, "Next"))
         return;
-    }
 
     if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
                               QUEUEMODE_FORCE_SKIP, state))
