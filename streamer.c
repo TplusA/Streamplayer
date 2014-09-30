@@ -15,6 +15,12 @@ enum queue_mode
     QUEUEMODE_FORCE_SKIP,
 };
 
+struct time_data
+{
+    int64_t position_s;
+    int64_t duration_s;
+};
+
 struct streamer_data
 {
     GstElement *pipeline;
@@ -23,6 +29,8 @@ struct streamer_data
     bool tags_are_for_queued_stream;
     GstTagList *current_stream_tags;
     GstTagList *queued_stream_tags;
+
+    struct time_data previous_time;
 };
 
 static void invalidate_tag_list(GstTagList **list)
@@ -34,11 +42,18 @@ static void invalidate_tag_list(GstTagList **list)
     *list = NULL;
 }
 
+static void invalidate_position_information(struct time_data *data)
+{
+    data->position_s = INT64_MAX;
+    data->duration_s = INT64_MAX;
+}
+
 static void invalidate_current_stream(struct streamer_data *data)
 {
     data->current_stream.url[0] = '\0';
     invalidate_tag_list(&data->current_stream_tags);
     invalidate_tag_list(&data->queued_stream_tags);
+    invalidate_position_information(&data->previous_time);
 }
 
 static bool get_stream_state(GstElement *pipeline, GstState *state,
@@ -86,7 +101,10 @@ static bool try_queue_next_stream(GstElement *pipeline,
          queue_mode == QUEUEMODE_START_PLAYING);
 
     if(queue_mode == QUEUEMODE_FORCE_SKIP)
+    {
+        invalidate_position_information(&data->previous_time);
         set_stream_state(pipeline, GST_STATE_READY, "Force skip");
+    }
 
     g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
 
@@ -269,6 +287,79 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
     emit_now_playing(dbus_get_playback_iface(), data);
 }
 
+static void query_seconds(gboolean (*query)(GstElement *, GstFormat *, gint64 *),
+                          GstElement *element, int64_t *seconds)
+{
+    *seconds = -1;
+
+    gint64 t_ns;
+    GstFormat format = GST_FORMAT_TIME;
+
+    if(!query(element, &format, &t_ns))
+        return;
+
+    if(format != GST_FORMAT_TIME)
+    {
+        msg_error(ENOSYS, LOG_ERR,
+                  "Query returned unexpected time format %d", format);
+        return;
+    }
+
+    if(t_ns < 0)
+        return;
+
+    /*
+     * Rounding: simple cut to whole seconds, no arithmetic rounding.
+     */
+    *seconds = t_ns / (1000LL * 1000LL * 1000LL);
+}
+
+/*!
+ * \bug There is a bug in GStreamer that leads to the wrong position being
+ *     displayed in pause mode for internet streams. How to trigger: play some
+ *     URL, then pause; skip to next URL; the position queried from the playbin
+ *     pipeline is still the paused time, but should be 0.
+ */
+static gboolean report_progress(gpointer user_data)
+{
+    struct streamer_data *data = user_data;
+
+    GstState state;
+    if(!get_stream_state(data->pipeline, &state, "Progress"))
+        return TRUE;
+
+    struct time_data new_time;
+
+    if(state == GST_STATE_PLAYING || state == GST_STATE_PAUSED)
+    {
+        query_seconds(gst_element_query_position, data->pipeline,
+                      &new_time.position_s);
+        query_seconds(gst_element_query_duration, data->pipeline,
+                      &new_time.duration_s);
+    }
+    else
+    {
+        invalidate_position_information(&new_time);
+    }
+
+    if(new_time.position_s == data->previous_time.position_s &&
+       new_time.duration_s == data->previous_time.duration_s)
+        return TRUE;
+
+    data->previous_time = new_time;
+
+    tdbussplayPlayback *playback_iface = dbus_get_playback_iface();
+
+    if(playback_iface == NULL)
+        return TRUE;
+
+    tdbus_splay_playback_emit_position_changed(playback_iface,
+                                               new_time.position_s, "s",
+                                               new_time.duration_s, "s");
+
+    return TRUE;
+}
+
 static struct streamer_data streamer_data;
 
 int streamer_setup(GMainLoop *loop)
@@ -303,6 +394,8 @@ int streamer_setup(GMainLoop *loop)
 
     set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Setup");
     invalidate_current_stream(&streamer_data);
+
+    g_timeout_add(50, report_progress, &streamer_data);
 
     return 0;
 }
