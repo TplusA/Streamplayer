@@ -1,0 +1,21 @@
+Source: streamplayer
+Maintainer: Robert Tiemann <r.tiemann@ta-hifi.de>
+Section: sound
+Priority: optional
+Build-Depends: debhelper
+Standards-Version: 3.9.6
+Homepage: http://www.ta-hifi.de/
+
+Package: streamplayer
+Architecture: @DEBIAN_ARCHITECTURE_NAME@
+Recommends: dcpd, dcpspi, drcpd
+Depends: dbus, libc6, libgstreamer0.10, libgstreamer-plugins-base0.10, libgstreamer-plugins-bad0.10
+Description: T+A stream player
+ This stream player attempts to play any audio stream thrown at it. It plays
+ internet streams and files in various formats. Based on GStreamer, this player
+ is supports any format that GStreamer supports.
+ .
+ D-Bus is used to send basic audio playing instructions to the daemon---which
+ source it should play, fast winding, stop, pause. Meta data about the played
+ stream (e.g., ID3 tags) are sent to D-Bus so that other programs running in
+ the system can make sense of them.
