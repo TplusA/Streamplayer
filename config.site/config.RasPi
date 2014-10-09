@@ -1,0 +1,18 @@
+# vi:syntax=sh
+CFLAGS="-std=c11 -pipe -g -O2 -mcpu=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard -fstrict-aliasing"
+CWARNINGS="-Wall -Waggregate-return -Wclobbered -Wsign-compare -Wuninitialized -Wunused-but-set-parameter -Wunused-function -Wundef -Wshadow -Winline -Wpointer-arith -Wfloat-equal -Wwrite-strings -Wstrict-aliasing -Wbad-function-cast -Wnested-externs -Wmissing-prototypes -Wstrict-prototypes -Wdouble-promotion"
+CRELAXEDWARNINGS="${CWARNINGS} -Wno-write-strings -Wno-unused-local-typedefs"
+LDFLAGS="-L${TOOLCHAIN_DIR}/arm-linux-gnueabihf/libc/usr/lib/arm-linux-gnueabihf -L${SYSROOT_DIR}/usr/lib/arm-linux-gnueabihf"
+LIBS="-lpcre -lz -lselinux -lffi -llzma"
+
+PKG_CONFIG='/usr/bin/pkg-config'
+export PKG_CONFIG_SYSROOT_DIR="${SYSROOT_DIR}"
+export PKG_CONFIG_PATH="${SYSROOT_DIR}/usr/share/pkgconfig:${SYSROOT_DIR}/usr/lib/arm-linux-gnueabihf/pkgconfig"
+
+GDBUS_CODEGEN="PYTHONPATH=${SYSROOT_DIR}/usr/lib/arm-linux-gnueabihf/gdbus-2.0 ${SYSROOT_DIR}/usr/bin/gdbus-codegen"
+
+DEBIAN_SYSROOT_DIR="${SYSROOT_DIR}"
+DEBIAN_SYSROOT_LIBPATH="${SYSROOT_DIR}/usr/lib/arm-linux-gnueabihf:${SYSROOT_DIR}/lib/arm-linux-gnueabihf"
+
+ac_cv_func_malloc_0_nonnull=yes
+ac_cv_func_realloc_0_nonnull=yes
