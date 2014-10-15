@@ -10,7 +10,7 @@ AM_CPPFLAGS += -I$(top_srcdir)
 
 LIBS += $(CUTTER_LIBS)
 
-noinst_LTLIBRARIES = test_urlfifo.la
+check_LTLIBRARIES = test_urlfifo.la
 
 test_urlfifo_la_SOURCES = test_urlfifo.c
 
