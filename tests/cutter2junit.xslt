@@ -35,14 +35,7 @@
             </xsl:attribute>
 
             <xsl:attribute name="classname">
-                <xsl:choose>
-                    <xsl:when test="substring(test-case/name, string-length(test-case/name) - 5) = '_tests'">
-                        <xsl:value-of select="test-case/name"/>
-                    </xsl:when>
-                    <xsl:otherwise>
-                        <xsl:value-of select="concat(substring-before(test-case/name, '_tests'), '_tests')"/>
-                    </xsl:otherwise>
-                </xsl:choose>
+                <xsl:value-of select="test-case/name"/>
             </xsl:attribute>
 
             <xsl:attribute name="time">
