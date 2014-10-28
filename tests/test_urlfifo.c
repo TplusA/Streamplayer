@@ -452,7 +452,7 @@ void test_push_pop_chase(void)
 
     struct urlfifo_item item;
 
-    for(int i = 0; i < num_of_iterations; ++i)
+    for(unsigned int i = 0; i < num_of_iterations; ++i)
     {
         cut_assert_equal_size(3, urlfifo_push_item(i + id_base + 2, default_url,
                                                    NULL, NULL, SIZE_MAX,
