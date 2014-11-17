@@ -23,4 +23,10 @@ test_urlfifo_la_CFLAGS = $(AM_CFLAGS)
 CLEANFILES = test_report.xml test_report_junit.xml
 
 EXTRA_DIST = cutter2junit.xslt
+
+check-local: check-TESTS
+	@if $(GREP) -w cutter $(TEST_LOGS); then \
+	    echo "Unit tests failed (check log)"; \
+	    exit 1; \
+	fi
 endif
