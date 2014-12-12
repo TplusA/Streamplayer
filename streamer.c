@@ -2,6 +2,7 @@
 #include <config.h>
 #endif /* HAVE_CONFIG_H */
 
+#include <stdio.h>
 #include <errno.h>
 #include <assert.h>
 
@@ -291,12 +292,20 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
     emit_now_playing(dbus_get_playback_iface(), data);
 }
 
-static void query_seconds(gboolean (*query)(GstElement *, GstFormat *, gint64 *),
+static void query_seconds(gboolean (*query)(GstElement *,
+#if GST_VERSION_MAJOR < 1
+                                            GstFormat *,
+#else /* v1.0 or higher */
+                                            GstFormat,
+#endif /* GST_VERSION_MAJOR */
+                                            gint64 *),
                           GstElement *element, int64_t *seconds)
 {
     *seconds = -1;
 
     gint64 t_ns;
+
+#if GST_VERSION_MAJOR < 1
     GstFormat format = GST_FORMAT_TIME;
 
     if(!query(element, &format, &t_ns))
@@ -308,6 +317,10 @@ static void query_seconds(gboolean (*query)(GstElement *, GstFormat *, gint64 *)
                   "Query returned unexpected time format %d", format);
         return;
     }
+#else /* v1.0 or higher */
+    if(!query(element, GST_FORMAT_TIME, &t_ns))
+        return;
+#endif /* GST_VERSION_MAJOR */
 
     if(t_ns < 0)
         return;
