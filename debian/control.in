@@ -9,7 +9,7 @@ Homepage: http://www.ta-hifi.de/
 Package: streamplayer
 Architecture: @DEBIAN_ARCHITECTURE_NAME@
 Recommends: dcpd, dcpspi, drcpd
-Depends: dbus, libc6, libgstreamer0.10-0, libgstreamer-plugins-base0.10-0, libgstreamer-plugins-bad0.10-0
+Depends: dbus, libc6, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0, libgstreamer-plugins-bad1.0-0
 Description: T+A stream player
  This stream player attempts to play any audio stream thrown at it. It plays
  internet streams and files in various formats. Based on GStreamer, this player
