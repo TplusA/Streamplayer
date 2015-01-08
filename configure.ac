@@ -63,5 +63,6 @@ AM_CONDITIONAL([CAN_BUILD_DEBIAN_PACKAGE], [test "x$ac_cv_prog_DPKG_BUILDPACKAGE
 
 AC_CONFIG_FILES([Makefile tests/Makefile Doxyfile])
 AC_CONFIG_FILES([debian/control])
+AC_CONFIG_FILES([dist/de.tahifi.Streamplayer.service])
 AC_CONFIG_FILES([tests/run_test.sh], [chmod +x tests/run_test.sh])
 AC_OUTPUT

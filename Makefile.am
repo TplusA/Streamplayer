@@ -8,6 +8,9 @@ html_DATA = README.html
 
 EXTRA_DIST = README.md
 
+dbusservicedir = $(datadir)/dbus-1/services
+dbusservice_DATA = dist/de.tahifi.Streamplayer.service
+
 CLEANFILES = README.html
 
 streamplayer_SOURCES = \
