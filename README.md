@@ -1,5 +1,19 @@
 # Streamplayer daemon
 
+## Copyright and contact
+
+T+A Streamplayer is released under the terms of the GNU General Public License
+version 3 (GPLv3). See file <tt>COPYING</tt> for licensing terms.
+
+Contact:
+
+    T+A elektroakustik GmbH & Co. KG
+    Planckstrasse 11
+    32052 Herford
+    Germany
+
+## Short description
+
 The _streamplayer_ is a generic media player with only the most elementary
 capabilities and control features. It implements a short queue to enable
 gapless playback, status feedback is given as _D-Bus_ signals.
