@@ -80,19 +80,24 @@ static void usage(const char *program_name)
 static int process_command_line(int argc, char *argv[],
                                 struct parameters *parameters)
 {
-    parameters->run_in_foreground = false;
-
-    for(int i = 1; i < argc; ++i)
+    GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
+    GOptionEntry entries[] =
     {
-        if(strcmp(argv[i], "--help") == 0)
-            return 1;
-        else if(strcmp(argv[i], "--fg") == 0)
-            parameters->run_in_foreground = true;
-        else
-        {
-            fprintf(stderr, "Unknown option \"%s\". Please try --help.\n", argv[i]);
-            return -1;
-        }
+        { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
+          "Run in foreground, don't run as daemon.", NULL },
+        { NULL }
+    };
+
+    g_option_context_add_main_entries(ctx, entries, NULL);
+    g_option_context_add_group(ctx, gst_init_get_option_group());
+
+    GError *err = NULL;
+
+    if(!g_option_context_parse(ctx, &argc, &argv, &err))
+    {
+        msg_error(0, LOG_EMERG, "%s", err->message);
+        g_error_free(err);
+        return -1;
     }
 
     return 0;
