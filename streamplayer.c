@@ -43,6 +43,7 @@ globals;
 struct parameters
 {
     bool run_in_foreground;
+    bool connect_to_session_dbus;
 };
 
 /*!
@@ -80,11 +81,17 @@ static void usage(const char *program_name)
 static int process_command_line(int argc, char *argv[],
                                 struct parameters *parameters)
 {
+    parameters->run_in_foreground = false;
+    parameters->connect_to_session_dbus = false;
+
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
     GOptionEntry entries[] =
     {
         { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
           "Run in foreground, don't run as daemon.", NULL },
+        { "session-dbus", 's', 0, G_OPTION_ARG_NONE,
+            &parameters->connect_to_session_dbus,
+          "Connect to session D-Bus instead of system D-Bus.", NULL },
         { NULL }
     };
 
@@ -142,7 +149,7 @@ int main(int argc, char *argv[])
     if(streamer_setup(globals.loop) < 0)
         return EXIT_FAILURE;
 
-    if(dbus_setup(globals.loop, true) < 0)
+    if(dbus_setup(globals.loop, parameters.connect_to_session_dbus) < 0)
     {
         streamer_shutdown(globals.loop);
         return EXIT_FAILURE;
