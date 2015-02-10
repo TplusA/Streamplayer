@@ -1,4 +1,3 @@
 [D-BUS Service]
 Name=de.tahifi.Streamplayer
 Exec=@bindir@/streamplayer
-User=strbo-audio
