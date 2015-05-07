@@ -1,0 +1,11 @@
+# vi:syntax=sh
+CFLAGS="-std=c11 -fstrict-aliasing $CFLAGS"
+
+CWARNINGS="-Wall -Waggregate-return -Wclobbered -Wsign-compare -Wuninitialized -Wunused-but-set-parameter -Wunused-function -Wundef -Wshadow -Winline -Wpointer-arith -Wfloat-equal -Wwrite-strings -Wstrict-aliasing -Wbad-function-cast -Wnested-externs -Wmissing-prototypes -Wstrict-prototypes -Wdouble-promotion"
+CRELAXEDWARNINGS="${CWARNINGS} -Wno-write-strings -Wno-unused-local-typedefs -Wno-bad-function-cast"
+
+if test "x$OECORE_TARGET_SYSROOT" != x
+then
+    GDBUS_CODEGEN="PYTHONPATH=${OECORE_TARGET_SYSROOT}/usr/lib/python2.7 ${OECORE_TARGET_SYSROOT}/usr/bin/gdbus-codegen"
+    export GDBUS_CODEGEN
+fi
