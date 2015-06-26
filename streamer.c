@@ -493,6 +493,7 @@ void streamer_stop(void)
     assert(streamer_data.pipeline != NULL);
     set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Stop");
     invalidate_current_stream(&streamer_data);
+    urlfifo_clear(0);
 }
 
 /*!
