@@ -33,6 +33,7 @@
 #include "streamer.h"
 #include "dbus_iface.h"
 #include "messages.h"
+#include "versioninfo.h"
 
 static struct
 {
@@ -45,6 +46,23 @@ struct parameters
     bool run_in_foreground;
     bool connect_to_system_dbus;
 };
+
+static void show_version_info(void)
+{
+    printf("%s\n"
+           "Revision %s%s\n"
+           "         %s+%d, %s\n",
+           PACKAGE_STRING,
+           VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tained)" : "",
+           VCS_TAG, VCS_TICK, VCS_DATE);
+}
+
+static void log_version_info(void)
+{
+    msg_info("Rev %s%s, %s+%d, %s",
+             VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tained)" : "",
+             VCS_TAG, VCS_TICK, VCS_DATE);
+}
 
 /*!
  * Set up logging, daemonize.
@@ -65,6 +83,8 @@ static int setup(const struct parameters *parameters)
         }
     }
 
+    log_version_info();
+
     return 0;
 }
 
@@ -74,6 +94,7 @@ static void usage(const char *program_name)
            "\n"
            "Options:\n"
            "  --help         Show this help.\n"
+           "  --version      Print version information to stdout.\n"
            "  --fg           Run in foreground, don't run as daemon.\n",
            program_name);
 }
@@ -84,11 +105,15 @@ static int process_command_line(int argc, char *argv[],
     parameters->run_in_foreground = false;
     parameters->connect_to_system_dbus = false;
 
+    bool show_version = false;
+
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
     GOptionEntry entries[] =
     {
         { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
           "Run in foreground, don't run as daemon.", NULL },
+        { "version", 'V', 0, G_OPTION_ARG_NONE, &show_version,
+          "Print version information to stdout.", NULL },
         { "system-dbus", 's', 0, G_OPTION_ARG_NONE,
             &parameters->connect_to_system_dbus,
           "Connect to system D-Bus instead of session D-Bus.", NULL },
@@ -106,6 +131,9 @@ static int process_command_line(int argc, char *argv[],
         g_error_free(err);
         return -1;
     }
+
+    if(show_version)
+        return 2;
 
     return 0;
 }
@@ -133,6 +161,11 @@ int main(int argc, char *argv[])
     else if(ret == 1)
     {
         usage(argv[0]);
+        return EXIT_SUCCESS;
+    }
+    else if(ret == 2)
+    {
+        show_version_info();
         return EXIT_SUCCESS;
     }
 

@@ -45,6 +45,11 @@ streamplayer_dbus.stamp: dbus_interfaces/de_tahifi_streamplayer.xml
 	$(abs_srcdir)/dbus_interfaces/extract_documentation.py -i $< -o de_tahifi_streamplayer.md -H de_tahifi_streamplayer.h -c tdbus_splay -s de.tahifi.Streamplayer. -n "$(PACKAGE_NAME)"
 	touch $@
 
+BUILT_SOURCES += versioninfo.h
+
+versioninfo.h: versioninfo.cache
+	(cd $(top_srcdir) && $(AUTOREVISION) -t h -o $(abs_top_builddir)/versioninfo.cache >$(abs_top_builddir)/$@)
+
 .md.html:
 	$(MARKDOWN) $< >$@
 

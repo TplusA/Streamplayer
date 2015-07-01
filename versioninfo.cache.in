@@ -1,0 +1,18 @@
+#
+# Fallback file for builds outside of the Git repository.
+#
+
+VCS_TYPE="git"
+VCS_BASENAME="streamplayer"
+VCS_NUM=0
+VCS_DATE="1970-01-01T00:00:00+0000"
+VCS_BRANCH="invalid_branch"
+VCS_TAG="invalid_tag"
+VCS_TICK=0
+
+VCS_FULL_HASH="0000000000000000000000000000000000000000"
+VCS_SHORT_HASH="0000000"
+
+VCS_WC_MODIFIED=1
+
+# end
