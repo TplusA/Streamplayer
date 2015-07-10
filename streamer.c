@@ -203,7 +203,8 @@ static GVariant *tag_list_to_g_variant(const GstTagList *list)
     GVariantBuilder builder;
 
     g_variant_builder_init(&builder, G_VARIANT_TYPE("a(ss)"));
-    gst_tag_list_foreach(list, add_tuple_to_tags_variant_builder, &builder);
+    if(list != NULL)
+        gst_tag_list_foreach(list, add_tuple_to_tags_variant_builder, &builder);
 
     return g_variant_builder_end(&builder);
 }
