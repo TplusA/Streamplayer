@@ -310,35 +310,15 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
     emit_now_playing(dbus_get_playback_iface(), data);
 }
 
-static void query_seconds(gboolean (*query)(GstElement *,
-#if GST_VERSION_MAJOR < 1
-                                            GstFormat *,
-#else /* v1.0 or higher */
-                                            GstFormat,
-#endif /* GST_VERSION_MAJOR */
-                                            gint64 *),
+static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
                           GstElement *element, int64_t *seconds)
 {
     *seconds = -1;
 
     gint64 t_ns;
 
-#if GST_VERSION_MAJOR < 1
-    GstFormat format = GST_FORMAT_TIME;
-
-    if(!query(element, &format, &t_ns))
-        return;
-
-    if(format != GST_FORMAT_TIME)
-    {
-        msg_error(ENOSYS, LOG_ERR,
-                  "Query returned unexpected time format %d", format);
-        return;
-    }
-#else /* v1.0 or higher */
     if(!query(element, GST_FORMAT_TIME, &t_ns))
         return;
-#endif /* GST_VERSION_MAJOR */
 
     if(t_ns < 0)
         return;
@@ -399,11 +379,7 @@ static struct streamer_data streamer_data;
 
 int streamer_setup(GMainLoop *loop)
 {
-#if GST_VERSION_MAJOR < 1
-    streamer_data.pipeline = gst_element_factory_make("playbin2", "play");
-#else
     streamer_data.pipeline = gst_element_factory_make("playbin", "play");
-#endif
 
     if(streamer_data.pipeline == NULL)
         return -1;
