@@ -84,15 +84,29 @@ static bool get_stream_state(GstElement *pipeline, GstState *state,
 {
     GstStateChangeReturn ret = gst_element_get_state(pipeline, state, NULL, 0);
 
-    if(ret != GST_STATE_CHANGE_SUCCESS)
+    switch(ret)
     {
-        msg_error(ENOSYS, LOG_ERR,
-                  "%s: Unexpected gst_element_get_state() return code %d",
-                  context, ret);
-        return false;
+      case GST_STATE_CHANGE_SUCCESS:
+      case GST_STATE_CHANGE_ASYNC:
+        return true;
+
+      case GST_STATE_CHANGE_FAILURE:
+        msg_error(0, LOG_ERR,
+                  "%s: Failed changing state (gst_element_get_state())",
+                  context);
+        break;
+
+      case GST_STATE_CHANGE_NO_PREROLL:
+        msg_error(0, LOG_ERR,
+                  "%s: Failed prerolling (gst_element_get_state())",
+                  context);
+        break;
     }
 
-    return true;
+    msg_error(0, LOG_ERR,
+              "%s: gst_element_get_state() failed (%d)", context, ret);
+
+    return false;
 }
 
 static void set_stream_state(GstElement *pipeline, GstState next_state,
@@ -100,13 +114,27 @@ static void set_stream_state(GstElement *pipeline, GstState next_state,
 {
     GstStateChangeReturn ret = gst_element_set_state(pipeline, next_state);
 
-    if(ret != GST_STATE_CHANGE_SUCCESS && ret != GST_STATE_CHANGE_ASYNC)
+    switch(ret)
     {
-        msg_error(ENOSYS, LOG_ERR,
-                  "%s: unhandled gst_element_set_state() return code %d",
-                  context, ret);
+      case GST_STATE_CHANGE_SUCCESS:
+      case GST_STATE_CHANGE_ASYNC:
         return;
+
+      case GST_STATE_CHANGE_FAILURE:
+        msg_error(0, LOG_ERR,
+                  "%s: Failed changing state (gst_element_set_state())",
+                  context);
+        break;
+
+      case GST_STATE_CHANGE_NO_PREROLL:
+        msg_error(0, LOG_ERR,
+                  "%s: Failed prerolling (gst_element_set_state())",
+                  context);
+        break;
     }
+
+    msg_error(0, LOG_ERR,
+              "%s: gst_element_set_state() failed (%d)", context, ret);
 }
 
 static bool try_queue_next_stream(GstElement *pipeline,
