@@ -109,7 +109,7 @@ static bool get_stream_state(GstElement *pipeline, GstState *state,
     return false;
 }
 
-static void set_stream_state(GstElement *pipeline, GstState next_state,
+static bool set_stream_state(GstElement *pipeline, GstState next_state,
                              const char *context)
 {
     GstStateChangeReturn ret = gst_element_set_state(pipeline, next_state);
@@ -118,7 +118,7 @@ static void set_stream_state(GstElement *pipeline, GstState next_state,
     {
       case GST_STATE_CHANGE_SUCCESS:
       case GST_STATE_CHANGE_ASYNC:
-        return;
+        return true;
 
       case GST_STATE_CHANGE_FAILURE:
         msg_error(0, LOG_ERR,
@@ -135,43 +135,61 @@ static void set_stream_state(GstElement *pipeline, GstState next_state,
 
     msg_error(0, LOG_ERR,
               "%s: gst_element_set_state() failed (%d)", context, ret);
+
+    return false;
 }
 
-static bool try_queue_next_stream(GstElement *pipeline,
+static void try_queue_next_stream(GstElement *pipeline,
                                   struct streamer_data *data,
                                   enum queue_mode queue_mode,
-                                  GstState next_state)
+                                  GstState next_state,
+                                  const char *what)
 {
-    if(urlfifo_pop_item(&data->current_stream) < 0)
-        return false;
+    size_t tries = 0;
 
-    msg_info("Queuing next stream: \"%s\"", data->current_stream.url);
-
-    data->tags_are_for_queued_stream =
-        (queue_mode == QUEUEMODE_JUST_UPDATE_URI ||
-         queue_mode == QUEUEMODE_START_PLAYING);
-
-    if(queue_mode == QUEUEMODE_FORCE_SKIP)
+    while(urlfifo_pop_item(&data->current_stream) >= 0)
     {
-        invalidate_position_information(&data->previous_time);
-        set_stream_state(pipeline, GST_STATE_READY, "Force skip");
+        ++tries;
+
+        msg_info("Queuing stream due to %s request: \"%s\"",
+                 what, data->current_stream.url);
+
+        data->tags_are_for_queued_stream =
+            (queue_mode == QUEUEMODE_JUST_UPDATE_URI ||
+             queue_mode == QUEUEMODE_START_PLAYING);
+
+        if(queue_mode == QUEUEMODE_FORCE_SKIP)
+        {
+            invalidate_position_information(&data->previous_time);
+
+            if(set_stream_state(pipeline, GST_STATE_READY, "Force skip"))
+                return;
+
+            /* try again with next stream in queue */
+            continue;
+        }
+
+        g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
+
+        if(queue_mode == QUEUEMODE_START_PLAYING ||
+           queue_mode == QUEUEMODE_FORCE_SKIP)
+        {
+            if(set_stream_state(pipeline, next_state, "Play queued"))
+                return;
+        }
     }
 
-    g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
-
-    if(queue_mode == QUEUEMODE_START_PLAYING ||
-       queue_mode == QUEUEMODE_FORCE_SKIP)
-    {
-        set_stream_state(pipeline, next_state, "Play queued");
-    }
-
-    return true;
+    if(tries == 0)
+        msg_info("Got %s request, but URL FIFO is empty", what);
+    else
+        msg_info("Tried all URLs in FIFO, have no more streams to try");
 }
 
 static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 {
-    (void)try_queue_next_stream(elem, user_data,
-                                QUEUEMODE_JUST_UPDATE_URI, GST_STATE_NULL);
+    try_queue_next_stream(elem, user_data,
+                          QUEUEMODE_JUST_UPDATE_URI, GST_STATE_NULL,
+                          "need next stream");
 }
 
 static void handle_end_of_stream(GstBus *bus, GstMessage *message,
@@ -181,8 +199,8 @@ static void handle_end_of_stream(GstBus *bus, GstMessage *message,
 
     struct streamer_data *data = user_data;
 
-    set_stream_state(data->pipeline, GST_STATE_READY, "EOS");
-    invalidate_current_stream(data);
+    if(set_stream_state(data->pipeline, GST_STATE_READY, "EOS"))
+        invalidate_current_stream(data);
 }
 
 static void add_tuple_to_tags_variant_builder(const GstTagList *list,
@@ -370,7 +388,12 @@ static gboolean report_progress(gpointer user_data)
 
     GstState state;
     if(!get_stream_state(data->pipeline, &state, "Progress"))
+    {
+        if(set_stream_state(data->pipeline, GST_STATE_READY, "Progress"))
+            invalidate_current_stream(data);
+
         return TRUE;
+    }
 
     struct time_data new_time;
 
@@ -432,8 +455,8 @@ int streamer_setup(GMainLoop *loop)
 
     g_main_loop_ref(loop);
 
-    set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Setup");
-    invalidate_current_stream(&streamer_data);
+    if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Setup"))
+        invalidate_current_stream(&streamer_data);
 
     g_timeout_add(50, report_progress, &streamer_data);
 
@@ -472,12 +495,9 @@ void streamer_start(void)
         break;
 
       case GST_STATE_READY:
-        if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                                  QUEUEMODE_START_PLAYING, GST_STATE_PLAYING))
-        {
-            msg_info("Got playback request, but URL FIFO is empty");
-        }
-
+        try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                              QUEUEMODE_START_PLAYING, GST_STATE_PLAYING,
+                              "start playing");
         break;
 
       case GST_STATE_PAUSED:
@@ -496,9 +516,12 @@ void streamer_stop(void)
 {
     msg_info("Stopping as requested");
     assert(streamer_data.pipeline != NULL);
-    set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Stop");
-    invalidate_current_stream(&streamer_data);
-    urlfifo_clear(0);
+
+    if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Stop"))
+    {
+        invalidate_current_stream(&streamer_data);
+        urlfifo_clear(0);
+    }
 }
 
 /*!
@@ -524,12 +547,9 @@ void streamer_pause(void)
         return;
 
       case GST_STATE_READY:
-        if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                                  QUEUEMODE_START_PLAYING, GST_STATE_PAUSED))
-        {
-            msg_info("Got pause request, but URL FIFO is empty");
-        }
-
+        try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                              QUEUEMODE_START_PLAYING, GST_STATE_PAUSED,
+                              "stream pause");
         break;
 
       case GST_STATE_PLAYING:
@@ -553,7 +573,6 @@ void streamer_next(void)
     if(!get_stream_state(streamer_data.pipeline, &state, "Next"))
         return;
 
-    if(!try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                              QUEUEMODE_FORCE_SKIP, state))
-        msg_info("Cannot play next, URL FIFO is empty");
+    try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                          QUEUEMODE_FORCE_SKIP, state, "skip to next");
 }
