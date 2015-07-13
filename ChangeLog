@@ -1,3 +1,11 @@
+2015-07-13  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.0 released.
+
+	* Error handling and recovery improved in some situations.
+
+	* Show version information in log, add --version option.
+
 2015-06-29  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 0.9 released.
