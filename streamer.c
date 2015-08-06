@@ -21,6 +21,7 @@
 #endif /* HAVE_CONFIG_H */
 
 #include <stdio.h>
+#include <string.h>
 #include <errno.h>
 #include <assert.h>
 
@@ -357,6 +358,13 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
     emit_now_playing(dbus_get_playback_iface(), data);
 }
 
+static void setup_source_element(GstElement *playbin,
+                                 GstElement *source, gpointer user_data)
+{
+    if(strcmp(G_OBJECT_TYPE_NAME(source), "GstSoupHTTPSrc") == 0)
+        g_object_set(G_OBJECT(source), "blocksize", *(guint *)user_data, NULL);
+}
+
 static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
                           GstElement *element, int64_t *seconds)
 {
@@ -429,7 +437,7 @@ static gboolean report_progress(gpointer user_data)
 
 static struct streamer_data streamer_data;
 
-int streamer_setup(GMainLoop *loop)
+int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
 {
     streamer_data.pipeline = gst_element_factory_make("playbin", "play");
 
@@ -441,6 +449,10 @@ int streamer_setup(GMainLoop *loop)
 
     g_signal_connect(streamer_data.pipeline, "audio-changed",
                      G_CALLBACK(start_of_new_stream), &streamer_data);
+
+    g_signal_connect(streamer_data.pipeline, "source-setup",
+                     G_CALLBACK(setup_source_element),
+                     (guint *)soup_http_block_size);
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
     assert(bus != NULL);

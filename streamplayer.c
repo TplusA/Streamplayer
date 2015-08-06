@@ -179,7 +179,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    if(streamer_setup(globals.loop) < 0)
+    static const guint soup_http_block_size = 32U * 1024U;
+
+    if(streamer_setup(globals.loop, &soup_http_block_size) < 0)
         return EXIT_FAILURE;
 
     if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)

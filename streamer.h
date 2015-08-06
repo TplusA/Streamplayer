@@ -19,7 +19,7 @@
 #ifndef STREAMER_H
 #define STREAMER_H
 
-int streamer_setup(GMainLoop *loop);
+int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size);
 void streamer_shutdown(GMainLoop *loop);
 
 void streamer_start(void);
