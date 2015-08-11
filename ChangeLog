@@ -1,3 +1,16 @@
+2015-08-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.1 released.
+
+	* Increase chunk size for downloading network streams to avoid
+	  stuttering audio and high CPU consumption for high data rate
+	  streams.
+
+	  This is an optimization for our current target system. The overhead
+	  for individual network transfers is quite big there in terms of CPU
+	  consumption, so reading streams in small chunks lead to high CPU
+	  load and thus occasionally stuttering audio playback.
+
 2015-07-13  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.0 released.
