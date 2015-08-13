@@ -53,14 +53,14 @@ static void show_version_info(void)
            "Revision %s%s\n"
            "         %s+%d, %s\n",
            PACKAGE_STRING,
-           VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tained)" : "",
+           VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tainted)" : "",
            VCS_TAG, VCS_TICK, VCS_DATE);
 }
 
 static void log_version_info(void)
 {
     msg_info("Rev %s%s, %s+%d, %s",
-             VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tained)" : "",
+             VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tainted)" : "",
              VCS_TAG, VCS_TICK, VCS_DATE);
 }
 
