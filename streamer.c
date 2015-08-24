@@ -57,6 +57,21 @@ struct streamer_data
     struct time_data previous_time;
 };
 
+static void item_data_init(void **data)
+{
+    *data = NULL;
+}
+
+static void item_data_free(void **data)
+{
+}
+
+const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
+{
+    .data_init = item_data_init,
+    .data_free = item_data_free,
+};
+
 static void invalidate_tag_list(GstTagList **list)
 {
     if(*list == NULL)
@@ -156,7 +171,7 @@ static void try_queue_next_stream(GstElement *pipeline,
 {
     size_t tries = 0;
 
-    while(urlfifo_pop_item(&data->current_stream) >= 0)
+    while(urlfifo_pop_item(&data->current_stream, true) >= 0)
     {
         ++tries;
 

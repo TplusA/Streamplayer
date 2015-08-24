@@ -50,6 +50,9 @@ size_t urlfifo_clear(size_t keep_first_n)
 {
     urlfifo_lock();
 
+    for(size_t i = keep_first_n; i < fifo_data.num_of_items; ++i)
+        urlfifo_free_item(&fifo_data.items[i]);
+
     if(keep_first_n < fifo_data.num_of_items)
         fifo_data.num_of_items = keep_first_n;
 
@@ -62,7 +65,8 @@ size_t urlfifo_clear(size_t keep_first_n)
 
 static void init_item(struct urlfifo_item *item, uint16_t external_id,
                       const char *url, const struct streamtime *start,
-                      const struct streamtime *stop)
+                      const struct streamtime *stop,
+                      void *data, const struct urlfifo_item_data_ops *ops)
 {
     item->id = external_id;
 
@@ -76,6 +80,12 @@ static void init_item(struct urlfifo_item *item, uint16_t external_id,
 
     item->start_time = (start != NULL) ? *start : end_of_stream;
     item->end_time = (stop != NULL) ? *stop : end_of_stream;
+
+    item->data = data;
+    item->data_ops = ops;
+
+    if(item->data_ops != NULL)
+        item->data_ops->data_init(&item->data);
 }
 
 static inline size_t add_to_id(size_t id, size_t inc)
@@ -91,7 +101,8 @@ static inline bool urlfifo_unlocked_is_full(void)
 size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
-                         size_t keep_first_n, urlfifo_item_id_t *item_id)
+                         size_t keep_first_n, urlfifo_item_id_t *item_id,
+                         void *data, const struct urlfifo_item_data_ops *ops)
 {
     assert(url != NULL);
 
@@ -114,14 +125,14 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
     if(item_id != NULL)
         *item_id = id;
 
-    init_item(&fifo_data.items[id], external_id, url, start, stop);
+    init_item(&fifo_data.items[id], external_id, url, start, stop, data, ops);
 
     urlfifo_unlock();
 
     return retval;
 }
 
-ssize_t urlfifo_pop_item(struct urlfifo_item *dest)
+ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
 {
     assert(dest != NULL);
 
@@ -133,6 +144,9 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest)
         return -1;
     }
 
+    if(free_dest)
+        urlfifo_free_item(dest);
+
     memcpy(dest, &fifo_data.items[fifo_data.first_item], sizeof(*dest));
 
     fifo_data.first_item = add_to_id(fifo_data.first_item, 1);
@@ -143,6 +157,17 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest)
     urlfifo_unlock();
 
     return retval;
+}
+
+void urlfifo_free_item(struct urlfifo_item *item)
+{
+    assert(item != NULL);
+
+    if(item->data_ops != NULL)
+        item->data_ops->data_free(&item->data);
+
+    item->url[0] = '\0';
+    item->data_ops = NULL;
 }
 
 const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id)

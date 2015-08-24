@@ -91,8 +91,10 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 
     const size_t keep =
         (keep_first_n_entries < 0) ? SIZE_MAX : (size_t)keep_first_n_entries;
-    const bool failed = (urlfifo_push_item(stream_id, stream_url, NULL, NULL,
-                                           keep, NULL) == 0);
+    const bool failed =
+        (urlfifo_push_item(stream_id, stream_url, NULL, NULL,
+                           keep, NULL,
+                           NULL, &streamer_urlfifo_item_data_ops) == 0);
     tdbus_splay_urlfifo_complete_push(object, invocation, failed);
 
     msg_info("Have %zu FIFO entries", urlfifo_get_size());

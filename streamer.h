@@ -27,4 +27,10 @@ void streamer_stop(void);
 void streamer_pause(void);
 void streamer_next(void);
 
+/*
+ * Global structure that contains function pointers for operating on URL FIFO
+ * item data.
+ */
+extern const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops;
+
 #endif /* !STREAMER_H */

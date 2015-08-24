@@ -53,6 +53,12 @@
  */
 typedef size_t urlfifo_item_id_t;
 
+struct urlfifo_item_data_ops
+{
+    void (*const data_init)(void **data);
+    void (*const data_free)(void **data);
+};
+
 /*!
  * URL FIFO item data.
  */
@@ -62,6 +68,19 @@ struct urlfifo_item
     char url[512];
     struct streamtime start_time;
     struct streamtime end_time;
+
+    /*!
+     * Pointer to any extra data for this item.
+     *
+     * This is a \c void pointer to avoid strong coupling with GStreamer, GLib,
+     * or anything like that.
+     */
+    void *data;
+
+    /*!
+     * Operations on #urlfifo_item::data.
+     */
+    const struct urlfifo_item_data_ops *data_ops;
 };
 
 /*!
@@ -76,6 +95,9 @@ void urlfifo_unlock(void);
 
 /*!
  * Clear URL FIFO, keep number of item on top untouched.
+ *
+ * The #urlfifo_item_data_ops::data_free() function is called for each item
+ * removed from the FIFO.
  *
  * \param keep_first_n The number of items to keep untouched. If set to 0, then
  *     the whole FIFO will be cleared.
@@ -105,6 +127,8 @@ size_t urlfifo_clear(size_t keep_first_n);
  *     fails to insert a new item, then the memory pointed to remains
  *     unchanged. This parameter may be \c NULL in case the caller is not
  *     interested in the identifier.
+ * \param data Initial value of item data.
+ * \param ops Operations on data. May be \c NULL.
  *
  * \returns The number of items in the FIFO after inserting the new one, or 0
  *     in case the URL FIFO was full, even after considering \p keep_first_n.
@@ -114,19 +138,38 @@ size_t urlfifo_clear(size_t keep_first_n);
 size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
-                         size_t keep_first_n, urlfifo_item_id_t *item_id);
+                         size_t keep_first_n, urlfifo_item_id_t *item_id,
+                         void *data, const struct urlfifo_item_data_ops *ops);
 
 /*!
  * Remove first item in URL FIFO and return a copy in \p dest.
  *
+ * Note that the semantics of this function is that of a move operation. That
+ * is, the popped item remains valid, but the new owner is the caller of this
+ * function. Consequently, the #urlfifo_item_data_ops::data_free() function is
+ * not called for the item returned by this function. Use #urlfifo_free_item()
+ * or manually call your \c data_free() function to avoid resource leaks.
+ *
+ * The #urlfifo_item_data_ops::data_free() function is called for the
+ * destination item in case \p free_dest is \c true. Note that in this case,
+ * the object that \p dest points to must have been initialized before.
+ *
  * \param dest Where to write a copy of the item. This parameter may not be
  *     \c NULL. In case of error, the memory pointed to by \p dest remains
  *     untouched.
+ * \param free_dest If set to \c true, then call #urlfifo_free_item() for \p
+ *     dest iff the URL FIFO is not empty when this function is called (i.e.,
+ *     if the pop operation succeeds).
  *
  * \returns The number of items remaining in the FIFO after removing the new
  *     one, or -1 in case the URL FIFO was empty.
  */
-ssize_t urlfifo_pop_item(struct urlfifo_item *dest);
+ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest);
+
+/*!
+ * Free item data.
+ */
+void urlfifo_free_item(struct urlfifo_item *item);
 
 /*!
  * Retrieve item stored in URL FIFO.
