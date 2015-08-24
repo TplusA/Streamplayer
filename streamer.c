@@ -50,20 +50,27 @@ struct streamer_data
     GstElement *pipeline;
 
     struct urlfifo_item current_stream;
-    bool tags_are_for_queued_stream;
-    GstTagList *current_stream_tags;
-    GstTagList *queued_stream_tags;
-
     struct time_data previous_time;
 };
 
 static void item_data_init(void **data)
 {
+    *(GstTagList **)data = NULL;
     *data = NULL;
 }
 
 static void item_data_free(void **data)
 {
+    if(*data != NULL)
+    {
+        gst_tag_list_unref(*(GstTagList **)data);
+        *data = NULL;
+    }
+}
+
+static inline GstTagList **item_data_get(struct urlfifo_item *item)
+{
+    return (GstTagList **)&item->data;
 }
 
 const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
@@ -71,15 +78,6 @@ const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
     .data_init = item_data_init,
     .data_free = item_data_free,
 };
-
-static void invalidate_tag_list(GstTagList **list)
-{
-    if(*list == NULL)
-        return;
-
-    gst_tag_list_free(*list);
-    *list = NULL;
-}
 
 static void invalidate_position_information(struct time_data *data)
 {
@@ -89,9 +87,7 @@ static void invalidate_position_information(struct time_data *data)
 
 static void invalidate_current_stream(struct streamer_data *data)
 {
-    data->current_stream.url[0] = '\0';
-    invalidate_tag_list(&data->current_stream_tags);
-    invalidate_tag_list(&data->queued_stream_tags);
+    urlfifo_free_item(&data->current_stream);
     invalidate_position_information(&data->previous_time);
 }
 
@@ -177,10 +173,6 @@ static void try_queue_next_stream(GstElement *pipeline,
 
         msg_info("Queuing stream due to %s request: \"%s\"",
                  what, data->current_stream.url);
-
-        data->tags_are_for_queued_stream =
-            (queue_mode == QUEUEMODE_JUST_UPDATE_URI ||
-             queue_mode == QUEUEMODE_START_PLAYING);
 
         if(queue_mode == QUEUEMODE_FORCE_SKIP)
         {
@@ -285,34 +277,45 @@ static GVariant *tag_list_to_g_variant(const GstTagList *list)
     return g_variant_builder_end(&builder);
 }
 
+static GstTagList *update_tags_for_item(struct urlfifo_item *item,
+                                        GstTagList *tags)
+{
+    GstTagList **list = item_data_get(item);
+
+    if(*list != NULL)
+    {
+        GstTagList *merged =
+            gst_tag_list_merge(*list, tags, GST_TAG_MERGE_PREPEND);
+        gst_tag_list_unref(*list);
+        *list = merged;
+    }
+    else
+    {
+        *list = tags;
+        gst_tag_list_ref(*list);
+    }
+
+    return *list;
+}
+
 static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
 {
     GstTagList *tags = NULL;
     gst_message_parse_tag(message, &tags);
 
     struct streamer_data *data = user_data;
-    GstTagList **list = (data->tags_are_for_queued_stream
-                         ? &data->queued_stream_tags
-                         : &data->current_stream_tags);
 
-    if(*list != NULL)
-    {
-        GstTagList *merged =
-            gst_tag_list_merge(*list, tags, GST_TAG_MERGE_PREPEND);
-        gst_tag_list_free(tags);
-        gst_tag_list_free(*list);
-        *list = merged;
-    }
-    else
-        *list = tags;
+    GstTagList *list = update_tags_for_item(&data->current_stream, tags);
 
-    if(*list != NULL && !data->tags_are_for_queued_stream)
+    if(list != NULL)
     {
-        GVariant *meta_data = tag_list_to_g_variant(*list);
+        GVariant *meta_data = tag_list_to_g_variant(list);
 
         tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
                                                     meta_data);
     }
+
+    gst_tag_list_unref(tags);
 }
 
 static void emit_now_playing(tdbussplayPlayback *playback_iface,
@@ -321,7 +324,9 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     if(playback_iface == NULL)
         return;
 
-    GVariant *meta_data = tag_list_to_g_variant(data->current_stream_tags);
+    GstTagList **list = item_data_get(&data->current_stream);
+
+    GVariant *meta_data = tag_list_to_g_variant(*list);
 
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data->current_stream.id,
@@ -371,11 +376,6 @@ static void handle_stream_state_change(GstBus *bus, GstMessage *message,
 static void start_of_new_stream(GstElement *elem, gpointer user_data)
 {
     struct streamer_data *data = user_data;
-
-    invalidate_tag_list(&data->current_stream_tags);
-    data->current_stream_tags = data->queued_stream_tags;
-    data->queued_stream_tags = NULL;
-    data->tags_are_for_queued_stream = false;
 
     GstState state;
     if(!get_stream_state(data->pipeline, &state, "New stream", true))
@@ -468,6 +468,8 @@ static struct streamer_data streamer_data;
 
 int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
 {
+    item_data_init(&streamer_data.current_stream.data);
+
     streamer_data.pipeline = gst_element_factory_make("playbin", "play");
 
     if(streamer_data.pipeline == NULL)
