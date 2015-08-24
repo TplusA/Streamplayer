@@ -180,11 +180,17 @@ static void try_queue_next_stream(GstElement *pipeline,
 
         g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
 
-        if(queue_mode == QUEUEMODE_START_PLAYING ||
-           queue_mode == QUEUEMODE_FORCE_SKIP)
+        switch(queue_mode)
         {
+          case QUEUEMODE_START_PLAYING:
+          case QUEUEMODE_FORCE_SKIP:
             if(set_stream_state(pipeline, next_state, "Play queued"))
                 return;
+
+            break;
+
+          case QUEUEMODE_JUST_UPDATE_URI:
+            return;
         }
     }
 
