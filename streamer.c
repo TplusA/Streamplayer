@@ -81,8 +81,16 @@ static void invalidate_current_stream(struct streamer_data *data)
 }
 
 static bool get_stream_state(GstElement *pipeline, GstState *state,
-                             const char *context)
+                             const char *context, bool must_be_real_state)
 {
+    if(!must_be_real_state)
+    {
+        *state = GST_STATE_PENDING(pipeline);
+
+        if(*state != GST_STATE_VOID_PENDING)
+            return true;
+    }
+
     GstStateChangeReturn ret = gst_element_get_state(pipeline, state, NULL, 0);
 
     switch(ret)
@@ -349,7 +357,7 @@ static void start_of_new_stream(GstElement *elem, gpointer user_data)
     data->tags_are_for_queued_stream = false;
 
     GstState state;
-    if(!get_stream_state(data->pipeline, &state, "New stream"))
+    if(!get_stream_state(data->pipeline, &state, "New stream", true))
         return;
 
     if(state != GST_STATE_PLAYING)
@@ -395,7 +403,7 @@ static gboolean report_progress(gpointer user_data)
     struct streamer_data *data = user_data;
 
     GstState state;
-    if(!get_stream_state(data->pipeline, &state, "Progress"))
+    if(!get_stream_state(data->pipeline, &state, "Progress", true))
     {
         if(set_stream_state(data->pipeline, GST_STATE_READY, "Progress"))
             invalidate_current_stream(data);
@@ -498,7 +506,7 @@ void streamer_shutdown(GMainLoop *loop)
 void streamer_start(void)
 {
     GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Start"))
+    if(!get_stream_state(streamer_data.pipeline, &state, "Start", false))
         return;
 
     switch(state)
@@ -550,7 +558,7 @@ void streamer_pause(void)
     assert(streamer_data.pipeline != NULL);
 
     GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Pause"))
+    if(!get_stream_state(streamer_data.pipeline, &state, "Pause", true))
         return;
 
     switch(state)
@@ -582,7 +590,7 @@ void streamer_next(void)
     assert(streamer_data.pipeline != NULL);
 
     GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Next"))
+    if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
         return;
 
     try_queue_next_stream(streamer_data.pipeline, &streamer_data,
