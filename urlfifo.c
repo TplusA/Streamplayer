@@ -152,6 +152,30 @@ const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id)
     return &fifo_data.items[item_id];
 }
 
+urlfifo_item_id_t urlfifo_find_item_begin(void)
+{
+    return 0;
+}
+
+struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
+                                                   const char *url)
+{
+    assert(iter != NULL);
+    assert(url != NULL);
+
+    while(*iter < fifo_data.num_of_items)
+    {
+        struct urlfifo_item *const candidate = &fifo_data.items[*iter];
+
+        ++*iter;
+
+        if(strcmp(candidate->url, url) == 0)
+            return candidate;
+    }
+
+    return NULL;
+}
+
 size_t urlfifo_get_size(void)
 {
     urlfifo_lock();

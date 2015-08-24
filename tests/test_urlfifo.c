@@ -124,6 +124,42 @@ void test_push_pop_chase(void);
  */
 void test_urlfifo_is_full_interface(void);
 
+/*!\test
+ * Trying to find anything in an empty FIFO never returns an item.
+ */
+void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null(void);
+
+/*!\test
+ * Find the only matching item in a FIFO with a single entry.
+ */
+void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match(void);
+
+/*!\test
+ * Find the only matching item in a filled FIFO.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match(void);
+
+/*!\test
+ * Find the only matching item in a filled FIFO which is also the last item in
+ * the FIFO.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match(void);
+
+/*!\test
+ * Find multiple matching items in a filled FIFO, youngest first.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches(void);
+
+/*!\test
+ * Searching for an item can be restarted at any time.
+ */
+void test_urlfifo_find_item_by_url_can_be_restarted(void);
+
+/*!\test
+ * Search for the given URL in a filled FIFO returns no item.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing(void);
+
 /*!@}*/
 
 
@@ -516,4 +552,160 @@ void test_urlfifo_is_full_interface(void)
     (void)urlfifo_pop_item(&dummy);
 
     cut_assert_false(urlfifo_is_full());
+}
+
+void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null(void)
+{
+    const char *urls[] =
+    {
+        "http://awesome.stream.com:8080/",
+        "x",
+        "",
+    };
+
+    for(size_t i = 0; i < sizeof(urls) / sizeof(urls[0]); ++i)
+    {
+        urlfifo_item_id_t iter = urlfifo_find_item_begin();
+
+        cut_assert_null(urlfifo_find_next_item_by_url(&iter, urls[i]));
+    }
+}
+
+void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match(void)
+{
+    const char url[] = "http://find.me/";
+
+    cut_assert_equal_size(1, urlfifo_push_item(19, url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    urlfifo_item_id_t iter = urlfifo_find_item_begin();
+    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_not_null(item);
+    cut_assert_equal_string(url, item->url);
+
+    item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_null(item);
+}
+
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match(void)
+{
+    const char url[] = "http://find.me/";
+
+    cut_assert_equal_size(1, urlfifo_push_item(10, "first",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(19, url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(25, "third",
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    urlfifo_item_id_t iter = urlfifo_find_item_begin();
+    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_not_null(item);
+    cut_assert_equal_string(url, item->url);
+
+    item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_null(item);
+}
+
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match(void)
+{
+    const char url[] = "http://find.me/";
+
+    cut_assert_equal_size(1, urlfifo_push_item(10, "first",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(19, "second",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(25, url,
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    urlfifo_item_id_t iter = urlfifo_find_item_begin();
+    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_not_null(item);
+    cut_assert_equal_string(url, item->url);
+
+    item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_null(item);
+}
+
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches(void)
+{
+    const char url[] = "http://find.me/";
+
+    urlfifo_item_id_t expected_first_found_id;
+    urlfifo_item_id_t expected_second_found_id;
+
+    cut_assert_equal_size(1, urlfifo_push_item(4, url,
+                                               NULL, NULL, SIZE_MAX,
+                                               &expected_first_found_id));
+    cut_assert_equal_size(2, urlfifo_push_item(10, "second",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(19, "third",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(4, urlfifo_push_item(25, url,
+                                               NULL, NULL, SIZE_MAX,
+                                               &expected_second_found_id));
+
+    urlfifo_item_id_t iter = urlfifo_find_item_begin();
+    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_not_null(item);
+    cut_assert_equal_string(url, item->url);
+    cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_first_found_id), item);
+
+    item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_not_null(item);
+    cut_assert_equal_string(url, item->url);
+    cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_second_found_id), item);
+
+    item = urlfifo_find_next_item_by_url(&iter, url);
+    cut_assert_null(item);
+}
+
+void test_urlfifo_find_item_by_url_can_be_restarted(void)
+{
+    const char url[] = "http://find.me/";
+
+    urlfifo_item_id_t expected_first_found_id;
+    urlfifo_item_id_t expected_second_found_id;
+
+    cut_assert_equal_size(1, urlfifo_push_item(4, url,
+                                               NULL, NULL, SIZE_MAX,
+                                               &expected_first_found_id));
+    cut_assert_equal_size(2, urlfifo_push_item(10, "second",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(19, "third",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(4, urlfifo_push_item(25, url,
+                                               NULL, NULL, SIZE_MAX,
+                                               &expected_second_found_id));
+
+    for(int i = 0; i < 3; ++i)
+    {
+        urlfifo_item_id_t iter = urlfifo_find_item_begin();
+        const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
+        cut_assert_not_null(item);
+        cut_assert_equal_string(url, item->url);
+        cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_first_found_id), item);
+
+        item = urlfifo_find_next_item_by_url(&iter, url);
+        cut_assert_not_null(item);
+        cut_assert_equal_string(url, item->url);
+        cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_second_found_id), item);
+
+        item = urlfifo_find_next_item_by_url(&iter, url);
+        cut_assert_null(item);
+    }
+}
+
+void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing(void)
+{
+    cut_assert_equal_size(1, urlfifo_push_item(1, "first",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(11, "second",
+                                               NULL, NULL, SIZE_MAX, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(111, "third",
+                                               NULL, NULL, SIZE_MAX, NULL));
+
+    urlfifo_item_id_t iter = urlfifo_find_item_begin();
+
+    cut_assert_null(urlfifo_find_next_item_by_url(&iter, default_url));
 }

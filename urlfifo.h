@@ -146,6 +146,54 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest);
 const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id);
 
 /*!
+ * Start searching for item by given URL.
+ *
+ * This function must be called before starting any search.
+ *
+ * \returns
+ *     An item ID for use with #urlfifo_find_next_item_by_url(). This ID
+ *     remains valid as long as the URL FIFO lock is held.
+ *
+ * \attention
+ *     This function must be called with the URL FIFO lock held, i.e.,
+ *     #urlfifo_lock() must be called before calling this function.
+ */
+urlfifo_item_id_t urlfifo_find_item_begin(void);
+
+/*!
+ * Return next item containing the given URL.
+ *
+ * This function may be called successively to iterate over all FIFO items
+ * whose stream URL match the URL passed in the \p url parameter. In case there
+ * are multiple matching items in the FIFO, they are reported in the order they
+ * have been inserted into the FIFO.
+ *
+ * There is no need for cleaning up anything after the search other than
+ * releasing the URL FIFO lock.
+ *
+ * \param iter
+ *     Pointer to an item ID as returned by #urlfifo_find_item_begin().
+ *
+ * \param url
+ *     The URL to be used as search key.
+ *
+ * \returns
+ *     A pointer to an item with matching URL, or \c NULL in case there are no
+ *     further items in the FIFO matching the given URL. In the latter case, a
+ *     call of #urlfifo_find_item_begin() is required to restart the search,
+ *     even if the first call of #urlfifo_find_next_item_by_url() failed
+ *     already.
+ *
+ * \attention
+ *     This function must be called with the URL FIFO lock held, i.e.,
+ *     #urlfifo_lock() must be called before calling this function.
+ *
+ * \see #urlfifo_lock(), #urlfifo_unlock(), #urlfifo_find_item_begin().
+ */
+struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
+                                                   const char *url);
+
+/*!
  * Return the number of items in the URL FIFO.
  */
 size_t urlfifo_get_size(void);
