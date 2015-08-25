@@ -1,3 +1,16 @@
+2015-08-25  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.2 released.
+
+	* Fix handling of stream tags: The tags are sent around correctly
+	  again so that drcpd can catch them and send them to the display.
+
+	* Fix fast filling of internal queue: When inserting tracks into the
+	  internal queue fast enough, the tracks inserted first got lost.
+
+	* Fix changing tracks: Some tracks already stored in the interal queue
+	  got lost each time the track was changed.
+
 2015-08-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.1 released.
