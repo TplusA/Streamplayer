@@ -76,7 +76,7 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
 {
     msg_info("Got URLFIFO.Next message");
     tdbus_splay_urlfifo_complete_next(object, invocation);
-    streamer_next();
+    streamer_next(false);
     return TRUE;
 }
 
@@ -90,12 +90,21 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
     msg_info("Got URLFIFO.Push message %u \"%s\"", stream_id, stream_url);
 
     const size_t keep =
-        (keep_first_n_entries < 0) ? SIZE_MAX : (size_t)keep_first_n_entries;
+        (keep_first_n_entries < 0)
+        ? ((keep_first_n_entries == -2)
+           ? 0
+           : SIZE_MAX)
+        : (size_t)keep_first_n_entries;
     const bool failed =
         (urlfifo_push_item(stream_id, stream_url, NULL, NULL,
                            keep, NULL,
                            NULL, &streamer_urlfifo_item_data_ops) == 0);
-    tdbus_splay_urlfifo_complete_push(object, invocation, failed);
+
+    const gboolean is_playing = (keep_first_n_entries == -2)
+        ? streamer_next(true)
+        : streamer_is_playing();
+
+    tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
 
     msg_info("Have %zu FIFO entries", urlfifo_get_size());
 

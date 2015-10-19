@@ -176,13 +176,10 @@ static void try_queue_next_stream(GstElement *pipeline,
 
         if(queue_mode == QUEUEMODE_FORCE_SKIP)
         {
-            invalidate_position_information(&data->previous_time);
-
-            if(set_stream_state(pipeline, GST_STATE_READY, "Force skip"))
+            if(!set_stream_state(pipeline, GST_STATE_READY, "Force skip"))
                 return;
 
-            /* try again with next stream in queue */
-            continue;
+            invalidate_position_information(&data->previous_time);
         }
 
         g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
@@ -607,15 +604,29 @@ void streamer_pause(void)
     }
 }
 
-void streamer_next(void)
+bool streamer_next(bool skip_only_if_playing)
 {
     msg_info("Next requested");
     assert(streamer_data.pipeline != NULL);
 
     GstState state;
     if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
-        return;
+        return false;
 
-    try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                          QUEUEMODE_FORCE_SKIP, state, "skip to next");
+    const bool is_playing = (state == GST_STATE_PLAYING);
+
+    if(!skip_only_if_playing || is_playing)
+        try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                              QUEUEMODE_FORCE_SKIP, state, "skip to next");
+
+    return is_playing;
+}
+
+bool streamer_is_playing(void)
+{
+    GstState state;
+    if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
+        return false;
+    else
+        return state == GST_STATE_PLAYING;
 }

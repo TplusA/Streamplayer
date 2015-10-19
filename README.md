@@ -90,7 +90,10 @@ but to replace the rest of the FIFO by new entries. For this reason, both the
 <tt>Clear</tt> and <tt>Push</tt> methods take a parameter that instruct
 _streamplayer_ to keep the first *n* entries in the URL FIFO untouched by the
 operation (where *n* is frequently set to 0 or 1). To keep all entries during a
-<tt>Push</tt> operation, *n* must be set to -1.
+<tt>Push</tt> operation, *n* must be set to -1. A value of -2 can be used to
+clear the URL FIFO (like *n* = 0) and to start playing the new stream
+immediately in case the player is already in playing state (avoiding a separate
+call of the <tt>Next</tt> method and thus corresponding race conditions).
 
 To avoid race conditions and other headaches, there is explicitly no direct way
 to find out the maximum FIFO size. Instead, the result of a
