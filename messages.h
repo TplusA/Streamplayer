@@ -21,6 +21,7 @@
 
 #include <stdbool.h>
 #include <syslog.h>
+#include <stdlib.h>
 
 /*!
  * Whether or not to make use of syslog.
@@ -42,5 +43,21 @@ void msg_error(int error_code, int priority, const char *error_format, ...)
  */
 void msg_info(const char *format_string, ...)
     __attribute__ ((format (printf, 1, 2)));
+
+#ifdef NDEBUG
+#define log_assert(EXPR) do {} while(0)
+#else /* !NDEBUG */
+#define log_assert(EXPR) \
+    do \
+    { \
+        if(!(EXPR)) \
+        { \
+            msg_error(0, LOG_EMERG, "Assertion failed at %s:%d: " #EXPR, \
+                      __FILE__, __LINE__); \
+            abort(); \
+        } \
+    } \
+    while(0)
+#endif /* NDEBUG */
 
 #endif /* !MESSAGES_H */

@@ -22,7 +22,6 @@
 
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 
 #include "dbus_iface.h"
 #include "dbus_iface_deep.h"
@@ -211,8 +210,8 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
         return -1;
     }
 
-    assert(dbus_data.playback_iface != NULL);
-    assert(dbus_data.urlfifo_iface != NULL);
+    log_assert(dbus_data.playback_iface != NULL);
+    log_assert(dbus_data.urlfifo_iface != NULL);
 
     g_main_loop_ref(loop);
 

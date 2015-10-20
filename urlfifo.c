@@ -22,9 +22,9 @@
 
 #include <string.h>
 #include <glib.h>
-#include <assert.h>
 
 #include "urlfifo.h"
+#include "messages.h"
 
 static struct
 {
@@ -104,7 +104,7 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
                          size_t keep_first_n, urlfifo_item_id_t *item_id,
                          void *data, const struct urlfifo_item_data_ops *ops)
 {
-    assert(url != NULL);
+    log_assert(url != NULL);
 
     urlfifo_lock();
 
@@ -134,7 +134,7 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
 
 ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
 {
-    assert(dest != NULL);
+    log_assert(dest != NULL);
 
     urlfifo_lock();
 
@@ -161,7 +161,7 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
 
 void urlfifo_free_item(struct urlfifo_item *item)
 {
-    assert(item != NULL);
+    log_assert(item != NULL);
 
     if(item->data_ops != NULL)
         item->data_ops->data_free(&item->data);
@@ -172,7 +172,7 @@ void urlfifo_free_item(struct urlfifo_item *item)
 
 const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id)
 {
-    assert(item_id < sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
+    log_assert(item_id < sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
 
     return &fifo_data.items[item_id];
 }
@@ -185,8 +185,8 @@ urlfifo_item_id_t urlfifo_find_item_begin(void)
 struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
                                                    const char *url)
 {
-    assert(iter != NULL);
-    assert(url != NULL);
+    log_assert(iter != NULL);
+    log_assert(url != NULL);
 
     while(*iter < fifo_data.num_of_items)
     {

@@ -23,7 +23,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 
 #include <gst/gst.h>
 
@@ -483,7 +482,7 @@ int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
                      (guint *)soup_http_block_size);
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
-    assert(bus != NULL);
+    log_assert(bus != NULL);
     gst_bus_add_signal_watch(bus);
     g_signal_connect(bus, "message::eos",
                      G_CALLBACK(handle_end_of_stream), &streamer_data);
@@ -513,7 +512,7 @@ void streamer_shutdown(GMainLoop *loop)
     set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "Shutdown");
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
-    assert(bus != NULL);
+    log_assert(bus != NULL);
     gst_bus_remove_signal_watch(bus);
     gst_object_unref(bus);
 
@@ -555,7 +554,7 @@ void streamer_start(void)
 void streamer_stop(void)
 {
     msg_info("Stopping as requested");
-    assert(streamer_data.pipeline != NULL);
+    log_assert(streamer_data.pipeline != NULL);
 
     if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Stop"))
     {
@@ -575,7 +574,7 @@ void streamer_stop(void)
 void streamer_pause(void)
 {
     msg_info("Pausing as requested");
-    assert(streamer_data.pipeline != NULL);
+    log_assert(streamer_data.pipeline != NULL);
 
     GstState state;
     if(!get_stream_state(streamer_data.pipeline, &state, "Pause", true))
@@ -607,7 +606,7 @@ void streamer_pause(void)
 bool streamer_next(bool skip_only_if_playing)
 {
     msg_info("Next requested");
-    assert(streamer_data.pipeline != NULL);
+    log_assert(streamer_data.pipeline != NULL);
 
     GstState state;
     if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
