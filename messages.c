@@ -46,11 +46,13 @@ static void show_message(int error_code, int priority,
 
     if(use_syslog)
         syslog(priority, "%s", buffer);
-
-    if(error_code == 0)
-        fprintf(stderr, "Info: %s\n", buffer);
     else
-        fprintf(stderr, "Error: %s\n", buffer);
+    {
+        if(error_code == 0)
+            fprintf(stderr, "Info: %s\n", buffer);
+        else
+            fprintf(stderr, "Error: %s\n", buffer);
+    }
 }
 
 void msg_error(int error_code, int priority, const char *error_format, ...)
