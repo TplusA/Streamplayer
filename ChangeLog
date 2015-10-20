@@ -1,3 +1,16 @@
+2015-11-03  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.3 released.
+
+	* Fix skip to next track: The interface of D-Bus method
+	  de.tahifi.Streamplayer.URLFIFO.Push() had to be extended to support
+	  glitch-free skipping to next track while the player is in play mode.
+	  This is used by drcpd to start a new stream while another one is
+	  playing.
+
+	* Logging: Fix duplicate logs in conjunction with systemd; use logged
+	  assertions.
+
 2015-08-25  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.2 released.
