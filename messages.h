@@ -23,6 +23,10 @@
 #include <syslog.h>
 #include <stdlib.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*!
  * Whether or not to make use of syslog.
  */
@@ -43,6 +47,10 @@ void msg_error(int error_code, int priority, const char *error_format, ...)
  */
 void msg_info(const char *format_string, ...)
     __attribute__ ((format (printf, 1, 2)));
+
+#ifdef __cplusplus
+}
+#endif
 
 #ifdef NDEBUG
 #define log_assert(EXPR) do {} while(0)
