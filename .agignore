@@ -1,6 +1,10 @@
 Doxyfile.in
 aclocal.m4
 autom4te.cache
+config
 config.h.in
 config.h.in~
 configure
+configure.ac
+m4
+*.taghl
