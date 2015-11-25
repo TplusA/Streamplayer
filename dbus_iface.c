@@ -86,7 +86,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                           gint64 stop_position, const gchar *stop_units,
                           gint16 keep_first_n_entries)
 {
-    msg_info("Got URLFIFO.Push message %u \"%s\"", stream_id, stream_url);
+    msg_info("Got URLFIFO.Push message %u \"%s\", keep %d", stream_id, stream_url, keep_first_n_entries);
 
     const size_t keep =
         (keep_first_n_entries < 0)
