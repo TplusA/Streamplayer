@@ -224,4 +224,10 @@ bool urlfifo_is_full(void)
 void urlfifo_setup(void)
 {
     memset(&fifo_data, 0, sizeof(fifo_data));
+    g_mutex_init(&fifo_data.lock);
+}
+
+void urlfifo_shutdown(void)
+{
+    g_mutex_clear(&fifo_data.lock);
 }

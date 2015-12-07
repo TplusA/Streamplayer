@@ -257,6 +257,11 @@ bool urlfifo_is_full(void);
  */
 void urlfifo_setup(void);
 
+/*!
+ * Shutdown for unit tests.
+ */
+void urlfifo_shutdown(void);
+
 /*!@}*/
 
 #endif /* !URLFIFO_H */

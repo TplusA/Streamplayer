@@ -186,6 +186,11 @@ void cut_setup(void)
     urlfifo_setup();
 }
 
+void cut_teardown(void)
+{
+    urlfifo_shutdown();
+}
+
 void test_fifo_is_empty_on_startup(void)
 {
     cut_assert_equal_size(0, urlfifo_get_size());
