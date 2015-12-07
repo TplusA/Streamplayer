@@ -19,7 +19,11 @@
 if WITH_CUTTER
 TESTS = run_test.sh
 
-AM_TESTS_ENVIRONMENT = CUTTER="$(CUTTER)" XSLTPROC="$(XSLTPROC)"
+if WITH_VALGRIND
+TESTS += valgrind.sh
+endif
+
+AM_TESTS_ENVIRONMENT = CUTTER="$(CUTTER)" XSLTPROC="$(XSLTPROC)" VALGRIND="$(VALGRIND)"
 
 AM_LDFLAGS = -module -rpath $(libdir) -avoid-version -no-undefined
 
@@ -38,9 +42,10 @@ test_urlfifo_la_LIBADD = ../liburlfifo.la
 
 test_urlfifo_la_CFLAGS = $(AM_CFLAGS)
 
-CLEANFILES = test_report.xml test_report_junit.xml
+CLEANFILES = test_report.xml test_report_junit.xml valgrind.xml
 
 EXTRA_DIST = cutter2junit.xslt
+EXTRA_DIST += cutter-1_2_4.supp
 
 check-local: check-TESTS
 	@if $(GREP) -w cutter $(TEST_LOGS); then \

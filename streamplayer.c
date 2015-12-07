@@ -35,6 +35,9 @@
 #include "messages.h"
 #include "versioninfo.h"
 
+ssize_t (*os_read)(int fd, void *dest, size_t count) = read;
+ssize_t (*os_write)(int fd, const void *buf, size_t count) = write;
+
 static struct
 {
     GMainLoop *loop;

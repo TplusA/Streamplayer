@@ -30,6 +30,12 @@ AC_ARG_VAR([CRELAXEDWARNINGS], [options for relaxing some compiler warnings for 
 AC_ARG_VAR([DEBIAN_SYSROOT_DIR], [path to Debian system root to use when cross-building a Debian package])
 AC_ARG_VAR([DEBIAN_SYSROOT_LIBPATH], [colon-separated list of paths to search for libraries when cross-building a Debian package])
 
+AC_ARG_ENABLE([valgrind],
+              [AS_HELP_STRING([--disable-valgrind],
+                              [disable an extra run of unit tests with Valgrind on ``make check''])],
+              [],
+              [enable_valgrind=yes])
+
 # Checks for programs.
 AC_PROG_CC
 AM_PROG_AR
@@ -41,6 +47,7 @@ AC_CHECK_PROGS([GDBUS_CODEGEN], [gdbus-codegen])
 AC_CHECK_PROGS([DPKG_BUILDPACKAGE], [dpkg-buildpackage])
 AC_CHECK_PROGS([DPKG_ARCHITECTURE], [dpkg-architecture])
 AC_CHECK_PROGS([XSLTPROC], [xsltproc])
+AC_CHECK_PROGS([VALGRIND], [valgrind])
 AC_CHECK_PROGS([AUTOREVISION], [autorevision])
 
 m4_ifdef([AC_CHECK_CUTTER],
@@ -84,10 +91,12 @@ DH_SHLIBDEPS_ARGS="$DH_SHLIBDEPS_SYSROOT_ARGS $DH_SHLIBDEPS_LIBPATH_ARGS"
 AC_SUBST([DH_SHLIBDEPS_ARGS])
 
 AM_CONDITIONAL([WITH_CUTTER], [test "x$ac_cv_use_cutter" = "xyes"])
+AM_CONDITIONAL([WITH_VALGRIND], [test "x$enable_valgrind" = "xyes"])
 AM_CONDITIONAL([CAN_BUILD_DEBIAN_PACKAGE], [test "x$ac_cv_prog_DPKG_BUILDPACKAGE" != x && test "x$DEBIAN_ARCHITECTURE_NAME" != x])
 
 AC_CONFIG_FILES([Makefile tests/Makefile dist/Makefile Doxyfile])
 AC_CONFIG_FILES([versioninfo.cache])
 AC_CONFIG_FILES([debian/control])
 AC_CONFIG_FILES([tests/run_test.sh], [chmod +x tests/run_test.sh])
+AC_CONFIG_FILES([tests/valgrind.sh], [chmod +x tests/valgrind.sh])
 AC_OUTPUT

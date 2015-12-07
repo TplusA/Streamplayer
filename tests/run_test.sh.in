@@ -1,17 +1,1 @@
-#! /bin/sh
-
-$CUTTER \
-    --source-directory="@srcdir@" \
-    --xml-report=test_report.xml \
-    --multi-thread \
-    --keep-opening-modules \
-    "$@" .
-
-RET=$?
-
-if test "x$XSLTPROC" != x
-then
-    $XSLTPROC "$srcdir/cutter2junit.xslt" test_report.xml >test_report_junit.xml
-fi
-
-exit $RET
+../strbo_common/tests/run_test.sh.in

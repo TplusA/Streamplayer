@@ -31,7 +31,8 @@ CLEANFILES = README.html
 streamplayer_SOURCES = \
     streamplayer.c messages.c messages.h \
     dbus_iface.c dbus_iface.h dbus_iface_deep.h \
-    streamtime.h streamer.c streamer.h
+    streamtime.h streamer.c streamer.h \
+    os.c os.h
 
 AM_CFLAGS = $(CWARNINGS)
 
