@@ -50,6 +50,8 @@ struct streamer_data
 
     struct urlfifo_item current_stream;
     struct time_data previous_time;
+
+    unsigned int suppress_next_stopped_events;
 };
 
 static void item_data_init(void **data)
@@ -165,6 +167,7 @@ static void try_queue_next_stream(GstElement *pipeline,
                                   const char *what)
 {
     size_t tries = 0;
+    bool maybe_suppress_stop_event = false;
 
     while(urlfifo_pop_item(&data->current_stream, true) >= 0)
     {
@@ -179,6 +182,7 @@ static void try_queue_next_stream(GstElement *pipeline,
                 return;
 
             invalidate_position_information(&data->previous_time);
+            maybe_suppress_stop_event = true;
         }
 
         g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
@@ -188,7 +192,16 @@ static void try_queue_next_stream(GstElement *pipeline,
           case QUEUEMODE_START_PLAYING:
           case QUEUEMODE_FORCE_SKIP:
             if(set_stream_state(pipeline, next_state, "Play queued"))
+            {
+                /*
+                 * ATTENTION: This only works because the signal handler for
+                 *            stream state changes runs in the same context as
+                 *            this code. */
+                if(maybe_suppress_stop_event)
+                    ++data->suppress_next_stopped_events;
+
                 return;
+            }
 
             break;
 
@@ -352,7 +365,13 @@ static void handle_stream_state_change(GstBus *bus, GstMessage *message,
       case GST_STATE_READY:
       case GST_STATE_NULL:
         if(dbus_playback_iface != NULL)
-            tdbus_splay_playback_emit_stopped(dbus_playback_iface);
+        {
+            if(data->suppress_next_stopped_events == 0)
+                tdbus_splay_playback_emit_stopped(dbus_playback_iface);
+            else
+                --data->suppress_next_stopped_events;
+        }
+
         break;
 
       case GST_STATE_PAUSED:
