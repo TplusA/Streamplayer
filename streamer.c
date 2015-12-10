@@ -622,6 +622,21 @@ void streamer_pause(void)
     }
 }
 
+bool streamer_seek(guint64 position, const char *units)
+{
+    msg_info("Seek position %llu %s requested\n",
+             (unsigned long long)position, units);
+
+    if(strcmp(units, "ms") != 0)
+        BUG("Seek units other than ms are not implemented yet");
+
+    static const GstSeekFlags seek_flags =
+        GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE;
+
+    return gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
+                                   seek_flags, position * GST_MSECOND);
+}
+
 bool streamer_next(bool skip_only_if_playing)
 {
     msg_info("Next requested");

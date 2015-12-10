@@ -57,6 +57,22 @@ static gboolean playback_pause(tdbussplayPlayback *object,
     return TRUE;
 }
 
+static gboolean playback_seek(tdbussplayPlayback *object,
+                              GDBusMethodInvocation *invocation,
+                              gint64 position, const gchar *position_units)
+{
+    msg_info("Got Playback.Seek message");
+
+    if(streamer_seek(position, position_units))
+        tdbus_splay_playback_complete_seek(object, invocation);
+    else
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+                                              G_DBUS_ERROR_FAILED,
+                                              "Seek failed");
+
+    return TRUE;
+}
+
 static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
                            gint16 keep_first_n_entries)
@@ -148,6 +164,8 @@ static void bus_acquired(GDBusConnection *connection,
                      G_CALLBACK(playback_stop), NULL);
     g_signal_connect(data->playback_iface, "handle-pause",
                      G_CALLBACK(playback_pause), NULL);
+    g_signal_connect(data->playback_iface, "handle-seek",
+                     G_CALLBACK(playback_seek), NULL);
 
     g_signal_connect(data->urlfifo_iface, "handle-clear",
                      G_CALLBACK(fifo_clear), NULL);

@@ -27,6 +27,7 @@ void streamer_shutdown(GMainLoop *loop);
 void streamer_start(void);
 void streamer_stop(void);
 void streamer_pause(void);
+bool streamer_seek(guint64 position, const char *units);
 bool streamer_next(bool skip_only_if_playing);
 bool streamer_is_playing(void);
 
