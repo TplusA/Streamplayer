@@ -663,3 +663,13 @@ bool streamer_is_playing(void)
     else
         return state == GST_STATE_PLAYING;
 }
+
+bool streamer_get_current_stream_id(uint16_t *id)
+{
+    if(streamer_data.current_stream.url[0] == '\0')
+        return false;
+
+    *id = streamer_data.current_stream.id;
+
+    return true;
+}

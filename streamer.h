@@ -20,6 +20,7 @@
 #define STREAMER_H
 
 #include <stdbool.h>
+#include <inttypes.h>
 
 int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size);
 void streamer_shutdown(GMainLoop *loop);
@@ -30,6 +31,7 @@ void streamer_pause(void);
 bool streamer_seek(guint64 position, const char *units);
 bool streamer_next(bool skip_only_if_playing);
 bool streamer_is_playing(void);
+bool streamer_get_current_stream_id(uint16_t *id);
 
 /*
  * Global structure that contains function pointers for operating on URL FIFO

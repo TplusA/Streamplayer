@@ -78,10 +78,29 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            gint16 keep_first_n_entries)
 {
     msg_info("Got URLFIFO.Clear message");
-    tdbus_splay_urlfifo_complete_clear(object, invocation);
 
-    if(keep_first_n_entries >= 0)
-        urlfifo_clear(keep_first_n_entries, NULL);
+    uint16_t temp;
+    const uint32_t current_id =
+        streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
+
+    uint16_t ids_removed[URLFIFO_MAX_LENGTH];
+    const size_t ids_removed_count =
+        (keep_first_n_entries >= 0)
+        ? urlfifo_clear(keep_first_n_entries, ids_removed)
+        : 0;
+
+    uint16_t ids_in_fifo[URLFIFO_MAX_LENGTH];
+    const size_t ids_in_fifo_count = urlfifo_get_queued_ids(ids_in_fifo);
+
+    GVariant *const queued_ids =
+        g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_in_fifo,
+                                  ids_in_fifo_count, sizeof(ids_in_fifo[0]));
+    GVariant *const removed_ids =
+        g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_removed,
+                                  ids_removed_count, sizeof(ids_removed[0]));
+
+    tdbus_splay_urlfifo_complete_clear(object, invocation,
+                                       current_id, queued_ids, removed_ids);
 
     return TRUE;
 }
