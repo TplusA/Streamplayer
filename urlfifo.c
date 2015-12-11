@@ -46,21 +46,32 @@ void urlfifo_unlock(void)
     g_mutex_unlock(&fifo_data.lock);
 }
 
-size_t urlfifo_clear(size_t keep_first_n)
+size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed)
 {
     urlfifo_lock();
+
+    size_t removed_count;
+
+    if(ids_removed == NULL)
+        removed_count = ((keep_first_n < fifo_data.num_of_items)
+                         ? fifo_data.num_of_items - keep_first_n
+                         : 0);
+    else
+    {
+        removed_count = 0;
+
+        for(size_t i = keep_first_n; i < fifo_data.num_of_items; ++i)
+            ids_removed[removed_count++] = fifo_data.items[i].id;
+    }
 
     for(size_t i = keep_first_n; i < fifo_data.num_of_items; ++i)
         urlfifo_free_item(&fifo_data.items[i]);
 
-    if(keep_first_n < fifo_data.num_of_items)
-        fifo_data.num_of_items = keep_first_n;
-
-    size_t retval = fifo_data.num_of_items;
+    fifo_data.num_of_items -= removed_count;;
 
     urlfifo_unlock();
 
-    return retval;
+    return removed_count;
 }
 
 static void init_item(struct urlfifo_item *item, uint16_t external_id,

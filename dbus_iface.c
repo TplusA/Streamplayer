@@ -81,7 +81,7 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
     tdbus_splay_urlfifo_complete_clear(object, invocation);
 
     if(keep_first_n_entries >= 0)
-        urlfifo_clear(keep_first_n_entries);
+        urlfifo_clear(keep_first_n_entries, NULL);
 
     return TRUE;
 }

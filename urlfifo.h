@@ -101,13 +101,19 @@ void urlfifo_unlock(void);
  * The #urlfifo_item_data_ops::data_free() function is called for each item
  * removed from the FIFO.
  *
- * \param keep_first_n The number of items to keep untouched. If set to 0, then
+ * \param keep_first_n
+ *     The number of items to keep untouched. If set to 0, then
  *     the whole FIFO will be cleared.
  *
- * \returns The number of items remaining in the FIFO, guaranteed to be less
- *     than or equal to \p keep_first_n.
+ * \param[out] ids_removed
+ *     Array with at least #URLFIFO_MAX_LENGTH entries; may be \c NULL. The IDs
+ *     of items removed from the FIFO are returned here.
+ *
+ * \returns
+ *     The number of items removed from the FIFO, corresponding to the number
+ *     of items returned in \p ids_removed.
  */
-size_t urlfifo_clear(size_t keep_first_n);
+size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed);
 
 /*!
  * Append new item to URL FIFO.

@@ -213,7 +213,13 @@ void test_fifo_is_empty_on_startup(void)
 
 void test_clear_all_on_empty_fifo(void)
 {
-    cut_assert_equal_size(0, urlfifo_clear(0));
+    uint16_t ids[URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(0, urlfifo_clear(0, ids));
+
+    for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
+        cut_assert_equal_uint(0x5555, ids[i]);
 }
 
 void test_clear_non_empty_fifo(void)
@@ -226,7 +232,22 @@ void test_clear_non_empty_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
     cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
-    cut_assert_equal_size(0, urlfifo_clear(0));
+
+    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(2, urlfifo_clear(0, &ids[URLFIFO_MAX_LENGTH]));
+
+    for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
+    {
+        if((i == URLFIFO_MAX_LENGTH + 0) || (i == URLFIFO_MAX_LENGTH + 1))
+            continue;
+
+        cut_assert_equal_uint(0x5555, ids[i]);
+    }
+    cut_assert_equal_uint(23, ids[URLFIFO_MAX_LENGTH + 0]);
+    cut_assert_equal_uint(32, ids[URLFIFO_MAX_LENGTH + 1]);
+
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
 }
@@ -247,7 +268,15 @@ void test_clear_partial_non_empty_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(3, urlfifo_get_size());
     cut_assert_equal_size(3, urlfifo_get_queued_ids(NULL));
-    cut_assert_equal_size(2, urlfifo_clear(2));
+
+    uint16_t ids[URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(1, urlfifo_clear(2, ids));
+
+    cut_assert_equal_uint(5,      ids[0]);
+    cut_assert_equal_uint(0x5555, ids[1]);
+
     cut_assert_equal_size(2, urlfifo_get_size());
     cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
 
@@ -276,9 +305,16 @@ void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void)
                                                NULL, NULL, SIZE_MAX, &id_second,
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
-    cut_assert_equal_size(2, urlfifo_clear(3));
-    cut_assert_equal_size(2, urlfifo_clear(SIZE_MAX));
-    cut_assert_equal_size(2, urlfifo_clear(2));
+
+    uint16_t ids[URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(0, urlfifo_clear(3, ids));
+    cut_assert_equal_uint(0x5555, ids[0]);
+    cut_assert_equal_size(0, urlfifo_clear(SIZE_MAX, ids));
+    cut_assert_equal_uint(0x5555, ids[0]);
+    cut_assert_equal_size(0, urlfifo_clear(2, ids));
+    cut_assert_equal_uint(0x5555, ids[0]);
     cut_assert_equal_size(2, urlfifo_get_size());
 
     urlfifo_lock();
@@ -452,7 +488,7 @@ void test_item_data_callbacks_are_called_for_push_clear(void)
     cut_assert_equal_pointer(&test_data[1], item->data);
     cut_assert_equal_uint(0x12345678, test_data[1]);
 
-    urlfifo_clear(0);
+    urlfifo_clear(0, NULL);
 
     cut_assert_equal_uint(0x87654321, test_data[0]);
     cut_assert_equal_uint(0x87654321, test_data[1]);
