@@ -48,6 +48,8 @@
  */
 /*!@{*/
 
+#define URLFIFO_MAX_LENGTH 4U
+
 /*!
  * Opaque identifier for items in the URL FIFO.
  */
@@ -240,6 +242,20 @@ struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
  * Return the number of items in the URL FIFO.
  */
 size_t urlfifo_get_size(void);
+
+/*!
+ * Get IDs of items queued in the URL FIFO.
+ *
+ * \param ids_in_fifo
+ *     Array with at least #URLFIFO_MAX_LENGTH entries. The IDs of the items
+ *     queued in the FIFO are returned here. If \c NULL, then this function is
+ *     equivalent to #urlfifo_get_size().
+ *
+ * \returns
+ *     The number of items in the FIFO, corresponding to the number of items
+ *     returned in \p ids_in_fifo.
+ */
+size_t urlfifo_get_queued_ids(uint16_t *ids_in_fifo);
 
 /*!
  * Whether or not the FIFO is full.

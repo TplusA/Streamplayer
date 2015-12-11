@@ -30,7 +30,7 @@ static struct
 {
     GMutex lock;
 
-    struct urlfifo_item items[4];
+    struct urlfifo_item items[URLFIFO_MAX_LENGTH];
     size_t num_of_items;
     size_t first_item;
 }
@@ -203,9 +203,22 @@ struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
 
 size_t urlfifo_get_size(void)
 {
+    return urlfifo_get_queued_ids(NULL);
+}
+
+size_t urlfifo_get_queued_ids(uint16_t *ids_in_fifo)
+{
     urlfifo_lock();
 
-    size_t retval = fifo_data.num_of_items;
+    size_t retval;
+
+    if(ids_in_fifo == NULL)
+        retval = fifo_data.num_of_items;
+    else
+    {
+        for(retval = 0; retval < fifo_data.num_of_items; ++retval)
+            ids_in_fifo[retval] = fifo_data.items[retval].id;
+    }
 
     urlfifo_unlock();
 

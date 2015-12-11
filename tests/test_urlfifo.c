@@ -138,6 +138,21 @@ void test_pop_item_from_multi_item_fifo(void);
 void test_push_pop_chase(void);
 
 /*!\test
+ * Number of queued IDs is 0 for empty URL FIFO.
+ */
+void test_get_queued_ids_count_for_empty_fifo(void);
+
+/*!\test
+ * No queued IDs are returned for empty URL FIFO.
+ */
+void test_get_queued_ids_for_empty_fifo(void);
+
+/*!\test
+ * Queued IDs are returned.
+ */
+void test_get_queued_ids_for_filled_fifo(void);
+
+/*!\test
  * Basic tests for #urlfifo_is_full().
  */
 void test_urlfifo_is_full_interface(void);
@@ -210,8 +225,10 @@ void test_clear_non_empty_fifo(void)
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
+    cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
     cut_assert_equal_size(0, urlfifo_clear(0));
     cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
 }
 
 void test_clear_partial_non_empty_fifo(void)
@@ -229,8 +246,10 @@ void test_clear_partial_non_empty_fifo(void)
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
     cut_assert_equal_size(3, urlfifo_get_size());
+    cut_assert_equal_size(3, urlfifo_get_queued_ids(NULL));
     cut_assert_equal_size(2, urlfifo_clear(2));
     cut_assert_equal_size(2, urlfifo_get_size());
+    cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
 
     urlfifo_lock();
 
@@ -679,6 +698,49 @@ void test_push_pop_chase(void)
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(num_of_iterations + id_base + 1, item.id);
+}
+
+void test_get_queued_ids_count_for_empty_fifo(void)
+{
+    cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
+}
+
+void test_get_queued_ids_for_empty_fifo(void)
+{
+    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(0, urlfifo_get_queued_ids(&ids[URLFIFO_MAX_LENGTH]));
+
+    for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
+        cut_assert_equal_uint(0x5555, ids[i]);
+}
+
+void test_get_queued_ids_for_filled_fifo(void)
+{
+    for(size_t i = 0; i < URLFIFO_MAX_LENGTH; ++i)
+        cut_assert_equal_size(i + 1, urlfifo_push_item(100 + i, "item",
+                                                       NULL, NULL, SIZE_MAX,
+                                                       NULL, NULL, NULL));
+
+    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(URLFIFO_MAX_LENGTH,
+                          urlfifo_get_queued_ids(&ids[URLFIFO_MAX_LENGTH]));
+
+    for(size_t i = 0 * URLFIFO_MAX_LENGTH; i < 1 * URLFIFO_MAX_LENGTH; ++i)
+        cut_assert_equal_uint(0x5555, ids[i]);
+
+    uint16_t expected_id = 100;
+    for(size_t i = 1 * URLFIFO_MAX_LENGTH; i < 2 * URLFIFO_MAX_LENGTH; ++i)
+    {
+        cut_assert_equal_uint(expected_id, ids[i]);
+        ++expected_id;
+    }
+
+    for(size_t i = 2 * URLFIFO_MAX_LENGTH; i < 3 * URLFIFO_MAX_LENGTH; ++i)
+        cut_assert_equal_uint(0x5555, ids[i]);
 }
 
 void test_urlfifo_is_full_interface(void)
