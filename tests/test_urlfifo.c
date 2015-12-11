@@ -460,12 +460,9 @@ void test_item_data_callbacks_are_called_for_push_clear(void)
 
 void test_push_many_items_does_not_trash_fifo(void)
 {
-    /* we need this little implementation detail */
-    static const size_t fifo_max_size = 4;
+    urlfifo_item_id_t ids[URLFIFO_MAX_LENGTH];
 
-    urlfifo_item_id_t ids[fifo_max_size];
-
-    for(unsigned int i = 0; i < fifo_max_size; ++i)
+    for(unsigned int i = 0; i < URLFIFO_MAX_LENGTH; ++i)
     {
         char temp[sizeof(default_url) + 16];
 
@@ -476,7 +473,7 @@ void test_push_many_items_does_not_trash_fifo(void)
                                                 NULL, NULL));
     }
 
-    cut_assert_equal_size(fifo_max_size, urlfifo_get_size());
+    cut_assert_equal_size(URLFIFO_MAX_LENGTH, urlfifo_get_size());
 
     /* next push should fail */
     urlfifo_item_id_t id = 12345;
@@ -484,7 +481,7 @@ void test_push_many_items_does_not_trash_fifo(void)
                                                NULL, NULL, SIZE_MAX, &id,
                                                NULL, NULL));
 
-    cut_assert_equal_size(fifo_max_size, urlfifo_get_size());
+    cut_assert_equal_size(URLFIFO_MAX_LENGTH, urlfifo_get_size());
     cut_assert_equal_size(12345, id);
 
     /* check that FIFO still has the expected content */
