@@ -173,8 +173,8 @@ static void try_queue_next_stream(GstElement *pipeline,
     {
         ++tries;
 
-        msg_info("Queuing stream due to %s request: \"%s\"",
-                 what, data->current_stream.url);
+        msg_info("Queuing stream %u due to %s request: \"%s\"",
+                 data->current_stream.id, what, data->current_stream.url);
 
         if(queue_mode == QUEUEMODE_FORCE_SKIP)
         {
