@@ -29,7 +29,7 @@ void streamer_start(void);
 void streamer_stop(void);
 void streamer_pause(void);
 bool streamer_seek(guint64 position, const char *units);
-bool streamer_next(bool skip_only_if_playing);
+bool streamer_next(bool skip_only_if_playing, uint32_t *out_next_id);
 bool streamer_is_playing(void);
 bool streamer_get_current_stream_id(uint16_t *id);
 

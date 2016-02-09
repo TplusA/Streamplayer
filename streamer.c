@@ -160,11 +160,11 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
     return false;
 }
 
-static void try_queue_next_stream(GstElement *pipeline,
-                                  struct streamer_data *data,
-                                  enum queue_mode queue_mode,
-                                  GstState next_state,
-                                  const char *what)
+static uint32_t try_queue_next_stream(GstElement *pipeline,
+                                      struct streamer_data *data,
+                                      enum queue_mode queue_mode,
+                                      GstState next_state,
+                                      const char *what)
 {
     size_t tries = 0;
     bool maybe_suppress_stop_event = false;
@@ -179,7 +179,7 @@ static void try_queue_next_stream(GstElement *pipeline,
         if(queue_mode == QUEUEMODE_FORCE_SKIP)
         {
             if(!set_stream_state(pipeline, GST_STATE_READY, "Force skip"))
-                return;
+                return UINT32_MAX;
 
             invalidate_position_information(&data->previous_time);
             maybe_suppress_stop_event = true;
@@ -200,13 +200,13 @@ static void try_queue_next_stream(GstElement *pipeline,
                 if(maybe_suppress_stop_event)
                     ++data->suppress_next_stopped_events;
 
-                return;
+                return data->current_stream.id;
             }
 
             break;
 
           case QUEUEMODE_JUST_UPDATE_URI:
-            return;
+            return data->current_stream.id;
         }
     }
 
@@ -214,6 +214,8 @@ static void try_queue_next_stream(GstElement *pipeline,
         msg_info("Got %s request, but URL FIFO is empty", what);
     else
         msg_info("Tried all URLs in FIFO, have no more streams to try");
+
+    return UINT32_MAX;
 }
 
 static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
@@ -637,20 +639,29 @@ bool streamer_seek(guint64 position, const char *units)
                                    seek_flags, position * GST_MSECOND);
 }
 
-bool streamer_next(bool skip_only_if_playing)
+bool streamer_next(bool skip_only_if_playing, uint32_t *out_next_id)
 {
     msg_info("Next requested");
     log_assert(streamer_data.pipeline != NULL);
 
+    bool is_playing;
+    uint32_t next_id = UINT32_MAX;
+
     GstState state;
     if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
-        return false;
+        is_playing = false;
+    else
+    {
+        is_playing = (state == GST_STATE_PLAYING);
 
-    const bool is_playing = (state == GST_STATE_PLAYING);
+        if(!skip_only_if_playing || is_playing)
+            next_id = try_queue_next_stream(streamer_data.pipeline, &streamer_data,
+                                            QUEUEMODE_FORCE_SKIP, state,
+                                            "skip to next");
+    }
 
-    if(!skip_only_if_playing || is_playing)
-        try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                              QUEUEMODE_FORCE_SKIP, state, "skip to next");
+    if(out_next_id != NULL)
+        *out_next_id = next_id;
 
     return is_playing;
 }
