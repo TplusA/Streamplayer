@@ -1,3 +1,11 @@
+2016-02-09  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.5 released.
+
+	* Skip to next track: The interface of D-Bus method
+	  de.tahifi.Streamplayer.URLFIFO.Next() had to be extended to support
+	  proper skipping.
+
 2015-12-15  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.4 released.
@@ -64,4 +72,4 @@
 	* First release for testing.
 
 
-Copyright 2015 T+A elektroakustik GmbH & Co. KG
+Copyright 2015, 2016 T+A elektroakustik GmbH & Co. KG
