@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -50,6 +50,13 @@ void test_clear_non_empty_fifo(void);
  * many entries as have been specified in the argument to #urlfifo_clear().
  */
 void test_clear_partial_non_empty_fifo(void);
+
+/*!\test
+ * Like #test_clear_partial_non_empty_fifo(), but pop items beforehand.
+ *
+ * Because we are operating on a ring buffer.
+ */
+void test_partial_clear_after_pop_item_from_multi_item_fifo(void);
 
 /*!\test
  * Attempting to clear a FIFO with fewer items than specified in the argument
@@ -291,6 +298,59 @@ void test_clear_partial_non_empty_fifo(void)
     cut_assert_equal_string("second", item->url);
 
     urlfifo_unlock();
+}
+
+void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
+{
+    /* we want to trigger wrap-around, and the test is hard-coded against the
+     * maximum URL FIFO size */
+    cut_assert_equal_size(4, URLFIFO_MAX_LENGTH);
+
+    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(3, urlfifo_push_item(5, "third",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(4, urlfifo_push_item(666, "fourth",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(4, urlfifo_get_size());
+
+    struct urlfifo_item item;
+
+    cut_assert_equal_size(3, urlfifo_pop_item(&item, false));
+    cut_assert_equal_uint(23, item.id);
+    cut_assert_equal_string("first", item.url);
+
+    /* this one ends up in the first slot */
+    cut_assert_equal_size(4, urlfifo_push_item(42, "fifth",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+
+    /* we now have |42|32|5|666|, with 32 being the head element */
+    uint16_t ids[URLFIFO_MAX_LENGTH];
+    memset(ids, 0x55, sizeof(ids));
+
+    cut_assert_equal_size(2, urlfifo_clear(2, ids));
+
+    cut_assert_equal_size(2, urlfifo_get_size());
+    cut_assert_equal_uint(666,    ids[0]);
+    cut_assert_equal_uint(42,     ids[1]);
+    cut_assert_equal_uint(0x5555, ids[2]);
+
+    cut_assert_equal_size(1, urlfifo_pop_item(&item, true));
+    cut_assert_equal_uint(32, item.id);
+    cut_assert_equal_string("second", item.url);
+
+    cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
+    cut_assert_equal_uint(5, item.id);
+    cut_assert_equal_string("third", item.url);
+
+    urlfifo_free_item(&item);
 }
 
 void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void)

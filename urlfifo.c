@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -46,6 +46,11 @@ void urlfifo_unlock(void)
     g_mutex_unlock(&fifo_data.lock);
 }
 
+static inline size_t add_to_id(size_t id, size_t inc)
+{
+    return (id + inc) % (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
+}
+
 size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed)
 {
     urlfifo_lock();
@@ -61,13 +66,13 @@ size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed)
         removed_count = 0;
 
         for(size_t i = keep_first_n; i < fifo_data.num_of_items; ++i)
-            ids_removed[removed_count++] = fifo_data.items[i].id;
+            ids_removed[removed_count++] = fifo_data.items[add_to_id(fifo_data.first_item, i)].id;
     }
 
     for(size_t i = keep_first_n; i < fifo_data.num_of_items; ++i)
-        urlfifo_free_item(&fifo_data.items[i]);
+        urlfifo_free_item(&fifo_data.items[add_to_id(fifo_data.first_item, i)]);
 
-    fifo_data.num_of_items -= removed_count;;
+    fifo_data.num_of_items -= removed_count;
 
     urlfifo_unlock();
 
@@ -97,11 +102,6 @@ static void init_item(struct urlfifo_item *item, uint16_t external_id,
 
     if(item->data_ops != NULL)
         item->data_ops->data_init(&item->data);
-}
-
-static inline size_t add_to_id(size_t id, size_t inc)
-{
-    return (id + inc) % (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
 }
 
 static inline bool urlfifo_unlocked_is_full(void)
