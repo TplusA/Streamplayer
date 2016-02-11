@@ -176,10 +176,19 @@ static uint32_t try_queue_next_stream(GstElement *pipeline,
         msg_info("Queuing stream %u due to %s request: \"%s\"",
                  data->current_stream.id, what, data->current_stream.url);
 
+        if(data->current_stream.url == NULL)
+        {
+            urlfifo_free_item(&data->current_stream);
+            continue;
+        }
+
         if(queue_mode == QUEUEMODE_FORCE_SKIP)
         {
             if(!set_stream_state(pipeline, GST_STATE_READY, "Force skip"))
+            {
+                urlfifo_free_item(&data->current_stream);
                 return UINT32_MAX;
+            }
 
             invalidate_position_information(&data->previous_time);
             maybe_suppress_stop_event = true;
@@ -208,6 +217,8 @@ static uint32_t try_queue_next_stream(GstElement *pipeline,
           case QUEUEMODE_JUST_UPDATE_URI:
             return data->current_stream.id;
         }
+
+        urlfifo_free_item(&data->current_stream);
     }
 
     if(tries == 0)
@@ -332,7 +343,7 @@ static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
 static void emit_now_playing(tdbussplayPlayback *playback_iface,
                              struct streamer_data *data)
 {
-    if(playback_iface == NULL)
+    if(playback_iface == NULL || data->current_stream.url == NULL)
         return;
 
     GstTagList **list = item_data_get(&data->current_stream);
@@ -677,7 +688,7 @@ bool streamer_is_playing(void)
 
 bool streamer_get_current_stream_id(uint16_t *id)
 {
-    if(streamer_data.current_stream.url[0] == '\0')
+    if(streamer_data.current_stream.url == NULL)
         return false;
 
     *id = streamer_data.current_stream.id;

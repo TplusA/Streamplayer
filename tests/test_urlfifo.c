@@ -622,6 +622,8 @@ void test_push_one_replace_all(void)
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(45, item.id);
+
+    urlfifo_free_item(&item);
 }
 
 void test_push_one_keep_first(void)
@@ -647,9 +649,11 @@ void test_push_one_keep_first(void)
     cut_assert_equal_size(1, urlfifo_get_size());
     cut_assert_equal_uint(42, item.id);
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
+    cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(45, item.id);
+
+    urlfifo_free_item(&item);
 }
 
 void test_push_one_replace_all_works_on_empty_fifo(void)
@@ -664,6 +668,8 @@ void test_push_one_replace_all_works_on_empty_fifo(void)
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(80, item.id);
+
+    urlfifo_free_item(&item);
 }
 
 void test_push_one_replace_all_works_on_full_fifo(void)
@@ -689,6 +695,8 @@ void test_push_one_replace_all_works_on_full_fifo(void)
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(90, item.id);
+
+    urlfifo_free_item(&item);
 }
 
 void test_pop_empty_fifo_detects_underflow(void)
@@ -723,6 +731,8 @@ void test_pop_item_from_single_item_fifo(void)
     cut_assert_equal_string(default_url, item.url);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+
+    urlfifo_free_item(&item);
 }
 
 void test_pop_item_from_multi_item_fifo(void)
@@ -750,12 +760,14 @@ void test_pop_item_from_multi_item_fifo(void)
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
 
-    cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
+    cut_assert_equal_size(1, urlfifo_pop_item(&item, true));
     cut_assert_equal_size(1, urlfifo_get_size());
     cut_assert_equal_uint(32, item.id);
     cut_assert_equal_string("second", item.url);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
     cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+
+    urlfifo_free_item(&item);
 }
 
 void test_push_pop_chase(void)
@@ -782,15 +794,18 @@ void test_push_pop_chase(void)
         cut_assert_equal_size(2, urlfifo_pop_item(&item, false));
         cut_assert_equal_size(2, urlfifo_get_size());
         cut_assert_equal_uint(i + id_base, item.id);
+        urlfifo_free_item(&item);
     }
 
     cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(1, urlfifo_get_size());
     cut_assert_equal_uint(num_of_iterations + id_base + 0, item.id);
+    urlfifo_free_item(&item);
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_equal_uint(num_of_iterations + id_base + 1, item.id);
+    urlfifo_free_item(&item);
 }
 
 void test_get_queued_ids_count_for_empty_fifo(void)
@@ -859,6 +874,7 @@ void test_urlfifo_is_full_interface(void)
 
     struct urlfifo_item dummy;
     (void)urlfifo_pop_item(&dummy, false);
+    urlfifo_free_item(&dummy);
 
     cut_assert_false(urlfifo_is_full());
 }

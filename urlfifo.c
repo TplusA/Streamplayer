@@ -21,6 +21,7 @@
 #endif /* HAVE_CONFIG_H */
 
 #include <string.h>
+#include <stdlib.h>
 #include <glib.h>
 
 #include "urlfifo.h"
@@ -86,8 +87,10 @@ static void init_item(struct urlfifo_item *item, uint16_t external_id,
 {
     item->id = external_id;
 
-    strncpy(item->url, url, sizeof(item->url));
-    item->url[sizeof(item->url) - 1] = '\0';
+    if(url != NULL && url[0] != '\0')
+        item->url = strdup(url);
+    else
+        item->url = NULL;
 
     static const struct streamtime end_of_stream =
     {
@@ -120,7 +123,12 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
     urlfifo_lock();
 
     if(keep_first_n < fifo_data.num_of_items)
+    {
+        for(size_t i = keep_first_n; i < fifo_data.num_of_items; ++i)
+            urlfifo_free_item(&fifo_data.items[add_to_id(fifo_data.first_item, i)]);
+
         fifo_data.num_of_items = keep_first_n;
+    }
 
     if(urlfifo_unlocked_is_full())
     {
@@ -158,7 +166,11 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
     if(free_dest)
         urlfifo_free_item(dest);
 
-    memcpy(dest, &fifo_data.items[fifo_data.first_item], sizeof(*dest));
+    struct urlfifo_item *const src = &fifo_data.items[fifo_data.first_item];
+    memcpy(dest, src, sizeof(*dest));
+    src->url = NULL;
+    src->data = NULL;
+    src->data_ops = NULL;
 
     fifo_data.first_item = add_to_id(fifo_data.first_item, 1);
     --fifo_data.num_of_items;
@@ -177,7 +189,11 @@ void urlfifo_free_item(struct urlfifo_item *item)
     if(item->data_ops != NULL)
         item->data_ops->data_free(&item->data);
 
-    item->url[0] = '\0';
+    if(item->url != NULL)
+        free(item->url);
+
+    item->url = NULL;
+    item->data = NULL;
     item->data_ops = NULL;
 }
 
@@ -205,7 +221,7 @@ struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
 
         ++*iter;
 
-        if(strcmp(candidate->url, url) == 0)
+        if(candidate->url != NULL && strcmp(candidate->url, url) == 0)
             return candidate;
     }
 
@@ -253,5 +269,6 @@ void urlfifo_setup(void)
 
 void urlfifo_shutdown(void)
 {
+    urlfifo_clear(0, NULL);
     g_mutex_clear(&fifo_data.lock);
 }

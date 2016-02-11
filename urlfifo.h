@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -67,7 +67,7 @@ struct urlfifo_item_data_ops
 struct urlfifo_item
 {
     uint16_t id;
-    char url[512];
+    char *url;
     struct streamtime start_time;
     struct streamtime end_time;
 
