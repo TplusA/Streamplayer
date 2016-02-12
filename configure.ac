@@ -1,4 +1,4 @@
-dnl Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+dnl Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
 dnl
 dnl This file is part of T+A Streamplayer.
 dnl
@@ -15,7 +15,7 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
 
 AC_PREREQ([2.69])
-AC_INIT([Streamplayer], [1.5], [r.tiemann@ta-hifi.com])
+AC_INIT([Streamplayer], [1.6], [r.tiemann@ta-hifi.com])
 AC_CONFIG_AUX_DIR([config])
 AM_INIT_AUTOMAKE([1.11 -Wall -Werror foreign])
 AM_SILENT_RULES([yes])

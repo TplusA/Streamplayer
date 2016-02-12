@@ -1,3 +1,16 @@
+2016-02-12  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.6 released.
+
+	* Playback: Streams with very long URLs (longer than 511 characters)
+	  were not played at all because of too small buffers of fixed size.
+	  There is no restriction on URL length anymore.
+
+	* Playback: Fixed bug that may have caused playing a wrong stream or
+	  random playback lockups on skip or explicit play commands.
+
+	* Bug fix: Avoid log disruption by very long messages.
+
 2016-02-09  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.5 released.
