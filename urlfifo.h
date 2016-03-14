@@ -48,7 +48,7 @@
  */
 /*!@{*/
 
-#define URLFIFO_MAX_LENGTH 4U
+#define URLFIFO_MAX_LENGTH 2U
 
 /*!
  * Opaque identifier for items in the URL FIFO.
