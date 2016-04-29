@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -29,7 +29,7 @@ EXTRA_DIST = README.md
 CLEANFILES = README.html
 
 streamplayer_SOURCES = \
-    streamplayer.c messages.c messages.h \
+    streamplayer.c messages.c messages.h messages_glib.c messages_glib.h \
     dbus_iface.c dbus_iface.h dbus_iface_deep.h \
     streamtime.h streamer.c streamer.h \
     os.c os.h

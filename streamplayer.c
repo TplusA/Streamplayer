@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -33,6 +33,7 @@
 #include "streamer.h"
 #include "dbus_iface.h"
 #include "messages.h"
+#include "messages_glib.h"
 #include "versioninfo.h"
 
 ssize_t (*os_read)(int fd, void *dest, size_t count) = read;
@@ -73,6 +74,7 @@ static void log_version_info(void)
 static int setup(const struct parameters *parameters)
 {
     msg_enable_syslog(!parameters->run_in_foreground);
+    msg_enable_glib_message_redirection();
 
     if(!parameters->run_in_foreground)
         openlog("streamplayer", LOG_PID, LOG_DAEMON);
