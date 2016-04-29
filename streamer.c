@@ -334,6 +334,7 @@ static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
         GVariant *meta_data = tag_list_to_g_variant(list);
 
         tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
+                                                    data->current_stream.id,
                                                     meta_data);
     }
 
@@ -380,7 +381,8 @@ static void handle_stream_state_change(GstBus *bus, GstMessage *message,
         if(dbus_playback_iface != NULL)
         {
             if(data->suppress_next_stopped_events == 0)
-                tdbus_splay_playback_emit_stopped(dbus_playback_iface);
+                tdbus_splay_playback_emit_stopped(dbus_playback_iface,
+                                                  data->current_stream.id);
             else
                 --data->suppress_next_stopped_events;
         }
@@ -389,7 +391,8 @@ static void handle_stream_state_change(GstBus *bus, GstMessage *message,
 
       case GST_STATE_PAUSED:
         if(dbus_playback_iface != NULL)
-            tdbus_splay_playback_emit_paused(dbus_playback_iface);
+            tdbus_splay_playback_emit_paused(dbus_playback_iface,
+                                             data->current_stream.id);
         break;
 
       case GST_STATE_PLAYING:
@@ -499,6 +502,7 @@ static gboolean report_progress(gpointer user_data)
         return TRUE;
 
     tdbus_splay_playback_emit_position_changed(playback_iface,
+                                               data->current_stream.id,
                                                new_time.position_s, "s",
                                                new_time.duration_s, "s");
 
