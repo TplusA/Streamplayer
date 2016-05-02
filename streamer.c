@@ -173,7 +173,7 @@ static uint32_t try_queue_next_stream(GstElement *pipeline,
     {
         ++tries;
 
-        msg_info("Queuing stream %u due to %s request: \"%s\"",
+        msg_info("Playing stream %u due to %s request: \"%s\"",
                  data->current_stream.id, what, data->current_stream.url);
 
         if(data->current_stream.url == NULL)
