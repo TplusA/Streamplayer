@@ -1,3 +1,17 @@
+2016-05-02  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 1.8 released.
+
+	* D-Bus: Signals are emitted with stream ID to enable more robust
+	  client code.
+
+	* D-Bus: Emit de.tahifi.Streamplayer.Playback.NowPlaying() when the
+	  stream is definitely playing, not sooner (before, the signal was
+	  emitted when the stream was handed over to playbin).
+
+	* Meta data handling: Clear all known meta data when new stream
+	  definitely starts.
+
 2016-03-14  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.7 released.
