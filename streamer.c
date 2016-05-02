@@ -401,9 +401,22 @@ static void handle_stream_state_change(GstBus *bus, GstMessage *message,
     }
 }
 
-static void start_of_new_stream(GstElement *elem, gpointer user_data)
+static void clear_meta_data(struct urlfifo_item *item)
+{
+    GstTagList **list = item_data_get(item);
+
+    if(*list != NULL)
+        gst_tag_list_unref(*list);
+
+    *list = gst_tag_list_new_empty();
+}
+
+static void start_of_new_stream(GstBus *bus, GstMessage *message,
+                                 gpointer user_data)
 {
     struct streamer_data *data = user_data;
+
+    clear_meta_data(&data->current_stream);
 
     GstState state;
     if(!get_stream_state(data->pipeline, &state, "New stream", true))
@@ -506,9 +519,6 @@ int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
     g_signal_connect(streamer_data.pipeline, "about-to-finish",
                      G_CALLBACK(queue_stream_from_url_fifo), &streamer_data);
 
-    g_signal_connect(streamer_data.pipeline, "audio-changed",
-                     G_CALLBACK(start_of_new_stream), &streamer_data);
-
     g_signal_connect(streamer_data.pipeline, "source-setup",
                      G_CALLBACK(setup_source_element),
                      (guint *)soup_http_block_size);
@@ -522,6 +532,8 @@ int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
                      G_CALLBACK(handle_tag), &streamer_data);
     g_signal_connect(bus, "message::state-changed",
                      G_CALLBACK(handle_stream_state_change), &streamer_data);
+    g_signal_connect(bus, "message::stream-start",
+                     G_CALLBACK(start_of_new_stream), &streamer_data);
     gst_object_unref(bus);
 
     g_main_loop_ref(loop);
