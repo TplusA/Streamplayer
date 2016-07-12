@@ -51,6 +51,10 @@ struct streamer_data
     struct urlfifo_item current_stream;
     struct time_data previous_time;
 
+    GstClock *system_clock;
+    bool is_tag_update_scheduled;
+    GstClockTime next_allowed_tag_update_time;
+
     unsigned int suppress_next_stopped_events;
 };
 
@@ -320,6 +324,23 @@ static GstTagList *update_tags_for_item(struct urlfifo_item *item,
     return *list;
 }
 
+static gboolean emit_tags(gpointer user_data)
+{
+    struct streamer_data *data = user_data;
+    GstTagList **list = item_data_get(&data->current_stream);
+    GVariant *meta_data = tag_list_to_g_variant(*list);
+
+    tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
+                                                data->current_stream.id,
+                                                meta_data);
+
+    data->next_allowed_tag_update_time =
+        gst_clock_get_time(data->system_clock) + 500UL * GST_MSECOND;
+    data->is_tag_update_scheduled = false;
+
+    return FALSE;
+}
+
 static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
 {
     GstTagList *tags = NULL;
@@ -327,18 +348,23 @@ static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
 
     struct streamer_data *data = user_data;
 
-    GstTagList *list = update_tags_for_item(&data->current_stream, tags);
-
-    if(list != NULL)
-    {
-        GVariant *meta_data = tag_list_to_g_variant(list);
-
-        tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
-                                                    data->current_stream.id,
-                                                    meta_data);
-    }
+    update_tags_for_item(&data->current_stream, tags);
 
     gst_tag_list_unref(tags);
+
+    if(data->is_tag_update_scheduled)
+        return;
+
+    GstClockTime now = gst_clock_get_time(data->system_clock);
+    GstClockTimeDiff cooldown = GST_CLOCK_DIFF(now, data->next_allowed_tag_update_time);
+
+    if(cooldown <= 0L)
+        emit_tags(data);
+    else
+    {
+        g_timeout_add(GST_TIME_AS_MSECONDS(cooldown), emit_tags, data);
+        data->is_tag_update_scheduled = true;
+    }
 }
 
 static void emit_now_playing(tdbussplayPlayback *playback_iface,
@@ -520,6 +546,11 @@ int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
     if(streamer_data.pipeline == NULL)
         return -1;
 
+    streamer_data.system_clock = gst_system_clock_obtain();
+    streamer_data.is_tag_update_scheduled = false;
+    streamer_data.next_allowed_tag_update_time =
+        gst_clock_get_time(streamer_data.system_clock);
+
     g_signal_connect(streamer_data.pipeline, "about-to-finish",
                      G_CALLBACK(queue_stream_from_url_fifo), &streamer_data);
 
@@ -563,6 +594,9 @@ void streamer_shutdown(GMainLoop *loop)
     log_assert(bus != NULL);
     gst_bus_remove_signal_watch(bus);
     gst_object_unref(bus);
+
+    gst_object_unref(GST_OBJECT(streamer_data.system_clock));
+    streamer_data.system_clock = NULL;
 
     gst_object_unref(GST_OBJECT(streamer_data.pipeline));
     streamer_data.pipeline = NULL;
