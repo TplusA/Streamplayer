@@ -306,6 +306,43 @@ static GVariant *tag_list_to_g_variant(const GstTagList *list)
 static GstTagList *update_tags_for_item(struct urlfifo_item *item,
                                         GstTagList *tags)
 {
+    static const char *filtered_out[] =
+    {
+        GST_TAG_IMAGE,
+        GST_TAG_PREVIEW_IMAGE,
+        GST_TAG_COMMENT,
+        GST_TAG_EXTENDED_COMMENT,
+        GST_TAG_COMPOSER,
+        GST_TAG_DATE,
+        GST_TAG_DATE_TIME,
+        GST_TAG_COPYRIGHT,
+        GST_TAG_COPYRIGHT_URI,
+        GST_TAG_ENCODER,
+        GST_TAG_ENCODER_VERSION,
+        GST_TAG_ENCODED_BY,
+        GST_TAG_ISRC,
+        GST_TAG_ORGANIZATION,
+        GST_TAG_LOCATION,
+        GST_TAG_HOMEPAGE,
+        GST_TAG_CONTACT,
+        GST_TAG_LICENSE,
+        GST_TAG_LICENSE_URI,
+        GST_TAG_SERIAL,
+        GST_TAG_KEYWORDS,
+        GST_TAG_LYRICS,
+        GST_TAG_ATTACHMENT,
+        GST_TAG_APPLICATION_DATA,
+        GST_TAG_TRACK_GAIN,
+        GST_TAG_TRACK_PEAK,
+        GST_TAG_ALBUM_GAIN,
+        GST_TAG_ALBUM_PEAK,
+        GST_TAG_REFERENCE_LEVEL,
+        "private-id3v2-frame",          /* from Deezer */
+    };
+
+    for(size_t i = 0; i < sizeof(filtered_out) / sizeof(filtered_out[0]); ++i)
+        gst_tag_list_remove_tag(tags, filtered_out[i]);
+
     GstTagList **list = item_data_get(item);
 
     if(*list != NULL)
