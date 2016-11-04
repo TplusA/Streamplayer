@@ -47,6 +47,7 @@ globals;
 
 struct parameters
 {
+    enum MessageVerboseLevel verbose_level;
     bool run_in_foreground;
     bool connect_to_system_dbus;
 };
@@ -63,9 +64,9 @@ static void show_version_info(void)
 
 static void log_version_info(void)
 {
-    msg_info("Rev %s%s, %s+%d, %s",
-             VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tainted)" : "",
-             VCS_TAG, VCS_TICK, VCS_DATE);
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Rev %s%s, %s+%d, %s",
+              VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tainted)" : "",
+              VCS_TAG, VCS_TICK, VCS_DATE);
 }
 
 /*!
@@ -75,6 +76,7 @@ static int setup(const struct parameters *parameters)
 {
     msg_enable_syslog(!parameters->run_in_foreground);
     msg_enable_glib_message_redirection();
+    msg_set_verbose_level(parameters->verbose_level);
 
     if(!parameters->run_in_foreground)
         openlog("streamplayer", LOG_PID, LOG_DAEMON);
@@ -93,34 +95,30 @@ static int setup(const struct parameters *parameters)
     return 0;
 }
 
-static void usage(const char *program_name)
-{
-    printf("Usage: %s [options]\n"
-           "\n"
-           "Options:\n"
-           "  --help         Show this help.\n"
-           "  --version      Print version information to stdout.\n"
-           "  --fg           Run in foreground, don't run as daemon.\n",
-           program_name);
-}
-
 static int process_command_line(int argc, char *argv[],
                                 struct parameters *parameters)
 {
+    parameters->verbose_level = MESSAGE_LEVEL_NORMAL;
     parameters->run_in_foreground = false;
     parameters->connect_to_system_dbus = false;
 
     bool show_version = false;
+    char *verbose_level_name = NULL;
+    bool verbose_quiet = false;
 
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
     GOptionEntry entries[] =
     {
-        { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
-          "Run in foreground, don't run as daemon.", NULL },
         { "version", 'V', 0, G_OPTION_ARG_NONE, &show_version,
           "Print version information to stdout.", NULL },
+        { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
+          "Run in foreground, don't run as daemon.", NULL },
+        { "verbose", 'v', 0, G_OPTION_ARG_STRING, &verbose_level_name,
+          "Set verbosity level to given level.", NULL },
+        { "quiet", 'q', 0, G_OPTION_ARG_NONE, &verbose_quiet,
+          "Short for \"--verbose quite\".", NULL},
         { "system-dbus", 's', 0, G_OPTION_ARG_NONE,
-            &parameters->connect_to_system_dbus,
+          &parameters->connect_to_system_dbus,
           "Connect to system D-Bus instead of session D-Bus.", NULL },
         { NULL }
     };
@@ -138,7 +136,33 @@ static int process_command_line(int argc, char *argv[],
     }
 
     if(show_version)
-        return 2;
+        return 1;
+
+    if(verbose_level_name != NULL)
+    {
+        parameters->verbose_level =
+            msg_verbose_level_name_to_level(verbose_level_name);
+
+        if(parameters->verbose_level == MESSAGE_LEVEL_IMPOSSIBLE)
+        {
+            fprintf(stderr,
+                    "Invalid verbosity \"%s\". "
+                    "Valid verbosity levels are:\n", verbose_level_name);
+
+            const char *const *names = msg_get_verbose_level_names();
+
+            for(const char *name = *names; name != NULL; name = *++names)
+                fprintf(stderr, "    %s\n", name);
+        }
+
+        g_free(verbose_level_name);
+
+        if(parameters->verbose_level == MESSAGE_LEVEL_IMPOSSIBLE)
+            return -1;
+    }
+
+    if(verbose_quiet)
+        parameters->verbose_level = MESSAGE_LEVEL_QUIET;
 
     return 0;
 }
@@ -164,11 +188,6 @@ int main(int argc, char *argv[])
     if(ret == -1)
         return EXIT_FAILURE;
     else if(ret == 1)
-    {
-        usage(argv[0]);
-        return EXIT_SUCCESS;
-    }
-    else if(ret == 2)
     {
         show_version_info();
         return EXIT_SUCCESS;
@@ -200,7 +219,7 @@ int main(int argc, char *argv[])
 
     g_main_loop_run(globals.loop);
 
-    msg_info("Shutting down");
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Shutting down");
 
     dbus_shutdown(globals.loop);
     streamer_shutdown(globals.loop);

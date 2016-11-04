@@ -209,7 +209,7 @@ static void name_acquired(GDBusConnection *connection,
 {
     struct dbus_data *data = user_data;
 
-    msg_info("D-Bus name \"%s\" acquired", name);
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" acquired", name);
     data->acquired = 1;
 }
 
@@ -218,13 +218,13 @@ static void name_lost(GDBusConnection *connection,
 {
     struct dbus_data *data = user_data;
 
-    msg_info("D-Bus name \"%s\" lost", name);
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" lost", name);
     data->acquired = -1;
 }
 
 static void destroy_notification(gpointer data)
 {
-    msg_info("Bus destroyed.");
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Bus destroyed.");
 }
 
 int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
