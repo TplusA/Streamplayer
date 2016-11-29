@@ -152,6 +152,20 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
     return TRUE;
 }
 
+static void handle_dbus_error(GError **error)
+{
+    if(*error == NULL)
+        return;
+
+    if((*error)->message != NULL)
+        msg_error(0, LOG_EMERG, "Got D-Bus error: %s", (*error)->message);
+    else
+        msg_error(0, LOG_EMERG, "Got D-Bus error without any message");
+
+    g_error_free(*error);
+    *error = NULL;
+}
+
 struct dbus_data
 {
     guint owner_id;
@@ -169,11 +183,7 @@ static void try_export_iface(GDBusConnection *connection,
 
     g_dbus_interface_skeleton_export(iface, connection, "/de/tahifi/Streamplayer", &error);
 
-    if(error)
-    {
-        msg_error(0, LOG_EMERG, "%s", error->message);
-        g_error_free(error);
-    }
+    handle_dbus_error(&error);
 }
 
 static void bus_acquired(GDBusConnection *connection,
