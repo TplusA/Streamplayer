@@ -29,6 +29,7 @@
 #include "streamer.h"
 #include "urlfifo.h"
 #include "messages.h"
+#include "messages_dbus.h"
 
 static gboolean playback_start(tdbussplayPlayback *object,
                                GDBusMethodInvocation *invocation)
@@ -172,6 +173,9 @@ struct dbus_data
     int acquired;
     tdbussplayPlayback *playback_iface;
     tdbussplayURLFIFO *urlfifo_iface;
+
+    tdbusdebugLogging *debug_logging_iface;
+    tdbusdebugLoggingConfig *debug_logging_config_proxy;
 };
 
 static struct dbus_data dbus_data;
@@ -193,6 +197,7 @@ static void bus_acquired(GDBusConnection *connection,
 
     data->playback_iface = tdbus_splay_playback_skeleton_new();
     data->urlfifo_iface = tdbus_splay_urlfifo_skeleton_new();
+    data->debug_logging_iface = tdbus_debug_logging_skeleton_new();
 
     g_signal_connect(data->playback_iface, "handle-start",
                      G_CALLBACK(playback_start), NULL);
@@ -210,8 +215,13 @@ static void bus_acquired(GDBusConnection *connection,
     g_signal_connect(data->urlfifo_iface, "handle-push",
                      G_CALLBACK(fifo_push), NULL);
 
+    g_signal_connect(data->debug_logging_iface,
+                     "handle-debug-level",
+                     G_CALLBACK(msg_dbus_handle_debug_level), NULL);
+
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->playback_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->urlfifo_iface));
+    try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->debug_logging_iface));
 }
 
 static void name_acquired(GDBusConnection *connection,
@@ -221,6 +231,16 @@ static void name_acquired(GDBusConnection *connection,
 
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" acquired", name);
     data->acquired = 1;
+
+    GError *error = NULL;
+
+    data->debug_logging_config_proxy =
+        tdbus_debug_logging_config_proxy_new_sync(connection,
+                                                  G_DBUS_PROXY_FLAGS_NONE,
+                                                  "de.tahifi.Dcpd",
+                                                  "/de/tahifi/Dcpd",
+                                                  NULL, &error);
+    handle_dbus_error(&error);
 }
 
 static void name_lost(GDBusConnection *connection,
@@ -266,6 +286,12 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
 
     log_assert(dbus_data.playback_iface != NULL);
     log_assert(dbus_data.urlfifo_iface != NULL);
+    log_assert(dbus_data.debug_logging_iface != NULL);
+    log_assert(dbus_data.debug_logging_config_proxy != NULL);
+
+    g_signal_connect(dbus_data.debug_logging_config_proxy, "g-signal",
+                     G_CALLBACK(msg_dbus_handle_global_debug_level_changed),
+                     NULL);
 
     g_main_loop_ref(loop);
 
@@ -282,6 +308,8 @@ void dbus_shutdown(GMainLoop *loop)
     g_main_loop_unref(loop);
     g_object_unref(dbus_data.playback_iface);
     g_object_unref(dbus_data.urlfifo_iface);
+    g_object_unref(dbus_data.debug_logging_iface);
+    g_object_unref(dbus_data.debug_logging_config_proxy);
 }
 
 tdbussplayURLFIFO *dbus_get_urlfifo_iface(void)
