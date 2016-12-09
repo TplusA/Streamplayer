@@ -130,10 +130,13 @@ static int process_command_line(int argc, char *argv[],
 
     if(!g_option_context_parse(ctx, &argc, &argv, &err))
     {
+        g_option_context_free(ctx);
         msg_error(0, LOG_EMERG, "%s", err->message);
         g_error_free(err);
         return -1;
     }
+
+    g_option_context_free(ctx);
 
     if(show_version)
         return 1;
