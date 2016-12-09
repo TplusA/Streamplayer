@@ -111,13 +111,15 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
 {
     msg_info("Got URLFIFO.Next message");
 
+    uint32_t skipped_id;
     uint32_t next_id;
-    const gboolean is_playing = streamer_next(false, &next_id);
+    const enum PlayStatus play_status = streamer_next(false, &skipped_id, &next_id);
 
     uint16_t temp;
         streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
 
-    tdbus_splay_urlfifo_complete_next(object, invocation, next_id, is_playing);
+    tdbus_splay_urlfifo_complete_next(object, invocation,
+                                      skipped_id, next_id, (uint8_t)play_status);
 
     return TRUE;
 }
@@ -137,13 +139,10 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
            ? 0
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
-    const bool failed =
-        (urlfifo_push_item(stream_id, stream_url, NULL, NULL,
-                           keep, NULL,
-                           NULL, &streamer_urlfifo_item_data_ops) == 0);
+    const bool failed = !streamer_push_item(stream_id, stream_url, keep);
 
     const gboolean is_playing = (keep_first_n_entries == -2)
-        ? streamer_next(true, NULL)
+        ? streamer_next(true, NULL, NULL)
         : streamer_is_playing();
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);

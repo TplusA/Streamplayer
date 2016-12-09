@@ -85,6 +85,7 @@ static void init_item(struct urlfifo_item *item, uint16_t external_id,
                       const struct streamtime *stop,
                       void *data, const struct urlfifo_item_data_ops *ops)
 {
+    item->is_valid = true;
     item->id = external_id;
 
     if(url != NULL && url[0] != '\0')
@@ -99,12 +100,10 @@ static void init_item(struct urlfifo_item *item, uint16_t external_id,
 
     item->start_time = (start != NULL) ? *start : end_of_stream;
     item->end_time = (stop != NULL) ? *stop : end_of_stream;
+    item->fail_state = URLFIFO_FAIL_STATE_NOT_FAILED;
 
     item->data = data;
     item->data_ops = ops;
-
-    if(item->data_ops != NULL)
-        item->data_ops->data_init(&item->data);
 }
 
 static inline bool urlfifo_unlocked_is_full(void)
@@ -133,6 +132,10 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
     if(urlfifo_unlocked_is_full())
     {
         urlfifo_unlock();
+
+        if(ops != NULL)
+            ops->data_free(&data);
+
         return 0;
     }
 
@@ -167,10 +170,10 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
         urlfifo_free_item(dest);
 
     struct urlfifo_item *const src = &fifo_data.items[fifo_data.first_item];
-    memcpy(dest, src, sizeof(*dest));
-    src->url = NULL;
-    src->data = NULL;
-    src->data_ops = NULL;
+
+    log_assert(src != dest);
+
+    urlfifo_move_item(dest, src);
 
     fifo_data.first_item = add_to_id(fifo_data.first_item, 1);
     --fifo_data.num_of_items;
@@ -182,9 +185,53 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
     return retval;
 }
 
+void urlfifo_move_item(struct urlfifo_item *restrict dest,
+                       struct urlfifo_item *restrict src)
+{
+    log_assert(dest != NULL);
+    log_assert(src != NULL);
+
+    urlfifo_free_item(dest);
+
+    memcpy(dest, src, sizeof(*dest));
+
+    src->is_valid = false;
+    src->url = NULL;
+    src->data = NULL;
+    src->data_ops = NULL;
+}
+
+bool urlfifo_fail_item(struct urlfifo_item *item, void *user_data)
+{
+    log_assert(item != NULL);
+    log_assert(item->is_valid);
+
+    switch(item->fail_state)
+    {
+      case URLFIFO_FAIL_STATE_NOT_FAILED:
+        item->fail_state = URLFIFO_FAIL_STATE_FAILURE_DETECTED;
+
+        if(item->data_ops != NULL)
+            item->data_ops->data_fail(item->data, user_data);
+
+        return true;
+
+      case URLFIFO_FAIL_STATE_FAILURE_DETECTED:
+        msg_error(0, LOG_NOTICE,
+                  "Detected multiple failures for stream ID %u, "
+                  "reporting only the first one", item->id);
+        break;
+    }
+
+    return false;
+}
+
 void urlfifo_free_item(struct urlfifo_item *item)
 {
     log_assert(item != NULL);
+
+    if(!item->is_valid)
+        return;
 
     if(item->data_ops != NULL)
         item->data_ops->data_free(&item->data);
@@ -192,6 +239,8 @@ void urlfifo_free_item(struct urlfifo_item *item)
     if(item->url != NULL)
         free(item->url);
 
+    item->is_valid = false;
+    item->id = 0;
     item->url = NULL;
     item->data = NULL;
     item->data_ops = NULL;

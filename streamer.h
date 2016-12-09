@@ -22,21 +22,25 @@
 #include <stdbool.h>
 #include <inttypes.h>
 
-int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size);
+enum PlayStatus
+{
+    PLAY_STATUS_STOPPED,
+    PLAY_STATUS_PLAYING,
+    PLAY_STATUS_PAUSED,
+};
+
+int streamer_setup(GMainLoop *loop, guint soup_http_block_size);
 void streamer_shutdown(GMainLoop *loop);
 
 void streamer_start(void);
 void streamer_stop(void);
 void streamer_pause(void);
 bool streamer_seek(guint64 position, const char *units);
-bool streamer_next(bool skip_only_if_playing, uint32_t *out_next_id);
+enum PlayStatus streamer_next(bool skip_only_if_playing,
+                              uint32_t *out_skipped_id, uint32_t *out_next_id);
 bool streamer_is_playing(void);
 bool streamer_get_current_stream_id(uint16_t *id);
-
-/*
- * Global structure that contains function pointers for operating on URL FIFO
- * item data.
- */
-extern const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops;
+bool streamer_push_item(uint16_t stream_id, const char *stream_url,
+                        size_t keep_items);
 
 #endif /* !STREAMER_H */

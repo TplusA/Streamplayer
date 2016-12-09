@@ -20,6 +20,7 @@
 #include <config.h>
 #endif /* HAVE_CONFIG_H */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -31,11 +32,58 @@
 #include "dbus_iface_deep.h"
 #include "messages.h"
 
-enum queue_mode
+enum stopped_reason
 {
-    QUEUEMODE_JUST_UPDATE_URI,
-    QUEUEMODE_START_PLAYING,
-    QUEUEMODE_FORCE_SKIP,
+    /*! Reason not known. Should be used very rarely, if ever. */
+    STOPPED_REASON_UNKNOWN,
+
+    /*! Cannot play because URL FIFO is empty. */
+    STOPPED_REASON_QUEUE_EMPTY,
+
+    /*! Cannot stop because the player is already stopped. */
+    STOPPED_REASON_ALREADY_STOPPED,
+
+    /*! I/O error on physical medium (e.g., read error on some USB drive). */
+    STOPPED_REASON_PHYSICAL_MEDIA_IO,
+
+    /*! I/O error on the network (e.g., broken network connection). */
+    STOPPED_REASON_NET_IO,
+
+    /*! Have no URL. */
+    STOPPED_REASON_URL_MISSING,
+
+    /*! Network protocol error. */
+    STOPPED_REASON_PROTOCOL,
+
+    /*! Authentication with some external system has failed. */
+    STOPPED_REASON_AUTHENTICATION,
+
+    /*! Resource does not exist. */
+    STOPPED_REASON_DOES_NOT_EXIST,
+
+    /*! Resource has wrong type. */
+    STOPPED_REASON_WRONG_TYPE,
+
+    /*! Cannot access resource due to restricted permissions. */
+    STOPPED_REASON_PERMISSION_DENIED,
+
+    /*! Failed decoding stream because of a missing codec. */
+    STOPPED_REASON_MISSING_CODEC,
+
+    /*! Stream codec is known, but format wrong. */
+    STOPPED_REASON_WRONG_STREAM_FORMAT,
+
+    /*! Decoding failed. */
+    STOPPED_REASON_BROKEN_STREAM,
+
+    /*! Decryption key missing. */
+    STOPPED_REASON_ENCRYPTED,
+
+    /*! Cannot decrypt because this is not implemented/supported. */
+    STOPPED_REASON_DECRYPTION_NOT_SUPPORTED,
+
+    /*! Stable name for the highest-valued code. */
+    STOPPED_REASON_LAST_VALUE = STOPPED_REASON_DECRYPTION_NOT_SUPPORTED,
 };
 
 struct time_data
@@ -44,45 +92,103 @@ struct time_data
     int64_t duration_s;
 };
 
+struct failure_data
+{
+    enum stopped_reason reason;
+    bool clear_fifo_on_error;
+    bool report_on_stream_stop;
+};
+
 struct streamer_data
 {
-    GstElement *pipeline;
+    GMutex lock;
 
+    GstElement *pipeline;
+    guint bus_watch;
+    guint progress_watcher;
+    guint soup_http_block_size;
+    gulong signal_handler_ids[2];
+
+    /*!
+     * The item currently played/paused.
+     *
+     * The item is moved from the URL FIFO into this place using
+     * #urlfifo_pop_item(). Check #urlfifo_item::is_valid to tell valid from
+     * invalid (unused) items.
+     */
     struct urlfifo_item current_stream;
+
+    /*!
+     * The item to be played/paused next.
+     *
+     * The item is moved from the URL FIFO into this place using
+     * #urlfifo_pop_item() soon before the currently playing stream ends. It is
+     * moved to #streamer_data::current_stream when the stream actually starts
+     * playing.
+     *
+     * Check #urlfifo_item::is_valid to tell valid from invalid (unused) items.
+     */
+    struct urlfifo_item next_stream;
+
+    struct failure_data fail;
+
     struct time_data previous_time;
+    struct time_data current_time;
 
     GstClock *system_clock;
     bool is_tag_update_scheduled;
     GstClockTime next_allowed_tag_update_time;
 
     unsigned int suppress_next_stopped_events;
+
+    enum PlayStatus supposed_play_status;
 };
 
-static void item_data_init(void **data)
-{
-    *(GstTagList **)data = NULL;
-    *data = NULL;
-}
+#define LOCK_DATA(SD) \
+    do \
+    { \
+        g_mutex_lock(&(SD)->lock); \
+    } \
+    while(0)
 
-static void item_data_free(void **data)
-{
-    if(*data != NULL)
-    {
-        gst_tag_list_unref(*(GstTagList **)data);
-        *data = NULL;
-    }
-}
+#define UNLOCK_DATA(SD) \
+    do \
+    { \
+        g_mutex_unlock(&(SD)->lock); \
+    } \
+    while(0)
 
-static inline GstTagList **item_data_get(struct urlfifo_item *item)
+struct stream_data
 {
-    return (GstTagList **)&item->data;
-}
-
-const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
-{
-    .data_init = item_data_init,
-    .data_free = item_data_free,
+    struct streamer_data *streamer_data;
+    GstTagList *tag_list;
 };
+
+typedef enum
+{
+    GST_PLAY_FLAG_VIDEO             = (1 << 0),
+    GST_PLAY_FLAG_AUDIO             = (1 << 1),
+    GST_PLAY_FLAG_TEXT              = (1 << 2),
+    GST_PLAY_FLAG_VIS               = (1 << 3),
+    GST_PLAY_FLAG_SOFT_VOLUME       = (1 << 4),
+    GST_PLAY_FLAG_NATIVE_AUDIO      = (1 << 5),
+    GST_PLAY_FLAG_NATIVE_VIDEO      = (1 << 6),
+    GST_PLAY_FLAG_DOWNLOAD          = (1 << 7),
+    GST_PLAY_FLAG_BUFFERING         = (1 << 8),
+    GST_PLAY_FLAG_DEINTERLACE       = (1 << 9),
+    GST_PLAY_FLAG_SOFT_COLORBALANCE = (1 << 10),
+}
+GstPlayFlags;
+
+static inline const struct stream_data *item_data_get(const struct urlfifo_item *item)
+{
+    return item->data;
+}
+
+static inline struct stream_data *item_data_get_nonconst(struct urlfifo_item *item)
+{
+    return item->data;
+}
 
 static void invalidate_position_information(struct time_data *data)
 {
@@ -90,48 +196,9 @@ static void invalidate_position_information(struct time_data *data)
     data->duration_s = INT64_MAX;
 }
 
-static void invalidate_current_stream(struct streamer_data *data)
+static inline void invalidate_stream_position_information(struct streamer_data *data)
 {
-    urlfifo_free_item(&data->current_stream);
     invalidate_position_information(&data->previous_time);
-}
-
-static bool get_stream_state(GstElement *pipeline, GstState *state,
-                             const char *context, bool must_be_real_state)
-{
-    if(!must_be_real_state)
-    {
-        *state = GST_STATE_PENDING(pipeline);
-
-        if(*state != GST_STATE_VOID_PENDING)
-            return true;
-    }
-
-    GstStateChangeReturn ret = gst_element_get_state(pipeline, state, NULL, 0);
-
-    switch(ret)
-    {
-      case GST_STATE_CHANGE_SUCCESS:
-      case GST_STATE_CHANGE_ASYNC:
-        return true;
-
-      case GST_STATE_CHANGE_FAILURE:
-        msg_error(0, LOG_ERR,
-                  "%s: Failed changing state (gst_element_get_state())",
-                  context);
-        break;
-
-      case GST_STATE_CHANGE_NO_PREROLL:
-        msg_error(0, LOG_ERR,
-                  "%s: Failed prerolling (gst_element_get_state())",
-                  context);
-        break;
-    }
-
-    msg_error(0, LOG_ERR,
-              "%s: gst_element_get_state() failed (%d)", context, ret);
-
-    return false;
 }
 
 static bool set_stream_state(GstElement *pipeline, GstState next_state,
@@ -147,108 +214,268 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
 
       case GST_STATE_CHANGE_FAILURE:
         msg_error(0, LOG_ERR,
-                  "%s: Failed changing state (gst_element_set_state())",
+                  "[%s] Failed changing state (gst_element_set_state())",
                   context);
         break;
 
       case GST_STATE_CHANGE_NO_PREROLL:
         msg_error(0, LOG_ERR,
-                  "%s: Failed prerolling (gst_element_set_state())",
+                  "[%s] Failed prerolling (gst_element_set_state())",
                   context);
         break;
     }
 
     msg_error(0, LOG_ERR,
-              "%s: gst_element_set_state() failed (%d)", context, ret);
+              "[%s] gst_element_set_state() failed (%d)", context, ret);
 
     return false;
 }
 
-static uint32_t try_queue_next_stream(GstElement *pipeline,
-                                      struct streamer_data *data,
-                                      enum queue_mode queue_mode,
-                                      GstState next_state,
-                                      const char *what)
+static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
+                                    const struct urlfifo_item *failed_stream,
+                                    enum stopped_reason reason)
 {
-    size_t tries = 0;
-    bool maybe_suppress_stop_event = false;
+    if(playback_iface == NULL)
+        return;
 
-    while(urlfifo_pop_item(&data->current_stream, true) >= 0)
+    /*!
+     * String IDs that can be used as a reason as to why the stream was
+     * stopped.
+     *
+     * Must be sorted according to values in #stopped_reason enumeration.
+     */
+    static const char *reasons[] =
     {
-        ++tries;
+        "flow.unknown",
+        "flow.nourl",
+        "flow.stopped",
+        "io.media",
+        "io.net",
+        "io.nourl",
+        "io.protocol",
+        "io.auth",
+        "io.unavailable",
+        "io.type",
+        "io.denied",
+        "data.codec",
+        "data.format",
+        "data.broken",
+        "data.encrypted",
+        "data.nodecrypter",
+    };
 
-        msg_info("Playing stream %u due to %s request: \"%s\"",
-                 data->current_stream.id, what, data->current_stream.url);
+    G_STATIC_ASSERT(G_N_ELEMENTS(reasons) == STOPPED_REASON_LAST_VALUE + 1U);
 
-        if(data->current_stream.url == NULL)
-        {
-            urlfifo_free_item(&data->current_stream);
-            continue;
-        }
 
-        if(queue_mode == QUEUEMODE_FORCE_SKIP)
-        {
-            if(!set_stream_state(pipeline, GST_STATE_READY, "Force skip"))
-            {
-                urlfifo_free_item(&data->current_stream);
-                return UINT32_MAX;
-            }
-
-            invalidate_position_information(&data->previous_time);
-            maybe_suppress_stop_event = true;
-        }
-
-        g_object_set(G_OBJECT(pipeline), "uri", data->current_stream.url, NULL);
-
-        switch(queue_mode)
-        {
-          case QUEUEMODE_START_PLAYING:
-          case QUEUEMODE_FORCE_SKIP:
-            if(set_stream_state(pipeline, next_state, "Play queued"))
-            {
-                /*
-                 * ATTENTION: This only works because the signal handler for
-                 *            stream state changes runs in the same context as
-                 *            this code. */
-                if(maybe_suppress_stop_event)
-                    ++data->suppress_next_stopped_events;
-
-                return data->current_stream.id;
-            }
-
-            break;
-
-          case QUEUEMODE_JUST_UPDATE_URI:
-            return data->current_stream.id;
-        }
-
-        urlfifo_free_item(&data->current_stream);
-    }
-
-    if(tries == 0)
-        msg_info("Got %s request, but URL FIFO is empty", what);
+    if(failed_stream->is_valid)
+        tdbus_splay_playback_emit_stopped_with_error(playback_iface,
+                                                     failed_stream->id,
+                                                     failed_stream->url,
+                                                     urlfifo_get_size() == 0,
+                                                     reasons[reason]);
     else
-        msg_info("Tried all URLs in FIFO, have no more streams to try");
+        tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
+                                                     urlfifo_get_size() == 0,
+                                                     reasons[reason]);
+}
+
+static int rebuild_playbin(const char *context);
+
+static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
+{
+    static const char context[] = "deferred stop";
+
+    /*
+     * HACK ALERT -- HACK ALERT -- HACK ALERT
+     *
+     * The correct way to recover from any errors in the pipeline would be to
+     * set the state to GST_STATE_NULL to flush errors, then set it to
+     * GST_STATE_READY to move on. It should not even be necessary to do this
+     * inside a thread or in an idle function.
+     *
+     * Unfortunately, there are several known deadlock problems in GStreamer
+     * that have not been addressed in current versions of GStreamer (as of
+     * December 2016), and it seems we have hit one of those here. Attempting
+     * to flush errors the correct way in here sometimes leads to a deadlock
+     * deep inside GStreamer. It also happens pretty frequently, especially in
+     * case many errors occur in quick succession (e.g., while trying to play a
+     * directory that contains many files which are not playable and some
+     * retries are allowed).
+     *
+     * There is no real cure to that problem, but destroying the whole pipeline
+     * and creating a new one seems to work.
+     */
+    rebuild_playbin(context);
+
+    msg_info("Stop reason is %d", data->fail.reason);
+
+    if(data->fail.clear_fifo_on_error)
+        urlfifo_clear(0, NULL);
+
+    const struct urlfifo_item *const failed_stream =
+        ((data->next_stream.is_valid &&
+          data->next_stream.fail_state != URLFIFO_FAIL_STATE_NOT_FAILED)
+         ? &data->next_stream
+         : &data->current_stream);
+
+    invalidate_stream_position_information(data);
+    emit_stopped_with_error(dbus_get_playback_iface(),
+                            failed_stream, data->fail.reason);
+
+    urlfifo_free_item(&data->current_stream);
+    urlfifo_free_item(&data->next_stream);
+    memset(&data->fail, 0, sizeof(data->fail));
+}
+
+static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
+{
+    msg_vinfo(MESSAGE_LEVEL_DIAG, "Recover from error");
+
+    struct streamer_data *data = user_data;
+
+    LOCK_DATA(data);
+    do_stop_pipeline_and_recover_from_error(data);
+    UNLOCK_DATA(data);
+
+    return G_SOURCE_REMOVE;
+}
+
+static void schedule_error_recovery(struct streamer_data *data,
+                                    enum stopped_reason reason)
+{
+    data->fail.reason = reason;
+    data->fail.clear_fifo_on_error = false;
+
+    g_idle_add(stop_pipeline_and_recover_from_error, data);
+}
+
+static void item_data_fail(void *data, void *user_data)
+{
+    if(data == NULL)
+        return;
+
+    struct stream_data *const sd = data;
+    const struct failure_data *const fdata = user_data;
+
+    if(!fdata->report_on_stream_stop)
+        schedule_error_recovery(sd->streamer_data, fdata->reason);
+    else
+        sd->streamer_data->fail = *fdata;
+}
+
+static void item_data_free(void **data)
+{
+    if(*data == NULL)
+        return;
+
+    struct stream_data *sd = *data;
+
+    if(sd->tag_list != NULL)
+        gst_tag_list_unref(sd->tag_list);
+
+    free(sd);
+
+    *data = NULL;
+}
+
+static uint32_t try_dequeue_next(struct streamer_data *data,
+                                 bool is_queued_item_expected,
+                                 const char *context)
+{
+    struct failure_data fdata =
+    {
+        .reason = STOPPED_REASON_UNKNOWN,
+        .report_on_stream_stop = data->current_stream.is_valid,
+    };
+
+    if(urlfifo_pop_item(&data->next_stream, true) < 0)
+    {
+        if(!is_queued_item_expected)
+            return UINT32_MAX;
+
+        msg_info("[%s] Cannot dequeue, URL FIFO is empty", context);
+        fdata.reason = STOPPED_REASON_QUEUE_EMPTY;
+    }
+    else if(data->next_stream.url == NULL)
+    {
+        msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
+                  "[%s] Cannot dequeue, URL in item is empty", context);
+        fdata.reason = STOPPED_REASON_URL_MISSING;
+    }
+    else
+        return data->next_stream.id;
+
+    if(data->current_stream.is_valid)
+        urlfifo_fail_item(&data->current_stream, &fdata);
+    else if(data->next_stream.is_valid)
+    {
+        urlfifo_move_item(&data->current_stream, &data->next_stream);
+        urlfifo_fail_item(&data->current_stream, &fdata);
+    }
+    else
+        schedule_error_recovery(data, fdata.reason);
 
     return UINT32_MAX;
 }
 
-static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
+static bool play_next_stream(struct streamer_data *data, GstState next_state,
+                             const char *context)
 {
-    try_queue_next_stream(elem, user_data,
-                          QUEUEMODE_JUST_UPDATE_URI, GST_STATE_NULL,
-                          "need next stream");
+    g_object_set(data->pipeline, "uri", data->next_stream.url, NULL);
+
+    urlfifo_free_item(&data->current_stream);
+
+    const bool retval =
+        set_stream_state(data->pipeline, next_state, "play queued");
+
+    if(retval)
+        invalidate_stream_position_information(data);
+
+    return retval;
 }
 
-static void handle_end_of_stream(GstBus *bus, GstMessage *message,
-                                 gpointer user_data)
+static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 {
-    msg_info("Finished playing all streams");
+    static const char context[] = "need next stream";
 
     struct streamer_data *data = user_data;
 
+    LOCK_DATA(data);
+
+    if(data->current_stream.is_valid && !data->next_stream.is_valid)
+    {
+        if(try_dequeue_next(data, false, context) != UINT32_MAX)
+        {
+            msg_info("Setting URL %s for next stream %u",
+                     data->next_stream.url, data->next_stream.id);
+
+            g_object_set(data->pipeline, "uri", data->next_stream.url, NULL);
+        }
+    }
+    else
+        urlfifo_move_item(&data->current_stream, &data->next_stream);
+
+    UNLOCK_DATA(data);
+}
+
+static void handle_end_of_stream(GstMessage *message,
+                                 struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    msg_info("Finished playing all streams");
+
+    LOCK_DATA(data);
+
     if(set_stream_state(data->pipeline, GST_STATE_READY, "EOS"))
-        invalidate_current_stream(data);
+    {
+        tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
+                                          data->current_stream.id);
+        urlfifo_free_item(&data->current_stream);
+    }
+
+    UNLOCK_DATA(data);
 }
 
 static void add_tuple_to_tags_variant_builder(const GstTagList *list,
@@ -343,29 +570,33 @@ static GstTagList *update_tags_for_item(struct urlfifo_item *item,
     for(size_t i = 0; i < sizeof(filtered_out) / sizeof(filtered_out[0]); ++i)
         gst_tag_list_remove_tag(tags, filtered_out[i]);
 
-    GstTagList **list = item_data_get(item);
+    GstTagList *list = item_data_get_nonconst(item)->tag_list;
 
-    if(*list != NULL)
+    if(list != NULL)
     {
         GstTagList *merged =
-            gst_tag_list_merge(*list, tags, GST_TAG_MERGE_PREPEND);
-        gst_tag_list_unref(*list);
-        *list = merged;
+            gst_tag_list_merge(list, tags, GST_TAG_MERGE_PREPEND);
+        gst_tag_list_unref(list);
+        item_data_get_nonconst(item)->tag_list = merged;
     }
     else
     {
-        *list = tags;
-        gst_tag_list_ref(*list);
+        gst_tag_list_ref(tags);
+        item_data_get_nonconst(item)->tag_list = tags;
     }
 
-    return *list;
+    return item_data_get_nonconst(item)->tag_list;
 }
 
-static gboolean emit_tags(gpointer user_data)
+static void emit_tags__unlocked(struct streamer_data *data)
 {
-    struct streamer_data *data = user_data;
-    GstTagList **list = item_data_get(&data->current_stream);
-    GVariant *meta_data = tag_list_to_g_variant(*list);
+    struct stream_data *sd = item_data_get_nonconst(&data->current_stream);
+
+    if(sd == NULL)
+        return;
+
+    GstTagList *list = sd->tag_list;
+    GVariant *meta_data = tag_list_to_g_variant(list);
 
     tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
                                                 data->current_stream.id,
@@ -374,16 +605,31 @@ static gboolean emit_tags(gpointer user_data)
     data->next_allowed_tag_update_time =
         gst_clock_get_time(data->system_clock) + 500UL * GST_MSECOND;
     data->is_tag_update_scheduled = false;
+}
+
+static gboolean emit_tags(gpointer user_data)
+{
+    struct streamer_data *data = user_data;
+
+    LOCK_DATA(data);
+
+    if(data->current_stream.is_valid)
+        emit_tags__unlocked(data);
+    else
+        data->is_tag_update_scheduled = false;
+
+    UNLOCK_DATA(data);
 
     return FALSE;
 }
 
-static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
+static void handle_tag__unlocked(GstMessage *message, struct streamer_data *data)
 {
+    if(!data->current_stream.is_valid)
+        return;
+
     GstTagList *tags = NULL;
     gst_message_parse_tag(message, &tags);
-
-    struct streamer_data *data = user_data;
 
     update_tags_for_item(&data->current_stream, tags);
 
@@ -396,12 +642,24 @@ static void handle_tag(GstBus *bus, GstMessage *message, gpointer user_data)
     GstClockTimeDiff cooldown = GST_CLOCK_DIFF(now, data->next_allowed_tag_update_time);
 
     if(cooldown <= 0L)
-        emit_tags(data);
+        emit_tags__unlocked(data);
     else
     {
         g_timeout_add(GST_TIME_AS_MSECONDS(cooldown), emit_tags, data);
         data->is_tag_update_scheduled = true;
     }
+}
+
+static void handle_tag(GstMessage *message, struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    LOCK_DATA(data);
+
+    handle_tag__unlocked(message, data);
+
+    UNLOCK_DATA(data);
 }
 
 static void emit_now_playing(tdbussplayPlayback *playback_iface,
@@ -410,9 +668,8 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     if(playback_iface == NULL || data->current_stream.url == NULL)
         return;
 
-    GstTagList **list = item_data_get(&data->current_stream);
-
-    GVariant *meta_data = tag_list_to_g_variant(*list);
+    GstTagList *list = item_data_get_nonconst(&data->current_stream)->tag_list;
+    GVariant *meta_data = tag_list_to_g_variant(list);
 
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data->current_stream.id,
@@ -420,85 +677,235 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
                                           urlfifo_is_full(), meta_data);
 }
 
-static void handle_stream_state_change(GstBus *bus, GstMessage *message,
-                                       gpointer user_data)
+static enum stopped_reason core_error_to_stopped_reason(GstCoreError code,
+                                                        bool is_local_error)
 {
-    struct streamer_data *data = user_data;
-
-    if(GST_MESSAGE_SRC(message) != GST_OBJECT(data->pipeline))
-        return;
-
-    GstState state, pending;
-    gst_message_parse_state_changed(message, NULL, &state, &pending);
-
-    /* we are currently not interested in transients */
-    if(pending != GST_STATE_VOID_PENDING)
-        return;
-
-    tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
-
-    switch(state)
+    switch(code)
     {
-      case GST_STATE_READY:
-      case GST_STATE_NULL:
-        if(dbus_playback_iface != NULL)
-        {
-            if(data->suppress_next_stopped_events == 0)
-                tdbus_splay_playback_emit_stopped(dbus_playback_iface,
-                                                  data->current_stream.id);
-            else
-                --data->suppress_next_stopped_events;
-        }
+      case GST_CORE_ERROR_MISSING_PLUGIN:
+      case GST_CORE_ERROR_DISABLED:
+        return STOPPED_REASON_MISSING_CODEC;
 
-        break;
-
-      case GST_STATE_PAUSED:
-        if(dbus_playback_iface != NULL)
-            tdbus_splay_playback_emit_paused(dbus_playback_iface,
-                                             data->current_stream.id);
-        break;
-
-      case GST_STATE_PLAYING:
-        emit_now_playing(dbus_playback_iface, data);
-        break;
-
-      case GST_STATE_VOID_PENDING:
+      case GST_CORE_ERROR_FAILED:
+      case GST_CORE_ERROR_TOO_LAZY:
+      case GST_CORE_ERROR_NOT_IMPLEMENTED:
+      case GST_CORE_ERROR_STATE_CHANGE:
+      case GST_CORE_ERROR_PAD:
+      case GST_CORE_ERROR_THREAD:
+      case GST_CORE_ERROR_NEGOTIATION:
+      case GST_CORE_ERROR_EVENT:
+      case GST_CORE_ERROR_SEEK:
+      case GST_CORE_ERROR_CAPS:
+      case GST_CORE_ERROR_TAG:
+      case GST_CORE_ERROR_CLOCK:
+      case GST_CORE_ERROR_NUM_ERRORS:
         break;
     }
+
+    BUG("Failed to convert GstCoreError code %d to reason code", code);
+
+    return STOPPED_REASON_UNKNOWN;
 }
 
-static void clear_meta_data(struct urlfifo_item *item)
+static enum stopped_reason library_error_to_stopped_reason(GstLibraryError code,
+                                                           bool is_local_error)
 {
-    GstTagList **list = item_data_get(item);
-
-    if(*list != NULL)
-        gst_tag_list_unref(*list);
-
-    *list = gst_tag_list_new_empty();
+    BUG("Failed to convert GstLibraryError code %d to reason code", code);
+    return STOPPED_REASON_UNKNOWN;
 }
 
-static void start_of_new_stream(GstBus *bus, GstMessage *message,
-                                 gpointer user_data)
+static enum stopped_reason resource_error_to_stopped_reason(GstResourceError code,
+                                                            bool is_local_error)
 {
-    struct streamer_data *data = user_data;
+    switch(code)
+    {
+      case GST_RESOURCE_ERROR_NOT_FOUND:
+        return STOPPED_REASON_DOES_NOT_EXIST;
 
-    clear_meta_data(&data->current_stream);
+      case GST_RESOURCE_ERROR_OPEN_READ:
+        return is_local_error
+            ? STOPPED_REASON_PHYSICAL_MEDIA_IO
+            : STOPPED_REASON_NET_IO;
 
-    GstState state;
-    if(!get_stream_state(data->pipeline, &state, "New stream", true))
-        return;
+      case GST_RESOURCE_ERROR_READ:
+      case GST_RESOURCE_ERROR_SEEK:
+        return STOPPED_REASON_PROTOCOL;
 
-    if(state != GST_STATE_PLAYING)
-        return;
+      case GST_RESOURCE_ERROR_NOT_AUTHORIZED:
+        return STOPPED_REASON_PERMISSION_DENIED;
 
-    emit_now_playing(dbus_get_playback_iface(), data);
+      case GST_RESOURCE_ERROR_FAILED:
+      case GST_RESOURCE_ERROR_TOO_LAZY:
+      case GST_RESOURCE_ERROR_BUSY:
+      case GST_RESOURCE_ERROR_OPEN_WRITE:
+      case GST_RESOURCE_ERROR_OPEN_READ_WRITE:
+      case GST_RESOURCE_ERROR_CLOSE:
+      case GST_RESOURCE_ERROR_WRITE:
+      case GST_RESOURCE_ERROR_SYNC:
+      case GST_RESOURCE_ERROR_SETTINGS:
+      case GST_RESOURCE_ERROR_NO_SPACE_LEFT:
+      case GST_RESOURCE_ERROR_NUM_ERRORS:
+        break;
+    }
+
+    BUG("Failed to convert GstResourceError code %d to reason code", code);
+
+    return STOPPED_REASON_UNKNOWN;
 }
 
-static void setup_source_element(GstElement *playbin,
-                                 GstElement *source, gpointer user_data)
+static enum stopped_reason stream_error_to_stopped_reason(GstStreamError code,
+                                                          bool is_local_error)
 {
-    if(strcmp(G_OBJECT_TYPE_NAME(source), "GstSoupHTTPSrc") == 0)
-        g_object_set(G_OBJECT(source), "blocksize", *(guint *)user_data, NULL);
+    switch(code)
+    {
+      case GST_STREAM_ERROR_FAILED:
+      case GST_STREAM_ERROR_TYPE_NOT_FOUND:
+      case GST_STREAM_ERROR_WRONG_TYPE:
+        return STOPPED_REASON_WRONG_TYPE;
+
+      case GST_STREAM_ERROR_CODEC_NOT_FOUND:
+        return STOPPED_REASON_MISSING_CODEC;
+
+      case GST_STREAM_ERROR_DECODE:
+      case GST_STREAM_ERROR_DEMUX:
+        return STOPPED_REASON_BROKEN_STREAM;
+
+      case GST_STREAM_ERROR_FORMAT:
+        return STOPPED_REASON_WRONG_STREAM_FORMAT;
+
+      case GST_STREAM_ERROR_DECRYPT:
+        return STOPPED_REASON_DECRYPTION_NOT_SUPPORTED;
+
+      case GST_STREAM_ERROR_DECRYPT_NOKEY:
+        return STOPPED_REASON_ENCRYPTED;
+
+      case GST_STREAM_ERROR_TOO_LAZY:
+      case GST_STREAM_ERROR_NOT_IMPLEMENTED:
+      case GST_STREAM_ERROR_ENCODE:
+      case GST_STREAM_ERROR_MUX:
+      case GST_STREAM_ERROR_NUM_ERRORS:
+        break;
+    }
+
+    BUG("Failed to convert GstStreamError code %d to reason code", code);
+
+    return STOPPED_REASON_UNKNOWN;
+}
+
+static enum stopped_reason gerror_to_stopped_reason(GError *error,
+                                                    bool is_local_error)
+{
+    if(error->domain == GST_CORE_ERROR)
+        return core_error_to_stopped_reason((GstCoreError)error->code,
+                                            is_local_error);
+
+    if(error->domain == GST_LIBRARY_ERROR)
+        return library_error_to_stopped_reason((GstLibraryError)error->code,
+                                               is_local_error);
+
+    if(error->domain == GST_RESOURCE_ERROR)
+        return resource_error_to_stopped_reason((GstResourceError)error->code,
+                                                is_local_error);
+
+    if(error->domain == GST_STREAM_ERROR)
+        return stream_error_to_stopped_reason((GstStreamError)error->code,
+                                              is_local_error);
+
+    BUG("Unknown error domain %u for error code %d",
+        error->domain, error->code);
+
+    return STOPPED_REASON_UNKNOWN;
+}
+
+static bool determine_is_local_error_by_url(const struct urlfifo_item *item)
+{
+    if(!item->is_valid)
+        return true;
+
+    if(item->url == NULL)
+        return true;
+
+#if GST_CHECK_VERSION(1, 5, 1)
+    GstUri *uri = gst_uri_from_string(item->url);
+
+    if(uri == NULL)
+        return true;
+
+    const char *scheme = gst_uri_get_scheme(uri);
+    const bool retval = (scheme == NULL || strcmp(scheme, "file") == 0);
+
+    gst_uri_unref(uri);
+
+    return retval;
+#else /* pre 1.5.1 */
+    static const char protocol_prefix[] = "file://";
+
+    return strncmp(item->url, protocol_prefix,
+                   sizeof(protocol_prefix) - 1) == 0;
+#endif /* use GstUri if not older than v1.5.1 */
+}
+
+static void handle_error_message(GstMessage *message, struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    GError *error = NULL;
+    gchar *debug = NULL;
+
+    gst_message_parse_error(message, &error, &debug);
+
+    LOCK_DATA(data);
+
+    struct urlfifo_item *const failed_stream = data->next_stream.is_valid
+        ? &data->next_stream
+        : &data->current_stream;
+
+    const bool is_local_error = determine_is_local_error_by_url(failed_stream);
+
+    GstElement *source_elem;
+    g_object_get(data->pipeline, "source", &source_elem, NULL);
+
+    struct failure_data fdata =
+    {
+        .reason = gerror_to_stopped_reason(error, is_local_error),
+        .report_on_stream_stop = false,
+    };
+
+    msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
+              error->code, g_quark_to_string(error->domain),
+              GST_MESSAGE_SRC_NAME(message));
+    msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
+    msg_error(0, LOG_ERR, "ERROR debug: %s", debug);
+    msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
+              fdata.reason, fdata.report_on_stream_stop ? "on stop" : "now");
+
+    urlfifo_fail_item(failed_stream, &fdata);
+
+    UNLOCK_DATA(data);
+
+    g_free(debug);
+    g_error_free(error);
+}
+
+static void handle_warning_message(GstMessage *message, struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    GError *error = NULL;
+    gchar *debug = NULL;
+
+    gst_message_parse_warning(message, &error, &debug);
+
+    msg_error(0, LOG_ERR, "WARNING code %d, domain %s from \"%s\"",
+              error->code, g_quark_to_string(error->domain),
+              GST_MESSAGE_SRC_NAME(message));
+    msg_error(0, LOG_ERR, "WARNING message: %s", error->message);
+    msg_error(0, LOG_ERR, "WARNING debug: %s", debug);
+
+    g_free(debug);
+    g_error_free(error);
 }
 
 static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
@@ -530,90 +937,394 @@ static gboolean report_progress(gpointer user_data)
 {
     struct streamer_data *data = user_data;
 
-    GstState state;
-    if(!get_stream_state(data->pipeline, &state, "Progress", true))
-    {
-        if(set_stream_state(data->pipeline, GST_STATE_READY, "Progress"))
-            invalidate_current_stream(data);
+    LOCK_DATA(data);
 
-        return TRUE;
+    if(!data->current_stream.is_valid)
+    {
+        data->progress_watcher = 0;
+        UNLOCK_DATA(data);
+        return G_SOURCE_REMOVE;
     }
 
-    struct time_data new_time;
+    const GstState state = GST_STATE(data->pipeline);
 
-    if(state == GST_STATE_PLAYING || state == GST_STATE_PAUSED)
+    switch(state)
     {
+      case GST_STATE_PLAYING:
+      case GST_STATE_PAUSED:
         query_seconds(gst_element_query_position, data->pipeline,
-                      &new_time.position_s);
-        query_seconds(gst_element_query_duration, data->pipeline,
-                      &new_time.duration_s);
+                      &data->current_time.position_s);
+        break;
+
+      case GST_STATE_READY:
+      case GST_STATE_NULL:
+      case GST_STATE_VOID_PENDING:
+        data->current_time.position_s = INT64_MAX;
+        break;
     }
-    else
+
+    if(data->current_time.position_s != data->previous_time.position_s ||
+       data->current_time.duration_s != data->previous_time.duration_s)
     {
-        invalidate_position_information(&new_time);
+        data->previous_time = data->current_time;
+
+        tdbussplayPlayback *playback_iface = dbus_get_playback_iface();
+
+        if(playback_iface != NULL)
+            tdbus_splay_playback_emit_position_changed(playback_iface,
+                                                       data->current_stream.id,
+                                                       data->current_time.position_s, "s",
+                                                       data->current_time.duration_s, "s");
     }
 
-    if(new_time.position_s == data->previous_time.position_s &&
-       new_time.duration_s == data->previous_time.duration_s)
-        return TRUE;
+    UNLOCK_DATA(data);
 
-    data->previous_time = new_time;
+    return G_SOURCE_CONTINUE;
+}
 
-    tdbussplayPlayback *playback_iface = dbus_get_playback_iface();
+static void handle_stream_state_change(GstMessage *message,
+                                       struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
 
-    if(playback_iface == NULL)
-        return TRUE;
+    LOCK_DATA(data);
 
-    tdbus_splay_playback_emit_position_changed(playback_iface,
-                                               data->current_stream.id,
-                                               new_time.position_s, "s",
-                                               new_time.duration_s, "s");
+    const bool is_ours =
+        (GST_MESSAGE_SRC(message) == GST_OBJECT(data->pipeline));
 
-    return TRUE;
+    if(!is_ours && !msg_is_verbose(MESSAGE_LEVEL_TRACE))
+    {
+        UNLOCK_DATA(data);
+        return;
+    }
+
+    GstState state, pending;
+    gst_message_parse_state_changed(message, NULL, &state, &pending);
+
+    msg_vinfo(MESSAGE_LEVEL_TRACE,
+              "State change on %s \"%s\": state %s, pending %s",
+              G_OBJECT_TYPE_NAME(GST_MESSAGE_SRC(message)),
+              GST_MESSAGE_SRC_NAME(message),
+              gst_element_state_get_name(state),
+              gst_element_state_get_name(pending));
+
+    /* leave now if we came here only for the trace */
+    if(!is_ours)
+    {
+        UNLOCK_DATA(data);
+        return;
+    }
+
+    /* we are currently not interested in transients */
+    if(pending != GST_STATE_VOID_PENDING)
+    {
+        UNLOCK_DATA(data);
+        return;
+    }
+
+    tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
+
+    switch(state)
+    {
+      case GST_STATE_READY:
+      case GST_STATE_NULL:
+        if(data->progress_watcher != 0)
+        {
+            g_source_remove(data->progress_watcher);
+            data->progress_watcher = 0;
+        }
+
+        struct urlfifo_item *const active_stream = data->current_stream.is_valid
+            ? &data->current_stream
+            : &data->next_stream;
+
+        if(dbus_playback_iface != NULL && active_stream->is_valid)
+        {
+            if(data->suppress_next_stopped_events == 0)
+            {
+                tdbus_splay_playback_emit_stopped(dbus_playback_iface,
+                                                  active_stream->id);
+                urlfifo_free_item(active_stream);
+            }
+            else
+                --data->suppress_next_stopped_events;
+        }
+
+        break;
+
+      case GST_STATE_PAUSED:
+        if(dbus_playback_iface != NULL)
+            tdbus_splay_playback_emit_paused(dbus_playback_iface,
+                                             data->current_stream.id);
+        break;
+
+      case GST_STATE_PLAYING:
+        if(data->progress_watcher == 0)
+            data->progress_watcher = g_timeout_add(50, report_progress, data);
+
+        break;
+
+      case GST_STATE_VOID_PENDING:
+        break;
+    }
+
+    UNLOCK_DATA(data);
+}
+
+static void clear_current_meta_data(struct stream_data *sd)
+{
+    GstTagList *list = sd->tag_list;
+
+    if(list != NULL)
+        gst_tag_list_unref(list);
+
+    sd->tag_list = gst_tag_list_new_empty();
+}
+
+static void handle_start_of_stream(GstMessage *message,
+                                   struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    LOCK_DATA(data);
+
+    struct urlfifo_item *const stream = (data->next_stream.is_valid
+                                         ? &data->next_stream
+                                         : &data->current_stream);
+    struct stream_data *sd = item_data_get_nonconst(stream);
+
+    clear_current_meta_data(sd);
+    invalidate_stream_position_information(data);
+
+    if(stream == &data->next_stream)
+        urlfifo_move_item(&data->current_stream, &data->next_stream);
+
+    emit_now_playing(dbus_get_playback_iface(), data);
+
+    UNLOCK_DATA(data);
+}
+
+static void handle_buffering(GstMessage *message, struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    gint percent = -1;
+    gst_message_parse_buffering(message, &percent);
+
+    if(percent >= 0 && percent <= 100)
+        msg_vinfo(MESSAGE_LEVEL_DIAG, "Buffer level: %d%%", percent);
+    else
+        msg_error(ERANGE, LOG_NOTICE, "Buffering percentage is %d", percent);
+}
+
+static void handle_stream_duration(GstMessage *message, struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    LOCK_DATA(data);
+
+    query_seconds(gst_element_query_duration, data->pipeline,
+                  &data->current_time.duration_s);
+
+    UNLOCK_DATA(data);
+}
+
+static void handle_stream_duration_async(GstMessage *message, struct streamer_data *data)
+{
+    GstClockTime running_time;
+    gst_message_parse_async_done(message, &running_time);
+
+    LOCK_DATA(data);
+
+    if(running_time != GST_CLOCK_TIME_NONE)
+        data->current_time.duration_s = running_time / (1000LL * 1000LL * 1000LL);
+    else
+        query_seconds(gst_element_query_duration, data->pipeline,
+                      &data->current_time.duration_s);
+
+    UNLOCK_DATA(data);
+}
+
+static void setup_source_element(GstElement *playbin,
+                                 GstElement *source, gpointer user_data)
+{
+    struct streamer_data *data = user_data;
+
+    if(strcmp(G_OBJECT_TYPE_NAME(source), "GstSoupHTTPSrc") == 0)
+        g_object_set(source, "blocksize", &data->soup_http_block_size, NULL);
+}
+
+static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
+                                    gpointer user_data)
+{
+    switch(GST_MESSAGE_TYPE(message))
+    {
+      case GST_MESSAGE_EOS:
+        handle_end_of_stream(message, user_data);
+        break;
+
+      case GST_MESSAGE_TAG:
+        handle_tag(message, user_data);
+        break;
+
+      case GST_MESSAGE_STATE_CHANGED:
+        handle_stream_state_change(message, user_data);
+        break;
+
+      case GST_MESSAGE_STREAM_START:
+        handle_start_of_stream(message, user_data);
+        break;
+
+      case GST_MESSAGE_BUFFERING:
+        handle_buffering(message, user_data);
+        break;
+
+      case GST_MESSAGE_DURATION_CHANGED:
+        handle_stream_duration(message, user_data);
+        break;
+
+      case GST_MESSAGE_ASYNC_DONE:
+        handle_stream_duration_async(message, user_data);
+        break;
+
+      case GST_MESSAGE_ERROR:
+        handle_error_message(message, user_data);
+        break;
+
+      case GST_MESSAGE_WARNING:
+        handle_warning_message(message, user_data);
+        break;
+
+      case GST_MESSAGE_NEW_CLOCK:
+      case GST_MESSAGE_STREAM_STATUS:
+        /* these messages are not handled, and they are explicitly ignored */
+        break;
+
+      case GST_MESSAGE_UNKNOWN:
+      case GST_MESSAGE_INFO:
+      case GST_MESSAGE_STATE_DIRTY:
+      case GST_MESSAGE_STEP_DONE:
+      case GST_MESSAGE_CLOCK_PROVIDE:
+      case GST_MESSAGE_CLOCK_LOST:
+      case GST_MESSAGE_STRUCTURE_CHANGE:
+      case GST_MESSAGE_APPLICATION:
+      case GST_MESSAGE_ELEMENT:
+      case GST_MESSAGE_SEGMENT_START:
+      case GST_MESSAGE_SEGMENT_DONE:
+      case GST_MESSAGE_LATENCY:
+      case GST_MESSAGE_ASYNC_START:
+      case GST_MESSAGE_REQUEST_STATE:
+      case GST_MESSAGE_STEP_START:
+      case GST_MESSAGE_QOS:
+      case GST_MESSAGE_PROGRESS:
+      case GST_MESSAGE_TOC:
+      case GST_MESSAGE_RESET_TIME:
+      case GST_MESSAGE_NEED_CONTEXT:
+      case GST_MESSAGE_HAVE_CONTEXT:
+      case GST_MESSAGE_ANY:
+#if GST_CHECK_VERSION(1, 5, 1)
+      case GST_MESSAGE_EXTENDED:
+      case GST_MESSAGE_DEVICE_ADDED:
+      case GST_MESSAGE_DEVICE_REMOVED:
+#endif /* v1.5.1 */
+        BUG("UNHANDLED MESSAGE TYPE %s from %s",
+            GST_MESSAGE_TYPE_NAME(message), GST_MESSAGE_SRC_NAME(message));
+        break;
+    }
+
+    return G_SOURCE_CONTINUE;
 }
 
 static struct streamer_data streamer_data;
 
-int streamer_setup(GMainLoop *loop, const guint *soup_http_block_size)
+static int create_playbin(const char *context)
 {
-    item_data_init(&streamer_data.current_stream.data);
-
     streamer_data.pipeline = gst_element_factory_make("playbin", "play");
+    streamer_data.bus_watch = 0;
 
     if(streamer_data.pipeline == NULL)
         return -1;
 
-    streamer_data.system_clock = gst_system_clock_obtain();
-    streamer_data.is_tag_update_scheduled = false;
-    streamer_data.next_allowed_tag_update_time =
-        gst_clock_get_time(streamer_data.system_clock);
+    gst_object_ref(GST_OBJECT(streamer_data.pipeline));
 
-    g_signal_connect(streamer_data.pipeline, "about-to-finish",
-                     G_CALLBACK(queue_stream_from_url_fifo), &streamer_data);
+    streamer_data.bus_watch =
+        gst_bus_add_watch(GST_ELEMENT_BUS(streamer_data.pipeline),
+                          bus_message_handler, &streamer_data);
 
-    g_signal_connect(streamer_data.pipeline, "source-setup",
-                     G_CALLBACK(setup_source_element),
-                     (guint *)soup_http_block_size);
+    g_object_set(streamer_data.pipeline, "flags", GST_PLAY_FLAG_AUDIO, NULL);
+
+    streamer_data.signal_handler_ids[0] =
+        g_signal_connect(streamer_data.pipeline, "about-to-finish",
+                         G_CALLBACK(queue_stream_from_url_fifo), &streamer_data);
+
+    streamer_data.signal_handler_ids[1] =
+        g_signal_connect(streamer_data.pipeline, "source-setup",
+                         G_CALLBACK(setup_source_element), &streamer_data);
+
+    set_stream_state(streamer_data.pipeline, GST_STATE_READY, context);
+
+    return 0;
+}
+
+static void teardown_playbin(void)
+{
+    if(streamer_data.pipeline == NULL)
+        return;
+
+    g_source_remove(streamer_data.bus_watch);
+    streamer_data.bus_watch = 0;
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
     log_assert(bus != NULL);
-    gst_bus_add_signal_watch(bus);
-    g_signal_connect(bus, "message::eos",
-                     G_CALLBACK(handle_end_of_stream), &streamer_data);
-    g_signal_connect(bus, "message::tag",
-                     G_CALLBACK(handle_tag), &streamer_data);
-    g_signal_connect(bus, "message::state-changed",
-                     G_CALLBACK(handle_stream_state_change), &streamer_data);
-    g_signal_connect(bus, "message::stream-start",
-                     G_CALLBACK(start_of_new_stream), &streamer_data);
     gst_object_unref(bus);
 
+    for(size_t i = 0;
+        i < sizeof(streamer_data.signal_handler_ids) / sizeof(streamer_data.signal_handler_ids[0]);
+        ++i)
+    {
+        g_signal_handler_disconnect(streamer_data.pipeline,
+                                    streamer_data.signal_handler_ids[i]);
+        streamer_data.signal_handler_ids[i] = 0;
+    }
+
+    gst_object_unref(GST_OBJECT(streamer_data.pipeline));
+    streamer_data.pipeline = NULL;
+}
+
+static int rebuild_playbin(const char *context)
+{
+    set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "rebuild");
+    teardown_playbin();
+    return create_playbin(context);
+}
+
+int streamer_setup(GMainLoop *loop, guint soup_http_block_size)
+{
+    memset(&streamer_data, 0, sizeof(streamer_data));
+
+    g_mutex_init(&streamer_data.lock);
+
+    streamer_data.soup_http_block_size = soup_http_block_size;
+
+    if(create_playbin("setup") < 0)
+        return -1;
+
+    streamer_data.system_clock = gst_system_clock_obtain();
+    streamer_data.next_allowed_tag_update_time =
+        gst_clock_get_time(streamer_data.system_clock);
+
+    static bool initialized;
+
+    if(!initialized)
+        initialized = true;
+    else
+        log_assert(false);
+
     g_main_loop_ref(loop);
-
-    if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Setup"))
-        invalidate_current_stream(&streamer_data);
-
-    g_timeout_add(50, report_progress, &streamer_data);
 
     return 0;
 }
@@ -625,61 +1336,118 @@ void streamer_shutdown(GMainLoop *loop)
 
     g_main_loop_unref(loop);
 
-    set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "Shutdown");
+    set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "shutdown");
 
-    GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(streamer_data.pipeline));
-    log_assert(bus != NULL);
-    gst_bus_remove_signal_watch(bus);
-    gst_object_unref(bus);
+    teardown_playbin();
 
     gst_object_unref(GST_OBJECT(streamer_data.system_clock));
     streamer_data.system_clock = NULL;
 
-    gst_object_unref(GST_OBJECT(streamer_data.pipeline));
-    streamer_data.pipeline = NULL;
-
-    invalidate_current_stream(&streamer_data);
+    urlfifo_free_item(&streamer_data.current_stream);
 }
 
 void streamer_start(void)
 {
-    GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Start", false))
-        return;
+    static const char context[] = "start playing";
 
-    switch(state)
+    LOCK_DATA(&streamer_data);
+
+    log_assert(streamer_data.pipeline != NULL);
+
+    streamer_data.supposed_play_status = PLAY_STATUS_PLAYING;
+
+    GstState state = GST_STATE(streamer_data.pipeline);
+    const GstState pending_state = GST_STATE_PENDING(streamer_data.pipeline);
+
+    switch(pending_state)
     {
       case GST_STATE_PLAYING:
         break;
 
-      case GST_STATE_READY:
-        try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                              QUEUEMODE_START_PLAYING, GST_STATE_PLAYING,
-                              "start playing");
-        break;
-
       case GST_STATE_PAUSED:
-        set_stream_state(streamer_data.pipeline, GST_STATE_PLAYING, "Start");
+        /* we are in progress of pausing, so let's pretend our current state is
+         * paused */
+        state = GST_STATE_PAUSED;
+
+        /* fall-through */
+
+      case GST_STATE_READY:
+      case GST_STATE_NULL:
+      case GST_STATE_VOID_PENDING:
+        switch(state)
+        {
+          case GST_STATE_PLAYING:
+            break;
+
+          case GST_STATE_READY:
+          case GST_STATE_NULL:
+            if(try_dequeue_next(&streamer_data, true, context) != UINT32_MAX)
+                play_next_stream(&streamer_data, GST_STATE_PLAYING, context);
+
+            break;
+
+          case GST_STATE_PAUSED:
+            set_stream_state(streamer_data.pipeline, GST_STATE_PLAYING, context);
+            break;
+
+          case GST_STATE_VOID_PENDING:
+            msg_error(ENOSYS, LOG_ERR,
+                      "Start: pipeline is in unhandled state %d", state);
+            break;
+        }
+    }
+
+    UNLOCK_DATA(&streamer_data);
+}
+
+void streamer_stop(void)
+{
+    static const char context[] = "stop playing";
+
+    LOCK_DATA(&streamer_data);
+
+    msg_info("Stopping as requested");
+    log_assert(streamer_data.pipeline != NULL);
+
+    streamer_data.supposed_play_status = PLAY_STATUS_STOPPED;
+
+    const GstState pending = GST_STATE_PENDING(streamer_data.pipeline);
+    const GstState state = (pending == GST_STATE_VOID_PENDING)
+        ? GST_STATE(streamer_data.pipeline)
+        : pending;
+
+    switch(state)
+    {
+      case GST_STATE_PLAYING:
+      case GST_STATE_PAUSED:
+        if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, context))
+            urlfifo_clear(0, NULL);
+        else
+            streamer_data.fail.clear_fifo_on_error = true;
+
         break;
 
+      case GST_STATE_READY:
       case GST_STATE_NULL:
+        urlfifo_clear(0, NULL);
+        break;
+
       case GST_STATE_VOID_PENDING:
         msg_error(ENOSYS, LOG_ERR,
                   "Start: pipeline is in unhandled state %d", state);
         break;
     }
-}
 
-void streamer_stop(void)
-{
-    msg_info("Stopping as requested");
-    log_assert(streamer_data.pipeline != NULL);
-
-    if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, "Stop"))
+    if((GST_STATE(streamer_data.pipeline) == GST_STATE_READY ||
+        GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
+       pending == GST_STATE_VOID_PENDING)
     {
-        invalidate_current_stream(&streamer_data);
-        urlfifo_clear(0, NULL);
+        emit_stopped_with_error(dbus_get_playback_iface(),
+                                &streamer_data.current_stream,
+                                STOPPED_REASON_ALREADY_STOPPED);
     }
+
+    UNLOCK_DATA(&streamer_data);
 }
 
 /*!
@@ -692,34 +1460,40 @@ void streamer_stop(void)
  */
 void streamer_pause(void)
 {
+    static const char context[] = "pause stream";
+
+    LOCK_DATA(&streamer_data);
+
     msg_info("Pausing as requested");
     log_assert(streamer_data.pipeline != NULL);
 
-    GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Pause", true))
-        return;
+    streamer_data.supposed_play_status = PLAY_STATUS_PAUSED;
+
+    const GstState state = GST_STATE(streamer_data.pipeline);
 
     switch(state)
     {
       case GST_STATE_PAUSED:
-        return;
+        break;
 
       case GST_STATE_READY:
-        try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                              QUEUEMODE_START_PLAYING, GST_STATE_PAUSED,
-                              "stream pause");
+      case GST_STATE_NULL:
+        if(try_dequeue_next(&streamer_data, true, context) != UINT32_MAX)
+            play_next_stream(&streamer_data, GST_STATE_PAUSED, context);
+
         break;
 
       case GST_STATE_PLAYING:
-        set_stream_state(streamer_data.pipeline, GST_STATE_PAUSED, "Pause");
+        set_stream_state(streamer_data.pipeline, GST_STATE_PAUSED, context);
         break;
 
-      case GST_STATE_NULL:
       case GST_STATE_VOID_PENDING:
         msg_error(ENOSYS, LOG_ERR,
                   "Pause: pipeline is in unhandled state %d", state);
         break;
     }
+
+    UNLOCK_DATA(&streamer_data);
 }
 
 bool streamer_seek(guint64 position, const char *units)
@@ -737,48 +1511,118 @@ bool streamer_seek(guint64 position, const char *units)
                                    seek_flags, position * GST_MSECOND);
 }
 
-bool streamer_next(bool skip_only_if_playing, uint32_t *out_next_id)
+enum PlayStatus streamer_next(bool skip_only_if_playing,
+                              uint32_t *out_skipped_id, uint32_t *out_next_id)
 {
+    static const char context[] = "skip to next";
+
+    LOCK_DATA(&streamer_data);
+
     msg_info("Next requested");
     log_assert(streamer_data.pipeline != NULL);
 
-    bool is_playing;
-    uint32_t next_id = UINT32_MAX;
+    const uint32_t replaced_next_id = streamer_data.next_stream.is_valid
+        ? streamer_data.next_stream.id
+        : UINT32_MAX;
+    uint32_t next_id =
+        (streamer_data.supposed_play_status == PLAY_STATUS_PLAYING || !skip_only_if_playing)
+        ? try_dequeue_next(&streamer_data, true, context)
+        : UINT32_MAX;
+    const uint32_t skipped_id = (replaced_next_id != UINT32_MAX
+                                 ? replaced_next_id
+                                 : (streamer_data.current_stream.is_valid
+                                    ? streamer_data.current_stream.id
+                                    : UINT32_MAX));
 
-    GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
-        is_playing = false;
+    if(next_id == UINT32_MAX)
+        streamer_data.supposed_play_status = PLAY_STATUS_STOPPED;
     else
     {
-        is_playing = (state == GST_STATE_PLAYING);
+        GstState next_state = GST_STATE_READY;
 
-        if(!skip_only_if_playing || is_playing)
-            next_id = try_queue_next_stream(streamer_data.pipeline, &streamer_data,
-                                            QUEUEMODE_FORCE_SKIP, state,
-                                            "skip to next");
+        if(set_stream_state(streamer_data.pipeline, next_state, context))
+        {
+            switch(streamer_data.supposed_play_status)
+            {
+              case PLAY_STATUS_STOPPED:
+                break;
+
+              case PLAY_STATUS_PLAYING:
+                next_state = GST_STATE_PLAYING;
+                break;
+
+              case PLAY_STATUS_PAUSED:
+                next_state = GST_STATE_PAUSED;
+                break;
+            }
+
+            if(play_next_stream(&streamer_data, next_state, context))
+                ++streamer_data.suppress_next_stopped_events;
+            else
+                next_id = UINT32_MAX;
+        }
+        else
+            next_id = UINT32_MAX;
     }
+
+    if(out_skipped_id != NULL)
+        *out_skipped_id = skipped_id;
 
     if(out_next_id != NULL)
         *out_next_id = next_id;
 
-    return is_playing;
+    const enum PlayStatus retval = streamer_data.supposed_play_status;
+
+    UNLOCK_DATA(&streamer_data);
+
+    return retval;
 }
 
 bool streamer_is_playing(void)
 {
-    GstState state;
-    if(!get_stream_state(streamer_data.pipeline, &state, "Next", true))
-        return false;
-    else
-        return state == GST_STATE_PLAYING;
+    return GST_STATE(streamer_data.pipeline) == GST_STATE_PLAYING;
 }
 
 bool streamer_get_current_stream_id(uint16_t *id)
 {
+    LOCK_DATA(&streamer_data);
+
+    bool retval;
+
     if(streamer_data.current_stream.url == NULL)
+        retval = false;
+    else
+    {
+        *id = streamer_data.current_stream.id;
+        retval = true;
+    }
+
+    UNLOCK_DATA(&streamer_data);
+
+    return retval;
+}
+
+bool streamer_push_item(uint16_t stream_id, const char *stream_url,
+                        size_t keep_items)
+{
+    static const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
+    {
+        .data_fail = item_data_fail,
+        .data_free = item_data_free,
+    };
+
+    struct stream_data *sd = malloc(sizeof(*sd));
+
+    if(sd == NULL)
+    {
+        msg_out_of_memory("stream data");
         return false;
+    }
 
-    *id = streamer_data.current_stream.id;
+    sd->streamer_data = &streamer_data;
+    sd->tag_list = NULL;
 
-    return true;
+    return urlfifo_push_item(stream_id, stream_url, NULL, NULL,
+                             keep_items, NULL, sd,
+                             &streamer_urlfifo_item_data_ops) != 0;
 }

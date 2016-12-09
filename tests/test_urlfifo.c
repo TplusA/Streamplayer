@@ -21,6 +21,10 @@
 #include <string.h>
 
 #include "urlfifo.h"
+#include "messages.h"
+
+/* there is no message mock in these tests */
+void msg_error(int error_code, int priority, const char *error_format, ...) {}
 
 /*!
  * \addtogroup urlfifo_tests Unit tests
@@ -76,14 +80,19 @@ void test_push_single_item(void);
 void test_push_multiple_items(void);
 
 /*!\test
- * If defined, the URL FIFO item data init operation is used when pushing.
+ * If defined, the URL FIFO item data fail operation is used when failing an
+ * item.
  */
-void test_item_data_callbacks_are_called_for_push(void);
+void test_item_data_callback_is_called_for_fail(void);
 
 /*!\test
- * If defined, the URL FIFO item data init operation is used when pushing an
- * item, and the free operation is used when popping an item "over" an
- * initialized item for the item that is being overwritten.
+ * Failing an item multiple times is a bug, fail function is called only once.
+ */
+void test_item_should_fail_only_once(void);
+
+/*!\test
+ * If defined, the URL FIFO item free operation is used when popping an item
+ * "over" an initialized item for the item that is being overwritten.
  */
 void test_item_data_callbacks_are_called_for_push_pop(void);
 
@@ -307,7 +316,7 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
     cut_assert_equal_uint(23, item.id);
@@ -433,10 +442,16 @@ void test_push_multiple_items(void)
     urlfifo_unlock();
 }
 
-static void item_data_init(void **data)
+static void item_data_fail(void *data, void *user_data)
 {
     cut_assert_not_null(data);
-    **(uint32_t **)data = 0x12345678;
+    cut_fail("unexpected call");
+}
+
+static void item_data_fail_set_uint32_data(void *data, void *user_data)
+{
+    cut_assert_not_null(data);
+    *(uint32_t *)data = 0x12345678;
 }
 
 static void item_data_free(void **data)
@@ -448,32 +463,79 @@ static void item_data_free(void **data)
 
 const struct urlfifo_item_data_ops test_data_ops =
 {
-    .data_init = item_data_init,
+    .data_fail = item_data_fail,
     .data_free = item_data_free,
 };
 
-void test_item_data_callbacks_are_called_for_push(void)
+const struct urlfifo_item_data_ops test_data_ops_with_fail =
+{
+    .data_fail = item_data_fail_set_uint32_data,
+    .data_free = item_data_free,
+};
+
+void test_item_data_callback_is_called_for_fail(void)
 {
     uint32_t test_data = 0;
     urlfifo_item_id_t id;
 
     cut_assert_equal_size(1, urlfifo_push_item(851, default_url,
                                                NULL, NULL, SIZE_MAX, &id,
-                                               &test_data, &test_data_ops));
+                                               &test_data,
+                                               &test_data_ops_with_fail));
 
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(id);
+    struct urlfifo_item item = { 0 };
+    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
 
-    cut_assert_not_null(item);
-    cut_assert_equal_pointer(&test_data, item->data);
+    cut_assert_true(item.is_valid);
+    cut_assert_equal_pointer(&test_data, item.data);
+    cut_assert_equal_uint(0, test_data);
+
+    urlfifo_fail_item(&item, NULL);
+
+    cut_assert_true(item.is_valid);
     cut_assert_equal_uint(0x12345678, test_data);
 
-    struct urlfifo_item popped;
-    cut_assert_equal_size(0, urlfifo_pop_item(&popped, false));
+    urlfifo_free_item(&item);
 
-    cut_assert_equal_pointer(&test_data, popped.data);
+    cut_assert_false(item.is_valid);
+    cut_assert_equal_uint(0x87654321, test_data);
+}
+
+void test_item_should_fail_only_once(void)
+{
+    uint32_t test_data = 0;
+    urlfifo_item_id_t id;
+
+    cut_assert_equal_size(1, urlfifo_push_item(907, default_url,
+                                               NULL, NULL, SIZE_MAX, &id,
+                                               &test_data,
+                                               &test_data_ops_with_fail));
+
+    struct urlfifo_item item = { 0 };
+    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
+
+    cut_assert_true(item.is_valid);
+    cut_assert_equal_int(URLFIFO_FAIL_STATE_NOT_FAILED, item.fail_state);
+    cut_assert_equal_pointer(&test_data, item.data);
+    cut_assert_equal_uint(0, test_data);
+
+    urlfifo_fail_item(&item, NULL);
+
+    cut_assert_true(item.is_valid);
+    cut_assert_equal_int(URLFIFO_FAIL_STATE_FAILURE_DETECTED, item.fail_state);
     cut_assert_equal_uint(0x12345678, test_data);
 
-    urlfifo_free_item(&popped);
+    test_data = 0;
+    urlfifo_fail_item(&item, NULL);
+
+    cut_assert_true(item.is_valid);
+    cut_assert_equal_int(URLFIFO_FAIL_STATE_FAILURE_DETECTED, item.fail_state);
+    cut_assert_equal_uint(0, test_data);
+
+    test_data = 0x12345678;
+    urlfifo_free_item(&item);
+
+    cut_assert_false(item.is_valid);
     cut_assert_equal_uint(0x87654321, test_data);
 }
 
@@ -492,18 +554,20 @@ void test_item_data_callbacks_are_called_for_push_pop(void)
     const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
     cut_assert_not_null(item);
     cut_assert_equal_pointer(&test_data[0], item->data);
-    cut_assert_equal_uint(0x12345678, test_data[0]);
+    cut_assert_equal_uint(0, test_data[0]);
 
-    struct urlfifo_item popped;
+    struct urlfifo_item popped = { 0 };
     cut_assert_equal_size(1, urlfifo_pop_item(&popped, false));
 
     cut_assert_equal_pointer(&test_data[0], popped.data);
-    cut_assert_equal_uint(0x12345678, test_data[0]);
+    cut_assert_equal_uint(0, test_data[0]);
 
+    test_data[0] = 0x12345678;
     cut_assert_equal_size(0, urlfifo_pop_item(&popped, true));
     cut_assert_equal_uint(0x87654321, test_data[0]);
-    cut_assert_equal_uint(0x12345678, test_data[1]);
+    cut_assert_equal_uint(0, test_data[1]);
 
+    test_data[1] = 0x12345678;
     urlfifo_free_item(&popped);
     cut_assert_equal_uint(0x87654321, test_data[1]);
 }
@@ -523,12 +587,15 @@ void test_item_data_callbacks_are_called_for_push_clear(void)
     const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
     cut_assert_not_null(item);
     cut_assert_equal_pointer(&test_data[0], item->data);
-    cut_assert_equal_uint(0x12345678, test_data[0]);
+    cut_assert_equal_uint(0, test_data[0]);
 
     item = urlfifo_unlocked_peek(ids[1]);
     cut_assert_not_null(item);
     cut_assert_equal_pointer(&test_data[1], item->data);
-    cut_assert_equal_uint(0x12345678, test_data[1]);
+    cut_assert_equal_uint(0, test_data[1]);
+
+    test_data[0] = 0x12345678;
+    test_data[1] = 0x12345678;
 
     urlfifo_clear(0, NULL);
 
@@ -596,7 +663,7 @@ void test_push_one_replace_all(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -619,7 +686,7 @@ void test_push_one_keep_first(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(1, urlfifo_get_size());
@@ -639,7 +706,7 @@ void test_push_one_replace_all_works_on_empty_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -666,7 +733,7 @@ void test_push_one_replace_all_works_on_full_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -677,7 +744,7 @@ void test_push_one_replace_all_works_on_full_fifo(void)
 
 void test_pop_empty_fifo_detects_underflow(void)
 {
-    struct urlfifo_item dummy;
+    struct urlfifo_item dummy = { 0 };
     struct urlfifo_item expected;
 
     memset(&dummy, 0x55, sizeof(dummy));
@@ -699,7 +766,7 @@ void test_pop_item_from_single_item_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -724,7 +791,7 @@ void test_pop_item_from_multi_item_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(1, urlfifo_get_size());
@@ -752,7 +819,7 @@ void test_push_pop_chase(void)
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
 
-    struct urlfifo_item item;
+    struct urlfifo_item item = { 0 };
 
     for(unsigned int i = 0; i < num_of_iterations; ++i)
     {
@@ -837,7 +904,7 @@ void test_urlfifo_is_full_interface(void)
 
     cut_assert_true(urlfifo_is_full());
 
-    struct urlfifo_item dummy;
+    struct urlfifo_item dummy = { 0 };
     (void)urlfifo_pop_item(&dummy, false);
     urlfifo_free_item(&dummy);
 

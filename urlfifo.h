@@ -57,8 +57,14 @@ typedef size_t urlfifo_item_id_t;
 
 struct urlfifo_item_data_ops
 {
-    void (*const data_init)(void **data);
+    void (*const data_fail)(void *data, void *user_data);
     void (*const data_free)(void **data);
+};
+
+enum urlfifo_fail_state
+{
+    URLFIFO_FAIL_STATE_NOT_FAILED,
+    URLFIFO_FAIL_STATE_FAILURE_DETECTED,
 };
 
 /*!
@@ -66,10 +72,14 @@ struct urlfifo_item_data_ops
  */
 struct urlfifo_item
 {
+    bool is_valid;
+
     uint16_t id;
     char *url;
     struct streamtime start_time;
     struct streamtime end_time;
+
+    enum urlfifo_fail_state fail_state;
 
     /*!
      * Pointer to any extra data for this item.
@@ -173,6 +183,19 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
  *     one, or -1 in case the URL FIFO was empty.
  */
 ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest);
+
+/*!
+ * Move URL item content from one object to another.
+ *
+ * The source item will be invalidated after the move.
+ */
+void urlfifo_move_item(struct urlfifo_item *restrict dest,
+                       struct urlfifo_item *restrict src);
+
+/*!
+ * Set failure.
+ */
+bool urlfifo_fail_item(struct urlfifo_item *item, void *user_data);
 
 /*!
  * Free item data.
