@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -31,30 +31,54 @@
 #include "messages.h"
 #include "messages_dbus.h"
 
+static void enter_urlfifo_handler(GDBusMethodInvocation *invocation)
+{
+    static const char iface_name[] = "de.tahifi.Streamplayer.URLFIFO";
+
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s method invocation from '%s': %s",
+              iface_name, g_dbus_method_invocation_get_sender(invocation),
+              g_dbus_method_invocation_get_method_name(invocation));
+}
+
+static void enter_playback_handler(GDBusMethodInvocation *invocation)
+{
+    static const char iface_name[] = "de.tahifi.Streamplayer.Playback";
+
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s method invocation from '%s': %s",
+              iface_name, g_dbus_method_invocation_get_sender(invocation),
+              g_dbus_method_invocation_get_method_name(invocation));
+}
+
 static gboolean playback_start(tdbussplayPlayback *object,
                                GDBusMethodInvocation *invocation)
 {
-    msg_info("Got Playback.Start message");
+    enter_playback_handler(invocation);
+
     tdbus_splay_playback_complete_start(object, invocation);
     streamer_start();
+
     return TRUE;
 }
 
 static gboolean playback_stop(tdbussplayPlayback *object,
                               GDBusMethodInvocation *invocation)
 {
-    msg_info("Got Playback.Stop message");
+    enter_playback_handler(invocation);
+
     tdbus_splay_playback_complete_stop(object, invocation);
     streamer_stop();
+
     return TRUE;
 }
 
 static gboolean playback_pause(tdbussplayPlayback *object,
                                GDBusMethodInvocation *invocation)
 {
-    msg_info("Got Playback.Pause message");
+    enter_playback_handler(invocation);
+
     tdbus_splay_playback_complete_pause(object, invocation);
     streamer_pause();
+
     return TRUE;
 }
 
@@ -62,7 +86,7 @@ static gboolean playback_seek(tdbussplayPlayback *object,
                               GDBusMethodInvocation *invocation,
                               gint64 position, const gchar *position_units)
 {
-    msg_info("Got Playback.Seek message");
+    enter_playback_handler(invocation);
 
     if(streamer_seek(position, position_units))
         tdbus_splay_playback_complete_seek(object, invocation);
@@ -78,7 +102,7 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
                            gint16 keep_first_n_entries)
 {
-    msg_info("Got URLFIFO.Clear message");
+    enter_urlfifo_handler(invocation);
 
     uint16_t temp;
     const uint32_t current_id =
@@ -109,7 +133,7 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
 static gboolean fifo_next(tdbussplayURLFIFO *object,
                           GDBusMethodInvocation *invocation)
 {
-    msg_info("Got URLFIFO.Next message");
+    enter_urlfifo_handler(invocation);
 
     uint32_t skipped_id;
     uint32_t next_id;
@@ -131,7 +155,10 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                           gint64 stop_position, const gchar *stop_units,
                           gint16 keep_first_n_entries)
 {
-    msg_info("Got URLFIFO.Push message %u \"%s\", keep %d", stream_id, stream_url, keep_first_n_entries);
+    enter_urlfifo_handler(invocation);
+
+    msg_info("Received stream %u \"%s\", keep %d",
+             stream_id, stream_url, keep_first_n_entries);
 
     const size_t keep =
         (keep_first_n_entries < 0)
@@ -147,7 +174,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
 
-    msg_info("Have %zu FIFO entries", urlfifo_get_size());
+    msg_vinfo(MESSAGE_LEVEL_DEBUG, "Have %zu FIFO entries", urlfifo_get_size());
 
     return TRUE;
 }
