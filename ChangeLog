@@ -1,3 +1,26 @@
+2017-01-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 2.0 released.
+
+	* Playback: GStreamer errors are handled properly. In case of error,
+	  the reason for the error is sent over D-Bus. No automatic skipping
+	  or restarting is done.
+
+	* Playback: Added alternative ways to determine the total stream
+	  duration. For some sources, the total time is sent as an internal
+	  message while the stream is playing, for others the time is
+	  available much sooner.
+
+	* D-Bus: Use of the URL FIFO has changed a bit. Clients are supposed
+	  to restart or skip to other streams on error depending on any
+	  context hidden from streamplayer. This makes error handling a lot
+	  more transparent and keeps streamplayer simple.
+
+	* D-Bus: Some interface signatures have changed to support the new way
+	  of client interaction. API compatibility with v1.9 was broken.
+
+	* Debugging: Allow setting verbosity level over D-Bus.
+
 2016-07-14  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 1.9 released.
