@@ -306,7 +306,7 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
 {
     /* we want to trigger wrap-around, and the test is hard-coded against the
      * maximum URL FIFO size */
-    cut_assert_equal_size(2, URLFIFO_MAX_LENGTH);
+    cut_assert_equal_size(8, URLFIFO_MAX_LENGTH);
 
     cut_assert_equal_size(1, urlfifo_push_item(23, "first",
                                                NULL, NULL, SIZE_MAX, NULL,
@@ -314,28 +314,53 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
     cut_assert_equal_size(2, urlfifo_push_item(32, "second",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_get_size());
+    cut_assert_equal_size(3, urlfifo_push_item(123, "third",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(4, urlfifo_push_item(132, "fourth",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(5, urlfifo_push_item(223, "fifth",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(6, urlfifo_push_item(232, "sixth",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(7, urlfifo_push_item(323, "seventh",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(8, urlfifo_push_item(332, "eighth",
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+    cut_assert_equal_size(8, urlfifo_get_size());
 
     struct urlfifo_item item = { 0 };
 
-    cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
+    cut_assert_equal_size(7, urlfifo_pop_item(&item, false));
     cut_assert_equal_uint(23, item.id);
     cut_assert_equal_string("first", item.url);
 
     /* this one ends up in the first slot */
-    cut_assert_equal_size(2, urlfifo_push_item(42, "third",
+    cut_assert_equal_size(8, urlfifo_push_item(42, "ninth",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
 
-    /* we now have |42|32|, with 32 being the head element */
+    /* we now have |42|32|123|132|223|232|323|332|, with 32 being the head
+     * element */
     uint16_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
-    cut_assert_equal_size(1, urlfifo_clear(1, ids));
+    cut_assert_equal_size(7, urlfifo_clear(1, ids));
 
     cut_assert_equal_size(1, urlfifo_get_size());
-    cut_assert_equal_uint(42,     ids[0]);
-    cut_assert_equal_uint(0x5555, ids[1]);
+    cut_assert_equal_uint(123,    ids[0]);
+    cut_assert_equal_uint(132,    ids[1]);
+    cut_assert_equal_uint(223,    ids[2]);
+    cut_assert_equal_uint(232,    ids[3]);
+    cut_assert_equal_uint(323,    ids[4]);
+    cut_assert_equal_uint(332,    ids[5]);
+    cut_assert_equal_uint(42,     ids[6]);
+    cut_assert_equal_uint(0x5555, ids[7]);
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
     cut_assert_equal_uint(32, item.id);

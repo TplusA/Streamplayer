@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -48,7 +48,7 @@
  */
 /*!@{*/
 
-#define URLFIFO_MAX_LENGTH 2U
+#define URLFIFO_MAX_LENGTH 8U
 
 /*!
  * Opaque identifier for items in the URL FIFO.
