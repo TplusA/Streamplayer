@@ -1415,13 +1415,17 @@ void streamer_stop(void)
     const GstState state = (pending == GST_STATE_VOID_PENDING)
         ? GST_STATE(streamer_data.pipeline)
         : pending;
+    bool may_emit_stopped_with_error = true;
 
     switch(state)
     {
       case GST_STATE_PLAYING:
       case GST_STATE_PAUSED:
         if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, context))
+        {
+            may_emit_stopped_with_error = false;
             urlfifo_clear(0, NULL);
+        }
         else
             streamer_data.fail.clear_fifo_on_error = true;
 
@@ -1438,7 +1442,8 @@ void streamer_stop(void)
         break;
     }
 
-    if((GST_STATE(streamer_data.pipeline) == GST_STATE_READY ||
+    if(may_emit_stopped_with_error &&
+       (GST_STATE(streamer_data.pipeline) == GST_STATE_READY ||
         GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
        pending == GST_STATE_VOID_PENDING)
     {
