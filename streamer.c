@@ -162,6 +162,7 @@ struct stream_data
 {
     struct streamer_data *streamer_data;
     GstTagList *tag_list;
+    GVariant *stream_key;
 };
 
 typedef enum
@@ -372,6 +373,9 @@ static void item_data_free(void **data)
 
     if(sd->tag_list != NULL)
         gst_tag_list_unref(sd->tag_list);
+
+    if(sd->stream_key != NULL)
+        g_variant_unref(sd->stream_key);
 
     free(sd);
 
@@ -668,11 +672,12 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     if(playback_iface == NULL || data->current_stream.url == NULL)
         return;
 
-    GstTagList *list = item_data_get_nonconst(&data->current_stream)->tag_list;
-    GVariant *meta_data = tag_list_to_g_variant(list);
+    struct stream_data *sd = item_data_get_nonconst(&data->current_stream);
+    GVariant *meta_data = tag_list_to_g_variant(sd->tag_list);
 
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data->current_stream.id,
+                                          sd->stream_key,
                                           data->current_stream.url,
                                           urlfifo_is_full(), meta_data);
 }
@@ -1607,8 +1612,8 @@ bool streamer_get_current_stream_id(uint16_t *id)
     return retval;
 }
 
-bool streamer_push_item(uint16_t stream_id, const char *stream_url,
-                        size_t keep_items)
+bool streamer_push_item(uint16_t stream_id, GVariant *stream_key,
+                        const char *stream_url, size_t keep_items)
 {
     static const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
     {
@@ -1626,6 +1631,14 @@ bool streamer_push_item(uint16_t stream_id, const char *stream_url,
 
     sd->streamer_data = &streamer_data;
     sd->tag_list = NULL;
+
+    if(stream_key != NULL)
+    {
+        g_variant_ref(stream_key);
+        sd->stream_key = stream_key;
+    }
+    else
+        sd->stream_key = NULL;
 
     return urlfifo_push_item(stream_id, stream_url, NULL, NULL,
                              keep_items, NULL, sd,

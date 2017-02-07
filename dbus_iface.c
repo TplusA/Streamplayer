@@ -151,6 +151,7 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
 static gboolean fifo_push(tdbussplayURLFIFO *object,
                           GDBusMethodInvocation *invocation,
                           guint16 stream_id, const gchar *stream_url,
+                          GVariant *stream_key,
                           gint64 start_position, const gchar *start_units,
                           gint64 stop_position, const gchar *stop_units,
                           gint16 keep_first_n_entries)
@@ -166,7 +167,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
            ? 0
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
-    const bool failed = !streamer_push_item(stream_id, stream_url, keep);
+    const bool failed =
+        !streamer_push_item(stream_id, stream_key, stream_url, keep);
 
     const gboolean is_playing = (keep_first_n_entries == -2)
         ? streamer_next(true, NULL, NULL)
