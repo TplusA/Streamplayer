@@ -1,3 +1,13 @@
+2017-02-16  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.0 released: Changes of D-Bus interfaces were necessary
+	  which break compatibility with older versions, hence the change of
+	  the major version.
+
+	* Cover art: Store stream key passed via extended push interface, emit
+	  it via extended now-playing interface. There is nothing else the
+	  stream player needs to do to get cover art handling supported.
+
 2017-01-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 2.0 released.
