@@ -1,4 +1,4 @@
-dnl Copyright (C) 2015, 2016  T+A elektroakustik GmbH & Co. KG
+dnl Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
 dnl
 dnl This file is part of T+A Streamplayer.
 dnl
@@ -62,6 +62,8 @@ AC_CHECK_COVERAGE
 PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0 gstreamer-plugins-base-1.0])
 
 # Checks for header files.
+AC_CHECK_HEADERS([fcntl.h inttypes.h limits.h stdlib.h string.h sys/ioctl.h sys/time.h syslog.h unistd.h])
+
 m4_ifdef([AC_CHECK_CUTTER],
 [
 save_CPPFLAGS="$CPPFLAGS"
@@ -71,8 +73,23 @@ CPPFLAGS="$save_CPPFLAGS"
 ])
 
 # Checks for typedefs, structures, and compiler characteristics.
+AC_CHECK_HEADER_STDBOOL
+AC_C_INLINE
+AC_C_RESTRICT
+AC_TYPE_INT32_T
+AC_TYPE_INT64_T
+AC_TYPE_UINT8_T
+AC_TYPE_UINT16_T
+AC_TYPE_UINT32_T
+AC_TYPE_UINT64_T
+AC_TYPE_SIZE_T
+AC_TYPE_SSIZE_T
 
 # Checks for library functions.
+AC_FUNC_LSTAT_FOLLOWS_SLASHED_SYMLINK
+AC_FUNC_MALLOC
+AC_FUNC_MMAP
+AC_CHECK_FUNCS([clock_gettime memset mkdir munmap realpath rmdir strdup strerror])
 
 # Debian architecture name for debian/control.in
 AS_IF([test "x$ac_cv_prog_DPKG_ARCHITECTURE" != x],
