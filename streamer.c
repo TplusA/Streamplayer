@@ -571,6 +571,7 @@ static GstTagList *update_tags_for_item(struct urlfifo_item *item,
         GST_TAG_ALBUM_PEAK,
         GST_TAG_REFERENCE_LEVEL,
         "private-id3v2-frame",          /* from Deezer */
+        "private-qt-tag",               /* from certain m4a files */
     };
 
     for(size_t i = 0; i < sizeof(filtered_out) / sizeof(filtered_out[0]); ++i)
