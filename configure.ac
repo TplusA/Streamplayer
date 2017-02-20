@@ -59,7 +59,7 @@ AC_CHECK_COVERAGE
 [ac_cv_use_cutter=no])
 
 # Checks for libraries.
-PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0 gstreamer-plugins-base-1.0])
+PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0 gstreamer-tag-1.0 gstreamer-plugins-base-1.0])
 
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h inttypes.h limits.h stdlib.h string.h sys/ioctl.h sys/time.h syslog.h unistd.h])

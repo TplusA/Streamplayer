@@ -26,6 +26,7 @@
 #include <errno.h>
 
 #include <gst/gst.h>
+#include <gst/tag/tag.h>
 
 #include "streamer.h"
 #include "urlfifo.h"
@@ -592,6 +593,161 @@ static GstTagList *update_tags_for_item(struct urlfifo_item *item,
     return item_data_get_nonconst(item)->tag_list;
 }
 
+enum ImageTagType
+{
+    IMAGE_TAG_TYPE_NONE,
+    IMAGE_TAG_TYPE_RAW_DATA,
+    IMAGE_TAG_TYPE_URI,
+};
+
+static enum ImageTagType get_image_tag_type(const GstCaps *caps)
+{
+    if(caps == NULL)
+        return IMAGE_TAG_TYPE_NONE;
+
+    for(size_t i = 0; /* nothing */; ++i)
+    {
+        const GstStructure *caps_struct = gst_caps_get_structure(caps, i);
+
+        if(caps_struct == NULL)
+            break;
+
+        const gchar *name = gst_structure_get_name(caps_struct);
+
+        if(g_str_has_prefix(name, "image/"))
+            return IMAGE_TAG_TYPE_RAW_DATA;
+        else if(g_str_equal(name, "text/uri-list"))
+            return IMAGE_TAG_TYPE_URI;
+    }
+
+    return IMAGE_TAG_TYPE_NONE;
+}
+
+static void send_image_data_to_cover_art_cache(GstSample *sample,
+                                               uint8_t base_priority,
+                                               struct urlfifo_item *item)
+{
+    GstBuffer *buffer = gst_sample_get_buffer(sample);
+
+    if(buffer == NULL)
+        return;
+
+    const GstStructure *sample_info = gst_sample_get_info(sample);
+    GstTagImageType image_type;
+
+    if(sample_info == NULL ||
+       !gst_structure_get_enum(sample_info, "image-type",
+                               GST_TYPE_TAG_IMAGE_TYPE, &image_type))
+        image_type = GST_TAG_IMAGE_TYPE_UNDEFINED;
+
+    static uint8_t prio_raise_table[] =
+    {
+        10,     /* GST_TAG_IMAGE_TYPE_UNDEFINED */
+        18,     /* GST_TAG_IMAGE_TYPE_FRONT_COVER */
+        14,     /* GST_TAG_IMAGE_TYPE_BACK_COVER */
+        13,     /* GST_TAG_IMAGE_TYPE_LEAFLET_PAGE */
+        17,     /* GST_TAG_IMAGE_TYPE_MEDIUM */
+        16,     /* GST_TAG_IMAGE_TYPE_LEAD_ARTIST */
+        15,     /* GST_TAG_IMAGE_TYPE_ARTIST */
+         9,     /* GST_TAG_IMAGE_TYPE_CONDUCTOR */
+         8,     /* GST_TAG_IMAGE_TYPE_BAND_ORCHESTRA */
+         4,     /* GST_TAG_IMAGE_TYPE_COMPOSER */
+         3,     /* GST_TAG_IMAGE_TYPE_LYRICIST */
+         1,     /* GST_TAG_IMAGE_TYPE_RECORDING_LOCATION */
+         5,     /* GST_TAG_IMAGE_TYPE_DURING_RECORDING */
+         6,     /* GST_TAG_IMAGE_TYPE_DURING_PERFORMANCE */
+         7,     /* GST_TAG_IMAGE_TYPE_VIDEO_CAPTURE */
+         0,     /* GST_TAG_IMAGE_TYPE_FISH */
+        11,     /* GST_TAG_IMAGE_TYPE_ILLUSTRATION */
+        12,     /* GST_TAG_IMAGE_TYPE_BAND_ARTIST_LOGO */
+         2,     /* GST_TAG_IMAGE_TYPE_PUBLISHER_STUDIO_LOGO */
+    };
+
+    if(image_type < 0 ||
+       (size_t)image_type >= sizeof(prio_raise_table) / sizeof(prio_raise_table[0]))
+        return;
+
+    const uint8_t priority = base_priority + prio_raise_table[image_type];
+
+    if(gst_buffer_n_memory(buffer) != 1)
+    {
+        BUG("Image data spans multiple memory regions (not implemented)");
+        return;
+    }
+
+    GstMemory *memory = gst_buffer_peek_memory(buffer, 0);
+    GstMapInfo mi;
+
+    if(!gst_memory_map(memory, &mi, GST_MAP_READ))
+    {
+        msg_error(0, LOG_ERR, "Failed mapping image data");
+        return;
+    }
+
+    struct stream_data *sd = item_data_get_nonconst(item);
+
+    GError *error = NULL;
+    tdbus_artcache_write_call_add_image_by_data_sync(dbus_artcache_get_write_iface(),
+                                                     sd->stream_key, priority,
+                                                     g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
+                                                                               mi.data, mi.size,
+                                                                               sizeof(mi.data[0])),
+                                                     NULL, &error);
+    dbus_handle_error(&error);
+
+    gst_memory_unmap(memory, &mi);
+}
+
+struct TagAndPriority
+{
+    const char *const tag;
+    const uint8_t priority;
+};
+
+static void update_picture_for_item(struct urlfifo_item *item,
+                                    const GstTagList *tags)
+{
+    static const struct TagAndPriority image_tags[] =
+    {
+        { .tag = GST_TAG_IMAGE,         .priority = 150, },
+        { .tag = GST_TAG_PREVIEW_IMAGE, .priority = 120, },
+    };
+
+    for(size_t i = 0; i < sizeof(image_tags) / sizeof(image_tags[0]); ++i)
+    {
+        GstSample *sample = NULL;
+
+        if(!gst_tag_list_get_sample(tags, image_tags[i].tag, &sample))
+            continue;
+
+        GstCaps *caps = gst_sample_get_caps(sample);
+
+        if(caps == NULL)
+        {
+            gst_sample_unref(sample);
+            continue;
+        }
+
+        const enum ImageTagType tag_type = get_image_tag_type(caps);
+
+        switch(tag_type)
+        {
+          case IMAGE_TAG_TYPE_NONE:
+            break;
+
+          case IMAGE_TAG_TYPE_RAW_DATA:
+            send_image_data_to_cover_art_cache(sample, image_tags[i].priority, item);
+            break;
+
+          case IMAGE_TAG_TYPE_URI:
+            BUG("Embedded image tag is URI: not implemented");
+            break;
+        }
+
+        gst_sample_unref(sample);
+    }
+}
+
 static void emit_tags__unlocked(struct streamer_data *data)
 {
     struct stream_data *sd = item_data_get_nonconst(&data->current_stream);
@@ -635,6 +791,7 @@ static void handle_tag__unlocked(GstMessage *message, struct streamer_data *data
     GstTagList *tags = NULL;
     gst_message_parse_tag(message, &tags);
 
+    update_picture_for_item(&data->current_stream, tags);
     update_tags_for_item(&data->current_stream, tags);
 
     gst_tag_list_unref(tags);
