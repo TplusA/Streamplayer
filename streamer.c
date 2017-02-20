@@ -506,7 +506,8 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
         g_variant_builder_add(builder, "(ss)", tag, buffer);
     }
     else
-        msg_error(ENOSYS, LOG_ERR, "stream tag \"%s\" is not a string", tag);
+        msg_error(ENOSYS, LOG_ERR, "stream tag \"%s\" is of type %s",
+                  tag, G_VALUE_TYPE_NAME(value));
 }
 
 /*!
