@@ -1,3 +1,18 @@
+2017-02-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.1 released.
+
+	* Cover art: Extract image data from playing streams.
+
+	* Cover art: Send images to cover art cache.
+
+	* Playback: Fix resume from pause state. A signal was missing, causing
+	  the UI to behave oddly.
+
+	* Playback: Fix skipping in pause state.
+
+	* Misc: Minor changes in logs.
+
 2017-02-16  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.0 released: Changes of D-Bus interfaces were necessary
