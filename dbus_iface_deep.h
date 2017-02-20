@@ -31,6 +31,8 @@ tdbussplayPlayback *dbus_get_playback_iface(void);
 
 tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
 
+void dbus_handle_error(GError **error);
+
 #ifdef __cplusplus
 }
 #endif

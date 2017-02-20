@@ -182,7 +182,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
     return TRUE;
 }
 
-static void handle_dbus_error(GError **error)
+void dbus_handle_error(GError **error)
 {
     if(*error == NULL)
         return;
@@ -218,7 +218,7 @@ static void try_export_iface(GDBusConnection *connection,
 
     g_dbus_interface_skeleton_export(iface, connection, "/de/tahifi/Streamplayer", &error);
 
-    handle_dbus_error(&error);
+    dbus_handle_error(&error);
 }
 
 static void bus_acquired(GDBusConnection *connection,
@@ -271,7 +271,7 @@ static void name_acquired(GDBusConnection *connection,
                                             "de.tahifi.TACAMan",
                                             "/de/tahifi/TACAMan",
                                             NULL, &error);
-    handle_dbus_error(&error);
+    dbus_handle_error(&error);
 
     data->debug_logging_config_proxy =
         tdbus_debug_logging_config_proxy_new_sync(connection,
@@ -279,7 +279,7 @@ static void name_acquired(GDBusConnection *connection,
                                                   "de.tahifi.Dcpd",
                                                   "/de/tahifi/Dcpd",
                                                   NULL, &error);
-    handle_dbus_error(&error);
+    dbus_handle_error(&error);
 }
 
 static void name_lost(GDBusConnection *connection,
