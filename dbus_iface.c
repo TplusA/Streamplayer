@@ -26,6 +26,7 @@
 #include "dbus_iface.h"
 #include "dbus_iface_deep.h"
 #include "streamplayer_dbus.h"
+#include "artcache_dbus.h"
 #include "streamer.h"
 #include "urlfifo.h"
 #include "messages.h"
@@ -202,6 +203,8 @@ struct dbus_data
     tdbussplayPlayback *playback_iface;
     tdbussplayURLFIFO *urlfifo_iface;
 
+    tdbusartcacheWrite *artcache_write_iface;
+
     tdbusdebugLogging *debug_logging_iface;
     tdbusdebugLoggingConfig *debug_logging_config_proxy;
 };
@@ -262,6 +265,14 @@ static void name_acquired(GDBusConnection *connection,
 
     GError *error = NULL;
 
+    data->artcache_write_iface =
+        tdbus_artcache_write_proxy_new_sync(connection,
+                                            G_DBUS_PROXY_FLAGS_NONE,
+                                            "de.tahifi.TACAMan",
+                                            "/de/tahifi/TACAMan",
+                                            NULL, &error);
+    handle_dbus_error(&error);
+
     data->debug_logging_config_proxy =
         tdbus_debug_logging_config_proxy_new_sync(connection,
                                                   G_DBUS_PROXY_FLAGS_NONE,
@@ -314,6 +325,7 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
 
     log_assert(dbus_data.playback_iface != NULL);
     log_assert(dbus_data.urlfifo_iface != NULL);
+    log_assert(dbus_data.artcache_write_iface != NULL);
     log_assert(dbus_data.debug_logging_iface != NULL);
     log_assert(dbus_data.debug_logging_config_proxy != NULL);
 
@@ -336,6 +348,7 @@ void dbus_shutdown(GMainLoop *loop)
     g_main_loop_unref(loop);
     g_object_unref(dbus_data.playback_iface);
     g_object_unref(dbus_data.urlfifo_iface);
+    g_object_unref(dbus_data.artcache_write_iface);
     g_object_unref(dbus_data.debug_logging_iface);
     g_object_unref(dbus_data.debug_logging_config_proxy);
 }
@@ -348,4 +361,9 @@ tdbussplayURLFIFO *dbus_get_urlfifo_iface(void)
 tdbussplayPlayback *dbus_get_playback_iface(void)
 {
     return dbus_data.playback_iface;
+}
+
+tdbusartcacheWrite *dbus_artcache_get_write_iface(void)
+{
+    return dbus_data.artcache_write_iface;
 }

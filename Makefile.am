@@ -47,6 +47,7 @@ liburlfifo_la_SOURCES = urlfifo.c urlfifo.h
 
 nodist_libstreamplayer_dbus_la_SOURCES = \
     streamplayer_dbus.c streamplayer_dbus.h \
+    artcache_dbus.c artcache_dbus.h \
     debug_dbus.c debug_dbus.h
 
 libstreamplayer_dbus_la_CFLAGS = $(CRELAXEDWARNINGS)
@@ -54,6 +55,7 @@ libstreamplayer_dbus_la_CFLAGS = $(CRELAXEDWARNINGS)
 EXTRA_DIST += \
     dbus_interfaces/extract_documentation.py \
     dbus_interfaces/de_tahifi_streamplayer.xml \
+    dbus_interfaces/de_tahifi_artcache.xml \
     dbus_interfaces/de_tahifi_debug.xml
 
 BUILT_SOURCES = \
@@ -61,6 +63,9 @@ BUILT_SOURCES = \
     de_tahifi_streamplayer.h \
     de_tahifi_streamplayer.md \
     streamplayer_dbus.stamp \
+    de_tahifi_artcache.h \
+    de_tahifi_artcache.md \
+    artcache_dbus.stamp \
     de_tahifi_debug.h \
     de_tahifi_debug.md \
     debug_dbus.stamp
@@ -75,6 +80,15 @@ streamplayer_dbus.h: streamplayer_dbus.stamp
 streamplayer_dbus.stamp: dbus_interfaces/de_tahifi_streamplayer.xml
 	$(GDBUS_CODEGEN) --generate-c-code=streamplayer_dbus --c-namespace tdbus_splay --interface-prefix de.tahifi.Streamplayer. $<
 	$(abs_srcdir)/dbus_interfaces/extract_documentation.py -i $< -o de_tahifi_streamplayer.md -H de_tahifi_streamplayer.h -c tdbus_splay -s de.tahifi.Streamplayer. -n "$(PACKAGE_NAME)"
+	touch $@
+
+de_tahifi_artcache.h: artcache_dbus.stamp
+de_tahifi_artcache.md: artcache_dbus.stamp
+artcache_dbus.c: artcache_dbus.stamp
+artcache_dbus.h: artcache_dbus.stamp
+artcache_dbus.stamp: dbus_interfaces/de_tahifi_artcache.xml
+	$(GDBUS_CODEGEN) --generate-c-code=artcache_dbus --c-namespace tdbus_artcache --interface-prefix de.tahifi.ArtCache. $<
+	$(abs_srcdir)/dbus_interfaces/extract_documentation.py -i $< -o de_tahifi_artcache.md -H de_tahifi_artcache.h -c tdbus_artcache -s de.tahifi.ArtCache. -n "$(PACKAGE_NAME) (cover art)"
 	touch $@
 
 de_tahifi_debug.h: debug_dbus.stamp

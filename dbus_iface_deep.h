@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2017  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -20,8 +20,19 @@
 #define DBUS_IFACE_DEEP_H
 
 #include "streamplayer_dbus.h"
+#include "artcache_dbus.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 tdbussplayURLFIFO *dbus_get_urlfifo_iface(void);
 tdbussplayPlayback *dbus_get_playback_iface(void);
+
+tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !DBUS_IFACE_DEEP_H */
