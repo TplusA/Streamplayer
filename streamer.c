@@ -1683,7 +1683,7 @@ bool streamer_seek(guint64 position, const char *units)
                                    seek_flags, position * GST_MSECOND);
 }
 
-enum PlayStatus streamer_next(bool skip_only_if_playing,
+enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                               uint32_t *out_skipped_id, uint32_t *out_next_id)
 {
     static const char context[] = "skip to next";
@@ -1697,7 +1697,7 @@ enum PlayStatus streamer_next(bool skip_only_if_playing,
         ? streamer_data.next_stream.id
         : UINT32_MAX;
     uint32_t next_id =
-        (streamer_data.supposed_play_status == PLAY_STATUS_PLAYING || !skip_only_if_playing)
+        (streamer_data.supposed_play_status != PLAY_STATUS_STOPPED || !skip_only_if_not_stopped)
         ? try_dequeue_next(&streamer_data, true, context)
         : UINT32_MAX;
     const uint32_t skipped_id = (replaced_next_id != UINT32_MAX
