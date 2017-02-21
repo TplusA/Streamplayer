@@ -1189,6 +1189,10 @@ static void handle_stream_state_change(GstMessage *message,
 
     tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
 
+    struct urlfifo_item *const active_stream = data->current_stream.is_valid
+        ? &data->current_stream
+        : &data->next_stream;
+
     switch(state)
     {
       case GST_STATE_READY:
@@ -1198,10 +1202,6 @@ static void handle_stream_state_change(GstMessage *message,
             g_source_remove(data->progress_watcher);
             data->progress_watcher = 0;
         }
-
-        struct urlfifo_item *const active_stream = data->current_stream.is_valid
-            ? &data->current_stream
-            : &data->next_stream;
 
         if(dbus_playback_iface != NULL && active_stream->is_valid)
         {
@@ -1220,7 +1220,7 @@ static void handle_stream_state_change(GstMessage *message,
       case GST_STATE_PAUSED:
         if(dbus_playback_iface != NULL)
             tdbus_splay_playback_emit_paused(dbus_playback_iface,
-                                             data->current_stream.id);
+                                             active_stream->id);
         break;
 
       case GST_STATE_PLAYING:
@@ -1648,13 +1648,13 @@ void streamer_pause(void)
       case GST_STATE_PAUSED:
         break;
 
-      case GST_STATE_READY:
       case GST_STATE_NULL:
         if(try_dequeue_next(&streamer_data, true, context) != UINT32_MAX)
             play_next_stream(&streamer_data, GST_STATE_PAUSED, context);
 
         break;
 
+      case GST_STATE_READY:
       case GST_STATE_PLAYING:
         set_stream_state(streamer_data.pipeline, GST_STATE_PAUSED, context);
         break;
