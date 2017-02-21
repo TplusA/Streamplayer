@@ -1224,6 +1224,9 @@ static void handle_stream_state_change(GstMessage *message,
         break;
 
       case GST_STATE_PLAYING:
+        if(dbus_playback_iface != NULL)
+            emit_now_playing(dbus_playback_iface, data);
+
         if(data->progress_watcher == 0)
             data->progress_watcher = g_timeout_add(50, report_progress, data);
 
