@@ -50,6 +50,15 @@ static void enter_playback_handler(GDBusMethodInvocation *invocation)
               g_dbus_method_invocation_get_method_name(invocation));
 }
 
+static void enter_audiopath_player_handler(GDBusMethodInvocation *invocation)
+{
+    static const char iface_name[] = "de.tahifi.AudioPath.Player";
+
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s method invocation from '%s': %s",
+              iface_name, g_dbus_method_invocation_get_sender(invocation),
+              g_dbus_method_invocation_get_method_name(invocation));
+}
+
 static gboolean playback_start(tdbussplayPlayback *object,
                                GDBusMethodInvocation *invocation)
 {
@@ -182,6 +191,28 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
     return TRUE;
 }
 
+static gboolean audiopath_player_activate(tdbusaupathPlayer *object,
+                                          GDBusMethodInvocation *invocation)
+{
+    enter_audiopath_player_handler(invocation);
+
+    streamer_activate();
+    tdbus_aupath_player_complete_activate(object, invocation);
+
+    return TRUE;
+}
+
+static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
+                                            GDBusMethodInvocation *invocation)
+{
+    enter_audiopath_player_handler(invocation);
+
+    streamer_deactivate();
+    tdbus_aupath_player_complete_deactivate(object, invocation);
+
+    return TRUE;
+}
+
 void dbus_handle_error(GError **error)
 {
     if(*error == NULL)
@@ -204,6 +235,9 @@ struct dbus_data
     tdbussplayURLFIFO *urlfifo_iface;
 
     tdbusartcacheWrite *artcache_write_iface;
+
+    tdbusaupathPlayer *audiopath_player_iface;
+    tdbusaupathManager *audiopath_manager_proxy;
 
     tdbusdebugLogging *debug_logging_iface;
     tdbusdebugLoggingConfig *debug_logging_config_proxy;
@@ -228,6 +262,7 @@ static void bus_acquired(GDBusConnection *connection,
 
     data->playback_iface = tdbus_splay_playback_skeleton_new();
     data->urlfifo_iface = tdbus_splay_urlfifo_skeleton_new();
+    data->audiopath_player_iface = tdbus_aupath_player_skeleton_new();
     data->debug_logging_iface = tdbus_debug_logging_skeleton_new();
 
     g_signal_connect(data->playback_iface, "handle-start",
@@ -246,12 +281,18 @@ static void bus_acquired(GDBusConnection *connection,
     g_signal_connect(data->urlfifo_iface, "handle-push",
                      G_CALLBACK(fifo_push), NULL);
 
+    g_signal_connect(data->audiopath_player_iface, "handle-activate",
+                     G_CALLBACK(audiopath_player_activate), NULL);
+    g_signal_connect(data->audiopath_player_iface, "handle-deactivate",
+                     G_CALLBACK(audiopath_player_deactivate), NULL);
+
     g_signal_connect(data->debug_logging_iface,
                      "handle-debug-level",
                      G_CALLBACK(msg_dbus_handle_debug_level), NULL);
 
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->playback_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->urlfifo_iface));
+    try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->audiopath_player_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->debug_logging_iface));
 }
 
@@ -270,6 +311,14 @@ static void name_acquired(GDBusConnection *connection,
                                             G_DBUS_PROXY_FLAGS_NONE,
                                             "de.tahifi.TACAMan",
                                             "/de/tahifi/TACAMan",
+                                            NULL, &error);
+    dbus_handle_error(&error);
+
+    data->audiopath_manager_proxy =
+        tdbus_aupath_manager_proxy_new_sync(connection,
+                                            G_DBUS_PROXY_FLAGS_NONE,
+                                            "de.tahifi.TAPSwitch",
+                                            "/de/tahifi/TAPSwitch",
                                             NULL, &error);
     dbus_handle_error(&error);
 
@@ -326,6 +375,8 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
     log_assert(dbus_data.playback_iface != NULL);
     log_assert(dbus_data.urlfifo_iface != NULL);
     log_assert(dbus_data.artcache_write_iface != NULL);
+    log_assert(dbus_data.audiopath_player_iface != NULL);
+    log_assert(dbus_data.audiopath_manager_proxy != NULL);
     log_assert(dbus_data.debug_logging_iface != NULL);
     log_assert(dbus_data.debug_logging_config_proxy != NULL);
 
@@ -349,6 +400,8 @@ void dbus_shutdown(GMainLoop *loop)
     g_object_unref(dbus_data.playback_iface);
     g_object_unref(dbus_data.urlfifo_iface);
     g_object_unref(dbus_data.artcache_write_iface);
+    g_object_unref(dbus_data.audiopath_manager_proxy);
+    g_object_unref(dbus_data.audiopath_player_iface);
     g_object_unref(dbus_data.debug_logging_iface);
     g_object_unref(dbus_data.debug_logging_config_proxy);
 }
@@ -366,4 +419,9 @@ tdbussplayPlayback *dbus_get_playback_iface(void)
 tdbusartcacheWrite *dbus_artcache_get_write_iface(void)
 {
     return dbus_data.artcache_write_iface;
+}
+
+tdbusaupathManager *dbus_audiopath_get_manager_iface(void)
+{
+    return dbus_data.audiopath_manager_proxy;
 }

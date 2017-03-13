@@ -796,6 +796,7 @@ RECURSIVE              = YES
 EXCLUDE                = \
     @abs_builddir@/streamplayer_dbus.c \
     @abs_builddir@/artcache_dbus.c \
+    @abs_builddir@/audiopath_dbus.c \
     @abs_builddir@/debug_dbus.c \
     @abs_srcdir@/dbus_interfaces/
 

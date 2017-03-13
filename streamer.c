@@ -104,6 +104,8 @@ struct streamer_data
 {
     GMutex lock;
 
+    bool is_player_activated;
+
     GstElement *pipeline;
     guint bus_watch;
     guint progress_watcher;
@@ -1513,11 +1515,90 @@ void streamer_shutdown(GMainLoop *loop)
     urlfifo_free_item(&streamer_data.current_stream);
 }
 
-void streamer_start(void)
+void streamer_activate(void)
 {
-    static const char context[] = "start playing";
+    LOCK_DATA(&streamer_data);
+
+    if(streamer_data.is_player_activated)
+        BUG("Already activated");
+    else
+    {
+        msg_info("Activated");
+        streamer_data.is_player_activated = true;
+    }
+
+    UNLOCK_DATA(&streamer_data);
+}
+
+static bool do_stop(const char *context, const GstState pending,
+                    bool *failed_hard)
+{
+    log_assert(streamer_data.pipeline != NULL);
+
+    streamer_data.supposed_play_status = PLAY_STATUS_STOPPED;
+
+    const GstState state = (pending == GST_STATE_VOID_PENDING)
+        ? GST_STATE(streamer_data.pipeline)
+        : pending;
+    bool is_stream_state_unchanged = true;
+
+    *failed_hard = false;
+
+    switch(state)
+    {
+      case GST_STATE_PLAYING:
+      case GST_STATE_PAUSED:
+        if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, context))
+        {
+            is_stream_state_unchanged = false;
+            urlfifo_clear(0, NULL);
+        }
+        else
+            streamer_data.fail.clear_fifo_on_error = true;
+
+        break;
+
+      case GST_STATE_READY:
+      case GST_STATE_NULL:
+        urlfifo_clear(0, NULL);
+        break;
+
+      case GST_STATE_VOID_PENDING:
+        msg_error(ENOSYS, LOG_ERR,
+                  "Start: pipeline is in unhandled state %d", state);
+        *failed_hard = true;
+        break;
+    }
+
+    return is_stream_state_unchanged;
+}
+
+void streamer_deactivate(void)
+{
+    static const char context[] = "deactivate";
 
     LOCK_DATA(&streamer_data);
+
+    if(!streamer_data.is_player_activated)
+        BUG("Already deactivated");
+    else
+    {
+        msg_info("Deactivating as requested");
+        streamer_data.is_player_activated = false;
+
+        const GstState pending = GST_STATE_PENDING(streamer_data.pipeline);
+        bool dummy;
+        do_stop(context, pending, &dummy);
+
+        msg_info("Deactivated");
+    }
+
+    UNLOCK_DATA(&streamer_data);
+}
+
+static bool do_start(void)
+{
+    static const char context[] = "start playing";
 
     log_assert(streamer_data.pipeline != NULL);
 
@@ -1560,81 +1641,72 @@ void streamer_start(void)
           case GST_STATE_VOID_PENDING:
             msg_error(ENOSYS, LOG_ERR,
                       "Start: pipeline is in unhandled state %d", state);
-            break;
+            return false;
         }
     }
 
-    UNLOCK_DATA(&streamer_data);
+    return true;
 }
 
-void streamer_stop(void)
+bool streamer_start(void)
 {
-    static const char context[] = "stop playing";
-
     LOCK_DATA(&streamer_data);
 
-    msg_info("Stopping as requested");
-    log_assert(streamer_data.pipeline != NULL);
+    bool retval;
 
-    streamer_data.supposed_play_status = PLAY_STATUS_STOPPED;
-
-    const GstState pending = GST_STATE_PENDING(streamer_data.pipeline);
-    const GstState state = (pending == GST_STATE_VOID_PENDING)
-        ? GST_STATE(streamer_data.pipeline)
-        : pending;
-    bool may_emit_stopped_with_error = true;
-
-    switch(state)
+    if(streamer_data.is_player_activated)
+        retval = do_start();
+    else
     {
-      case GST_STATE_PLAYING:
-      case GST_STATE_PAUSED:
-        if(set_stream_state(streamer_data.pipeline, GST_STATE_READY, context))
-        {
-            may_emit_stopped_with_error = false;
-            urlfifo_clear(0, NULL);
-        }
-        else
-            streamer_data.fail.clear_fifo_on_error = true;
-
-        break;
-
-      case GST_STATE_READY:
-      case GST_STATE_NULL:
-        urlfifo_clear(0, NULL);
-        break;
-
-      case GST_STATE_VOID_PENDING:
-        msg_error(ENOSYS, LOG_ERR,
-                  "Start: pipeline is in unhandled state %d", state);
-        break;
-    }
-
-    if(may_emit_stopped_with_error &&
-       (GST_STATE(streamer_data.pipeline) == GST_STATE_READY ||
-        GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
-       pending == GST_STATE_VOID_PENDING)
-    {
-        emit_stopped_with_error(dbus_get_playback_iface(),
-                                &streamer_data.current_stream,
-                                STOPPED_REASON_ALREADY_STOPPED);
+        BUG("Start request while inactive");
+        retval = false;
     }
 
     UNLOCK_DATA(&streamer_data);
+
+    return retval;
 }
 
-/*!
- * \bug Call it a bug in or a feature of GStreamer playbin, but the following
- *     is anyway inconvenient: pausing an internet stream for a long time
- *     causes skipping to the next stream in the FIFO when trying to resume.
- *     There is probably some buffer overflow and connection timeout involved,
- *     but playbin won't tell us. It is therefore not easy to determine if we
- *     should reconnect or really take the next URL when asked to.
- */
-void streamer_pause(void)
+bool streamer_stop(void)
+{
+    LOCK_DATA(&streamer_data);
+
+    bool retval;
+
+    if(!streamer_data.is_player_activated)
+    {
+        BUG("Stop request while inactive");
+        retval = false;
+    }
+    else
+    {
+        static const char context[] = "stop playing";
+
+        msg_info("Stopping as requested");
+
+        const GstState pending = GST_STATE_PENDING(streamer_data.pipeline);
+        const bool may_emit_stopped_with_error =
+            do_stop(context, pending, &retval);
+
+        if(may_emit_stopped_with_error &&
+           (GST_STATE(streamer_data.pipeline) == GST_STATE_READY ||
+            GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
+           pending == GST_STATE_VOID_PENDING)
+        {
+            emit_stopped_with_error(dbus_get_playback_iface(),
+                                    &streamer_data.current_stream,
+                                    STOPPED_REASON_ALREADY_STOPPED);
+        }
+    }
+
+    UNLOCK_DATA(&streamer_data);
+
+    return retval;
+}
+
+static bool do_pause(void)
 {
     static const char context[] = "pause stream";
-
-    LOCK_DATA(&streamer_data);
 
     msg_info("Pausing as requested");
     log_assert(streamer_data.pipeline != NULL);
@@ -1662,33 +1734,75 @@ void streamer_pause(void)
       case GST_STATE_VOID_PENDING:
         msg_error(ENOSYS, LOG_ERR,
                   "Pause: pipeline is in unhandled state %d", state);
-        break;
+        return false;
+    }
+
+    return true;
+}
+
+/*!
+ * \bug Call it a bug in or a feature of GStreamer playbin, but the following
+ *     is anyway inconvenient: pausing an internet stream for a long time
+ *     causes skipping to the next stream in the FIFO when trying to resume.
+ *     There is probably some buffer overflow and connection timeout involved,
+ *     but playbin won't tell us. It is therefore not easy to determine if we
+ *     should reconnect or really take the next URL when asked to.
+ */
+bool streamer_pause(void)
+{
+    LOCK_DATA(&streamer_data);
+
+    bool retval;
+
+    if(streamer_data.is_player_activated)
+        retval = do_pause();
+    else
+    {
+        BUG("Pause request while inactive");
+        retval = false;
     }
 
     UNLOCK_DATA(&streamer_data);
+
+    return retval;
 }
 
 bool streamer_seek(guint64 position, const char *units)
 {
-    msg_info("Seek position %llu %s requested\n",
-             (unsigned long long)position, units);
+    LOCK_DATA(&streamer_data);
 
-    if(strcmp(units, "ms") != 0)
-        BUG("Seek units other than ms are not implemented yet");
+    bool retval;
 
-    static const GstSeekFlags seek_flags =
-        GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE;
+    if(!streamer_data.is_player_activated)
+    {
+        BUG("Seek request while inactive");
+        retval = false;
+    }
+    else
+    {
+        msg_info("Seek position %llu %s requested\n",
+                 (unsigned long long)position, units);
 
-    return gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
-                                   seek_flags, position * GST_MSECOND);
+        if(strcmp(units, "ms") != 0)
+            BUG("Seek units other than ms are not implemented yet");
+
+        static const GstSeekFlags seek_flags =
+            GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE;
+
+        retval =
+            gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
+                                    seek_flags, position * GST_MSECOND);
+    }
+
+    UNLOCK_DATA(&streamer_data);
+
+    return retval;
 }
 
-enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
-                              uint32_t *out_skipped_id, uint32_t *out_next_id)
+static enum PlayStatus do_next(bool skip_only_if_not_stopped,
+                               uint32_t *out_skipped_id, uint32_t *out_next_id)
 {
     static const char context[] = "skip to next";
-
-    LOCK_DATA(&streamer_data);
 
     msg_info("Next requested");
     log_assert(streamer_data.pipeline != NULL);
@@ -1743,7 +1857,24 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
     if(out_next_id != NULL)
         *out_next_id = next_id;
 
-    const enum PlayStatus retval = streamer_data.supposed_play_status;
+    return streamer_data.supposed_play_status;
+}
+
+enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
+                              uint32_t *out_skipped_id, uint32_t *out_next_id)
+{
+    LOCK_DATA(&streamer_data);
+
+    enum PlayStatus retval;
+
+    if(streamer_data.is_player_activated)
+        retval =
+            do_next(skip_only_if_not_stopped, out_skipped_id, out_next_id);
+    else
+    {
+        BUG("Next request while inactive");
+        retval = PLAY_STATUS_STOPPED;
+    }
 
     UNLOCK_DATA(&streamer_data);
 
@@ -1777,6 +1908,16 @@ bool streamer_get_current_stream_id(uint16_t *id)
 bool streamer_push_item(uint16_t stream_id, GVariant *stream_key,
                         const char *stream_url, size_t keep_items)
 {
+    LOCK_DATA(&streamer_data);
+    bool is_active = streamer_data.is_player_activated;
+    UNLOCK_DATA(&streamer_data);
+
+    if(!is_active)
+    {
+        BUG("Push request while inactive");
+        return false;
+    }
+
     static const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =
     {
         .data_fail = item_data_fail,

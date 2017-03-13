@@ -32,6 +32,7 @@
 
 #include "streamer.h"
 #include "dbus_iface.h"
+#include "dbus_iface_deep.h"
 #include "messages.h"
 #include "messages_glib.h"
 #include "versioninfo.h"
@@ -216,6 +217,12 @@ int main(int argc, char *argv[])
         streamer_shutdown(globals.loop);
         return EXIT_FAILURE;
     }
+
+    tdbus_aupath_manager_call_register_player_sync(dbus_audiopath_get_manager_iface(),
+                                                   "strbo",
+                                                   "T+A Streaming Board streamplayer",
+                                                   "/de/tahifi/Streamplayer",
+                                                   NULL, NULL);
 
     g_unix_signal_add(SIGINT, signal_handler, globals.loop);
     g_unix_signal_add(SIGTERM, signal_handler, globals.loop);

@@ -21,6 +21,7 @@
 
 #include "streamplayer_dbus.h"
 #include "artcache_dbus.h"
+#include "audiopath_dbus.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,8 @@ tdbussplayURLFIFO *dbus_get_urlfifo_iface(void);
 tdbussplayPlayback *dbus_get_playback_iface(void);
 
 tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
+
+tdbusaupathManager *dbus_audiopath_get_manager_iface(void);
 
 void dbus_handle_error(GError **error);
 
