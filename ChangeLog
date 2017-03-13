@@ -1,3 +1,15 @@
+2017-03-13  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 4.0 released.
+
+	* Audio routing: Register with TAPSwitch as player.
+
+	* Audio routing: The player will not play anything before being
+	  activated as part of the currently configured audio path.
+
+	* Misc: Asynchronous registration with dcpd (debugging stuff) for a
+	  significant speed-up of program start.
+
 2017-02-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.1 released.
