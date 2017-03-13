@@ -34,7 +34,7 @@ tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
 
 tdbusaupathManager *dbus_audiopath_get_manager_iface(void);
 
-void dbus_handle_error(GError **error);
+bool dbus_handle_error(GError **error);
 
 #ifdef __cplusplus
 }

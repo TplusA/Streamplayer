@@ -213,10 +213,10 @@ static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
     return TRUE;
 }
 
-void dbus_handle_error(GError **error)
+bool dbus_handle_error(GError **error)
 {
     if(*error == NULL)
-        return;
+        return true;
 
     if((*error)->message != NULL)
         msg_error(0, LOG_EMERG, "Got D-Bus error: %s", (*error)->message);
@@ -225,6 +225,8 @@ void dbus_handle_error(GError **error)
 
     g_error_free(*error);
     *error = NULL;
+
+    return false;
 }
 
 struct dbus_data
@@ -296,6 +298,21 @@ static void bus_acquired(GDBusConnection *connection,
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->debug_logging_iface));
 }
 
+static void created_config_proxy(GObject *source_object, GAsyncResult *res,
+                                 gpointer user_data)
+{
+    struct dbus_data *data = user_data;
+    GError *error = NULL;
+
+    data->debug_logging_config_proxy =
+        tdbus_debug_logging_config_proxy_new_finish(res, &error);
+
+    if(dbus_handle_error(&error))
+        g_signal_connect(dbus_data.debug_logging_config_proxy, "g-signal",
+                         G_CALLBACK(msg_dbus_handle_global_debug_level_changed),
+                         NULL);
+}
+
 static void name_acquired(GDBusConnection *connection,
                           const gchar *name, gpointer user_data)
 {
@@ -322,13 +339,11 @@ static void name_acquired(GDBusConnection *connection,
                                             NULL, &error);
     dbus_handle_error(&error);
 
-    data->debug_logging_config_proxy =
-        tdbus_debug_logging_config_proxy_new_sync(connection,
-                                                  G_DBUS_PROXY_FLAGS_NONE,
-                                                  "de.tahifi.Dcpd",
-                                                  "/de/tahifi/Dcpd",
-                                                  NULL, &error);
-    dbus_handle_error(&error);
+    data->debug_logging_config_proxy = NULL;
+    tdbus_debug_logging_config_proxy_new(connection,
+                                         G_DBUS_PROXY_FLAGS_NONE,
+                                         "de.tahifi.Dcpd", "/de/tahifi/Dcpd",
+                                         NULL, created_config_proxy, data);
 }
 
 static void name_lost(GDBusConnection *connection,
@@ -378,11 +393,6 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
     log_assert(dbus_data.audiopath_player_iface != NULL);
     log_assert(dbus_data.audiopath_manager_proxy != NULL);
     log_assert(dbus_data.debug_logging_iface != NULL);
-    log_assert(dbus_data.debug_logging_config_proxy != NULL);
-
-    g_signal_connect(dbus_data.debug_logging_config_proxy, "g-signal",
-                     G_CALLBACK(msg_dbus_handle_global_debug_level_changed),
-                     NULL);
 
     g_main_loop_ref(loop);
 
@@ -403,7 +413,9 @@ void dbus_shutdown(GMainLoop *loop)
     g_object_unref(dbus_data.audiopath_manager_proxy);
     g_object_unref(dbus_data.audiopath_player_iface);
     g_object_unref(dbus_data.debug_logging_iface);
-    g_object_unref(dbus_data.debug_logging_config_proxy);
+
+    if(dbus_data.debug_logging_config_proxy != NULL)
+        g_object_unref(dbus_data.debug_logging_config_proxy);
 }
 
 tdbussplayURLFIFO *dbus_get_urlfifo_iface(void)
