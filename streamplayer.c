@@ -218,11 +218,11 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    tdbus_aupath_manager_call_register_player_sync(dbus_audiopath_get_manager_iface(),
-                                                   "strbo",
-                                                   "T+A Streaming Board streamplayer",
-                                                   "/de/tahifi/Streamplayer",
-                                                   NULL, NULL);
+    tdbus_aupath_manager_call_register_player(dbus_audiopath_get_manager_iface(),
+                                              "strbo",
+                                              "T+A Streaming Board streamplayer",
+                                              "/de/tahifi/Streamplayer",
+                                              NULL, NULL, NULL);
 
     g_unix_signal_add(SIGINT, signal_handler, globals.loop);
     g_unix_signal_add(SIGTERM, signal_handler, globals.loop);
