@@ -324,6 +324,8 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
     emit_stopped_with_error(dbus_get_playback_iface(),
                             failed_stream, data->fail.reason);
 
+    data->suppress_next_stopped_events = 0;
+
     urlfifo_free_item(&data->current_stream);
     urlfifo_free_item(&data->next_stream);
     memset(&data->fail, 0, sizeof(data->fail));
