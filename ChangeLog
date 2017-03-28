@@ -1,3 +1,16 @@
+2017-03-29  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.2 released.
+
+	* Playback: Fix stopping stream. A signal was missing, causing the UI
+	  to stay in play view even when the stream has really stopped.
+
+	* Playback: Avoid sending now-playing notification twice on stream
+	  start. Not only was this wasteful, but it also confused dcpd,
+	  causing it to send the cover art hash to the SPI slave twice.
+
+	* Misc: Fix crash.
+
 2017-02-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.1 released.
