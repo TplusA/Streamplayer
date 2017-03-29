@@ -141,6 +141,7 @@ struct streamer_data
     GstClockTime next_allowed_tag_update_time;
 
     unsigned int suppress_next_stopped_events;
+    bool stream_has_just_started;
 
     enum PlayStatus supposed_play_status;
 };
@@ -325,6 +326,7 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
                             failed_stream, data->fail.reason);
 
     data->suppress_next_stopped_events = 0;
+    data->stream_has_just_started = false;
 
     urlfifo_free_item(&data->current_stream);
     urlfifo_free_item(&data->next_stream);
@@ -1165,13 +1167,14 @@ static void handle_stream_state_change(GstMessage *message,
         return;
     }
 
-    GstState state, pending;
-    gst_message_parse_state_changed(message, NULL, &state, &pending);
+    GstState oldstate, state, pending;
+    gst_message_parse_state_changed(message, &oldstate, &state, &pending);
 
     msg_vinfo(MESSAGE_LEVEL_TRACE,
-              "State change on %s \"%s\": state %s, pending %s",
+              "State change on %s \"%s\": state %s -> %s, pending %s",
               G_OBJECT_TYPE_NAME(GST_MESSAGE_SRC(message)),
               GST_MESSAGE_SRC_NAME(message),
+              gst_element_state_get_name(oldstate),
               gst_element_state_get_name(state),
               gst_element_state_get_name(pending));
 
@@ -1182,11 +1185,19 @@ static void handle_stream_state_change(GstMessage *message,
         return;
     }
 
-    /* we are currently not interested in transients */
     if(pending != GST_STATE_VOID_PENDING)
     {
-        UNLOCK_DATA(data);
-        return;
+        if((oldstate == GST_STATE_READY || oldstate == GST_STATE_NULL) &&
+           state == GST_STATE_PAUSED && pending == GST_STATE_PLAYING)
+        {
+            data->stream_has_just_started = true;
+        }
+        else
+        {
+            /* we are currently not interested in other transients */
+            UNLOCK_DATA(data);
+            return;
+        }
     }
 
     tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
@@ -1217,17 +1228,21 @@ static void handle_stream_state_change(GstMessage *message,
                 --data->suppress_next_stopped_events;
         }
 
+        data->stream_has_just_started = false;
+
         break;
 
       case GST_STATE_PAUSED:
-        if(dbus_playback_iface != NULL)
+        if(dbus_playback_iface != NULL && pending == GST_STATE_VOID_PENDING)
             tdbus_splay_playback_emit_paused(dbus_playback_iface,
                                              active_stream->id);
         break;
 
       case GST_STATE_PLAYING:
-        if(dbus_playback_iface != NULL)
+        if(dbus_playback_iface != NULL && !data->stream_has_just_started)
             emit_now_playing(dbus_playback_iface, data);
+
+        data->stream_has_just_started = false;
 
         if(data->progress_watcher == 0)
             data->progress_watcher = g_timeout_add(50, report_progress, data);
