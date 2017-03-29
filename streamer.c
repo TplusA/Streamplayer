@@ -1264,13 +1264,16 @@ static void handle_start_of_stream(GstMessage *message,
                                          : &data->current_stream);
     struct stream_data *sd = item_data_get_nonconst(stream);
 
-    clear_current_meta_data(sd);
-    invalidate_stream_position_information(data);
+    if(sd != NULL)
+    {
+        clear_current_meta_data(sd);
+        invalidate_stream_position_information(data);
 
-    if(stream == &data->next_stream)
-        urlfifo_move_item(&data->current_stream, &data->next_stream);
+        if(stream == &data->next_stream)
+            urlfifo_move_item(&data->current_stream, &data->next_stream);
 
-    emit_now_playing(dbus_get_playback_iface(), data);
+        emit_now_playing(dbus_get_playback_iface(), data);
+    }
 
     UNLOCK_DATA(data);
 }
