@@ -1730,8 +1730,13 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                 break;
             }
 
+            const bool need_to_suppress_stop = streamer_data.current_stream.is_valid;
+
             if(play_next_stream(&streamer_data, next_state, context))
-                ++streamer_data.suppress_next_stopped_events;
+            {
+                if(need_to_suppress_stop)
+                    ++streamer_data.suppress_next_stopped_events;
+            }
             else
                 next_id = UINT32_MAX;
         }
