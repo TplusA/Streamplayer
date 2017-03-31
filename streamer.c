@@ -1688,19 +1688,88 @@ void streamer_pause(void)
     UNLOCK_DATA(&streamer_data);
 }
 
-bool streamer_seek(guint64 position, const char *units)
+/*!
+ * Convert percentage to time in nanoseconds.
+ *
+ * Why not simply use GST_FORMAT_PERCENT? The answer is that it won't work with
+ * our version of GStreamer. The elements don't support it, so we have to do it
+ * by ourselves.
+ */
+static int64_t compute_position_from_percentage(const int64_t percentage,
+                                                const uint64_t duration_ns)
 {
-    msg_info("Seek position %llu %s requested\n",
-             (unsigned long long)position, units);
+    if(percentage <= GST_FORMAT_PERCENT_MAX)
+        return (int64_t)gst_util_uint64_scale_int(duration_ns, percentage,
+                                                  GST_FORMAT_PERCENT_MAX);
 
-    if(strcmp(units, "ms") != 0)
-        BUG("Seek units other than ms are not implemented yet");
+    msg_error(EINVAL, LOG_ERR, "Seek percentage value too large");
+    return -1;
+}
+
+bool streamer_seek(int64_t position, const char *units)
+{
+    if(position < 0)
+    {
+        msg_error(EINVAL, LOG_ERR, "Negative seeks not supported");
+        return false;
+    }
+
+    gint64 duration_ns;
+
+    LOCK_DATA(&streamer_data);
+
+    if(streamer_data.pipeline == NULL ||
+       !gst_element_query_duration(streamer_data.pipeline,
+                                   GST_FORMAT_TIME, &duration_ns) ||
+       duration_ns < 0)
+        duration_ns = INT64_MIN;
+
+    UNLOCK_DATA(&streamer_data);
+
+    if(duration_ns < 0)
+    {
+        msg_error(EINVAL, LOG_ERR, "Cannot seek, duration unknown");
+        return false;
+    }
 
     static const GstSeekFlags seek_flags =
         GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE;
 
+    if(strcmp(units, "%") == 0)
+        position = compute_position_from_percentage(position, duration_ns);
+    else if(strcmp(units, "s") == 0)
+        position *= GST_SECOND;
+    else if(strcmp(units, "ms") == 0)
+        position *= GST_MSECOND;
+    else if(strcmp(units, "us") == 0)
+        position *= GST_USECOND;
+    else if(strcmp(units, "ns") == 0)
+    {
+        /* position value is in nanoseconds already, nothing to do */
+    }
+    else
+        position = INT64_MIN;
+
+    if(position < 0)
+    {
+        if(position == INT64_MAX)
+            msg_error(EINVAL, LOG_ERR, "Seek unit %s not supported", units);
+
+        return false;
+    }
+
+    if(position > duration_ns)
+    {
+        msg_error(EINVAL, LOG_ERR,
+                  "Seek position %" PRId64 " ns beyond EOS at %" PRId64 " ns",
+                  position, duration_ns);
+        return false;
+    }
+
+    msg_info("Seek to time %" PRId64 " ns", position);
+
     return gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
-                                   seek_flags, position * GST_MSECOND);
+                                   seek_flags, position);
 }
 
 enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
