@@ -99,6 +99,28 @@ static gboolean playback_seek(tdbussplayPlayback *object,
     return TRUE;
 }
 
+static gboolean playback_set_speed(tdbussplayPlayback *object,
+                                   GDBusMethodInvocation *invocation,
+                                   double speed_factor)
+{
+    enter_playback_handler(invocation);
+
+    const bool success =
+        (speed_factor < 0.0 ||
+         (speed_factor > 0.0 && (speed_factor < 1.0 || speed_factor > 1.0)))
+        ? streamer_fast_winding(speed_factor)
+        : streamer_fast_winding_stop();
+
+    if(success)
+        tdbus_splay_playback_complete_set_speed(object, invocation);
+    else
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+                                              G_DBUS_ERROR_FAILED,
+                                              "Set speed failed");
+
+    return TRUE;
+}
+
 static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
                            gint16 keep_first_n_entries)
@@ -238,6 +260,8 @@ static void bus_acquired(GDBusConnection *connection,
                      G_CALLBACK(playback_pause), NULL);
     g_signal_connect(data->playback_iface, "handle-seek",
                      G_CALLBACK(playback_seek), NULL);
+    g_signal_connect(data->playback_iface, "handle-set-speed",
+                     G_CALLBACK(playback_set_speed), NULL);
 
     g_signal_connect(data->urlfifo_iface, "handle-clear",
                      G_CALLBACK(fifo_clear), NULL);

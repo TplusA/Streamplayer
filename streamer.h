@@ -36,6 +36,8 @@ void streamer_start(void);
 void streamer_stop(void);
 void streamer_pause(void);
 bool streamer_seek(int64_t position, const char *units);
+bool streamer_fast_winding(double factor);
+bool streamer_fast_winding_stop(void);
 enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                               uint32_t *out_skipped_id, uint32_t *out_next_id);
 bool streamer_is_playing(void);

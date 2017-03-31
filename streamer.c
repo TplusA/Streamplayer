@@ -1772,6 +1772,65 @@ bool streamer_seek(int64_t position, const char *units)
                                    seek_flags, position);
 }
 
+static bool do_set_speed(struct streamer_data *data, double factor)
+{
+    LOCK_DATA(data);
+
+    if(data->pipeline == NULL)
+    {
+        UNLOCK_DATA(data);
+        msg_error(0, LOG_NOTICE, "Cannot set speed, have no active pipeline");
+        return false;
+    }
+
+    gint64 position_ns;
+    if(!gst_element_query_position(data->pipeline,
+                                   GST_FORMAT_TIME, &position_ns) ||
+       position_ns < 0)
+    {
+        UNLOCK_DATA(data);
+        msg_error(0, LOG_ERR,
+                  "Cannot set speed, failed querying stream position");
+        return false;
+    }
+
+    static const GstSeekFlags seek_flags =
+        GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE |
+#if GST_CHECK_VERSION(1, 5, 1)
+        GST_SEEK_FLAG_TRICKMODE | GST_SEEK_FLAG_TRICKMODE_KEY_UNITS |
+#else
+        GST_SEEK_FLAG_SKIP |
+#endif /* minimum version 1.5.1 */
+        0;
+
+    const bool success =
+        gst_element_seek(data->pipeline, factor, GST_FORMAT_TIME, seek_flags,
+                         GST_SEEK_TYPE_SET, position_ns,
+                         GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
+    const uint16_t id = data->current_stream.id;
+
+    UNLOCK_DATA(data);
+
+    if(!success)
+        msg_error(0, LOG_ERR, "Failed setting speed");
+    else
+        tdbus_splay_playback_emit_speed_changed(dbus_get_playback_iface(), id, factor);
+
+    return success;
+}
+
+bool streamer_fast_winding(double factor)
+{
+    msg_info("Setting playback speed to %f", factor);
+    return do_set_speed(&streamer_data, factor);
+}
+
+bool streamer_fast_winding_stop(void)
+{
+    msg_info("Playing at regular speed");
+    return do_set_speed(&streamer_data, 1.0);
+}
+
 enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                               uint32_t *out_skipped_id, uint32_t *out_next_id)
 {
