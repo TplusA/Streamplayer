@@ -1,3 +1,20 @@
+2017-04-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.3 released.
+
+	* Playback: Support fast forward, fast reverse, and seeking. Seeking
+	  has been supported before, but it was never used except for jumping
+	  to the beginning to the stream.
+
+	* Playback: Avoid emission of signals in cases where GStreamer reports
+	  changes when there are none. This seriously confused the user
+	  interface and caused a lot of trouble in the skipping mechanism.
+
+	* Misc: Seek position can be given either as a percentage value, or as
+	  an absolute time (s, ms, us, or ns).
+
+	* Stability: Avoid rare crash.
+
 2017-03-29  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.2 released.
