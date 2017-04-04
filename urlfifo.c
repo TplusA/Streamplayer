@@ -204,7 +204,9 @@ void urlfifo_move_item(struct urlfifo_item *restrict dest,
 bool urlfifo_fail_item(struct urlfifo_item *item, void *user_data)
 {
     log_assert(item != NULL);
-    log_assert(item->is_valid);
+
+    if(!item->is_valid)
+        return false;
 
     switch(item->fail_state)
     {
