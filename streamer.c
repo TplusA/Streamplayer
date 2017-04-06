@@ -1185,6 +1185,19 @@ static void handle_stream_state_change(GstMessage *message,
         return;
     }
 
+    if(state == oldstate)
+    {
+        /* Why, oh GStreamer, are you doing this to me? The fucking GstMessage
+         * was clearly labeled GST_MESSAGE_STATE_CHANGED, so why for fucking
+         * Christ's sake is the new state THE FUCKING SAME AS THE OLD STATE?!
+         * If this is intended, then why is there not A SINGLE FUCKING WORD
+         * ABOUT IT IN THE FUCKING API DOCUMENTATION? Why do I have to spend
+         * DAYS (literally!) just to find this fuckery being the cause for our
+         * various problems with skipping through streams? */
+        UNLOCK_DATA(data);
+        return;
+    }
+
     if(pending != GST_STATE_VOID_PENDING)
     {
         if((oldstate == GST_STATE_READY || oldstate == GST_STATE_NULL) &&
