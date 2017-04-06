@@ -194,7 +194,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
         !streamer_push_item(stream_id, stream_key, stream_url, keep);
 
     const gboolean is_playing = (keep_first_n_entries == -2)
-        ? streamer_next(true, NULL, NULL)
+        ? streamer_next(true, NULL, NULL) == PLAY_STATUS_PLAYING
         : streamer_is_playing();
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
