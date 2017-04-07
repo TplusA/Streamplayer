@@ -1737,6 +1737,8 @@ bool streamer_seek(int64_t position, const char *units)
        duration_ns < 0)
         duration_ns = INT64_MIN;
 
+    const uint16_t id = streamer_data.current_stream.id;
+
     UNLOCK_DATA(&streamer_data);
 
     if(duration_ns < 0)
@@ -1781,8 +1783,13 @@ bool streamer_seek(int64_t position, const char *units)
 
     msg_info("Seek to time %" PRId64 " ns", position);
 
-    return gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
-                                   seek_flags, position);
+    if(!gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
+                                seek_flags, position))
+        return false;
+
+    tdbus_splay_playback_emit_speed_changed(dbus_get_playback_iface(), id, 1.0);
+
+    return true;
 }
 
 static bool do_set_speed(struct streamer_data *data, double factor)
