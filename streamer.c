@@ -1737,14 +1737,10 @@ bool streamer_seek(int64_t position, const char *units)
        duration_ns < 0)
         duration_ns = INT64_MIN;
 
-    const uint16_t id = streamer_data.current_stream.id;
-
-    UNLOCK_DATA(&streamer_data);
-
     if(duration_ns < 0)
     {
         msg_error(EINVAL, LOG_ERR, "Cannot seek, duration unknown");
-        return false;
+        goto error_exit;
     }
 
     static const GstSeekFlags seek_flags =
@@ -1770,7 +1766,7 @@ bool streamer_seek(int64_t position, const char *units)
         if(position == INT64_MAX)
             msg_error(EINVAL, LOG_ERR, "Seek unit %s not supported", units);
 
-        return false;
+        goto error_exit;
     }
 
     if(position > duration_ns)
@@ -1778,18 +1774,27 @@ bool streamer_seek(int64_t position, const char *units)
         msg_error(EINVAL, LOG_ERR,
                   "Seek position %" PRId64 " ns beyond EOS at %" PRId64 " ns",
                   position, duration_ns);
-        return false;
+        goto error_exit;
     }
 
     msg_info("Seek to time %" PRId64 " ns", position);
 
     if(!gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
                                 seek_flags, position))
-        return false;
+        goto error_exit;
 
-    tdbus_splay_playback_emit_speed_changed(dbus_get_playback_iface(), id, 1.0);
+    tdbus_splay_playback_emit_speed_changed(dbus_get_playback_iface(),
+                                            streamer_data.current_stream.id,
+                                            1.0);
+
+    UNLOCK_DATA(&streamer_data);
 
     return true;
+
+error_exit:
+    UNLOCK_DATA(&streamer_data);
+
+    return false;
 }
 
 static bool do_set_speed(struct streamer_data *data, double factor)
