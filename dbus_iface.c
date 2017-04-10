@@ -162,9 +162,6 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
     uint32_t next_id;
     const enum PlayStatus play_status = streamer_next(false, &skipped_id, &next_id);
 
-    uint16_t temp;
-        streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
-
     tdbus_splay_urlfifo_complete_next(object, invocation,
                                       skipped_id, next_id, (uint8_t)play_status);
 
