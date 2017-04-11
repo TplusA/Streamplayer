@@ -140,7 +140,6 @@ struct streamer_data
     bool is_tag_update_scheduled;
     GstClockTime next_allowed_tag_update_time;
 
-    unsigned int suppress_next_stopped_events;
     bool stream_has_just_started;
 
     enum PlayStatus supposed_play_status;
@@ -325,7 +324,6 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
     emit_stopped_with_error(dbus_get_playback_iface(),
                             failed_stream, data->fail.reason);
 
-    data->suppress_next_stopped_events = 0;
     data->stream_has_just_started = false;
 
     urlfifo_free_item(&data->current_stream);
@@ -1194,8 +1192,11 @@ static void handle_stream_state_change(GstMessage *message,
          * ABOUT IT IN THE FUCKING API DOCUMENTATION? Why do I have to spend
          * DAYS (literally!) just to find this fuckery being the cause for our
          * various problems with skipping through streams? */
-        UNLOCK_DATA(data);
-        return;
+        if(state == GST_STATE_READY || state == GST_STATE_NULL)
+        {
+            UNLOCK_DATA(data);
+            return;
+        }
     }
 
     if(pending != GST_STATE_VOID_PENDING)
@@ -1229,17 +1230,22 @@ static void handle_stream_state_change(GstMessage *message,
             data->progress_watcher = 0;
         }
 
-        if(dbus_playback_iface != NULL && active_stream->is_valid)
+        gchar *current_uri = NULL;
+        g_object_get(GST_OBJECT(data->pipeline), "current-uri", &current_uri, NULL);
+
+        if(current_uri == NULL)
         {
-            if(data->suppress_next_stopped_events == 0)
+            if(dbus_playback_iface != NULL && active_stream->is_valid)
             {
                 tdbus_splay_playback_emit_stopped(dbus_playback_iface,
                                                   active_stream->id);
-                urlfifo_free_item(active_stream);
             }
-            else
-                --data->suppress_next_stopped_events;
+
+            if(active_stream->is_valid)
+                urlfifo_free_item(active_stream);
         }
+        else
+            g_free(current_uri);
 
         data->stream_has_just_started = false;
 
@@ -1901,14 +1907,7 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                 break;
             }
 
-            const bool need_to_suppress_stop = streamer_data.current_stream.is_valid;
-
-            if(play_next_stream(&streamer_data, next_state, context))
-            {
-                if(need_to_suppress_stop)
-                    ++streamer_data.suppress_next_stopped_events;
-            }
-            else
+            if(!play_next_stream(&streamer_data, next_state, context))
                 next_id = UINT32_MAX;
         }
         else
