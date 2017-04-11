@@ -1838,7 +1838,7 @@ static bool do_set_speed(struct streamer_data *data, double factor)
         gst_element_seek(data->pipeline, factor, GST_FORMAT_TIME, seek_flags,
                          GST_SEEK_TYPE_SET, position_ns,
                          GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
-    const uint16_t id = data->current_stream.id;
+    const stream_id_t id = data->current_stream.id;
 
     UNLOCK_DATA(data);
 
@@ -1932,7 +1932,7 @@ bool streamer_is_playing(void)
     return GST_STATE(streamer_data.pipeline) == GST_STATE_PLAYING;
 }
 
-bool streamer_get_current_stream_id(uint16_t *id)
+bool streamer_get_current_stream_id(stream_id_t *id)
 {
     LOCK_DATA(&streamer_data);
 
@@ -1951,7 +1951,7 @@ bool streamer_get_current_stream_id(uint16_t *id)
     return retval;
 }
 
-bool streamer_push_item(uint16_t stream_id, GVariant *stream_key,
+bool streamer_push_item(stream_id_t stream_id, GVariant *stream_key,
                         const char *stream_url, size_t keep_items)
 {
     static const struct urlfifo_item_data_ops streamer_urlfifo_item_data_ops =

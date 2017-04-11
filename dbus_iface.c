@@ -127,18 +127,20 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
 {
     enter_urlfifo_handler(invocation);
 
-    uint16_t temp;
+    stream_id_t temp;
     const uint32_t current_id =
         streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
 
-    uint16_t ids_removed[URLFIFO_MAX_LENGTH];
+    stream_id_t ids_removed[URLFIFO_MAX_LENGTH];
     const size_t ids_removed_count =
         (keep_first_n_entries >= 0)
         ? urlfifo_clear(keep_first_n_entries, ids_removed)
         : 0;
 
-    uint16_t ids_in_fifo[URLFIFO_MAX_LENGTH];
+    stream_id_t ids_in_fifo[URLFIFO_MAX_LENGTH];
     const size_t ids_in_fifo_count = urlfifo_get_queued_ids(ids_in_fifo);
+
+    G_STATIC_ASSERT(sizeof(stream_id_t) == 2);
 
     GVariant *const queued_ids =
         g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_in_fifo,

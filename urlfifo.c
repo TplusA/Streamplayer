@@ -52,7 +52,7 @@ static inline size_t add_to_id(size_t id, size_t inc)
     return (id + inc) % (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
 }
 
-size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed)
+size_t urlfifo_clear(size_t keep_first_n, stream_id_t *ids_removed)
 {
     urlfifo_lock();
 
@@ -80,7 +80,7 @@ size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed)
     return removed_count;
 }
 
-static void init_item(struct urlfifo_item *item, uint16_t external_id,
+static void init_item(struct urlfifo_item *item, stream_id_t external_id,
                       const char *url, const struct streamtime *start,
                       const struct streamtime *stop,
                       void *data, const struct urlfifo_item_data_ops *ops)
@@ -111,7 +111,7 @@ static inline bool urlfifo_unlocked_is_full(void)
     return fifo_data.num_of_items >= (sizeof(fifo_data.items) / sizeof(fifo_data.items[0]));
 }
 
-size_t urlfifo_push_item(uint16_t external_id, const char *url,
+size_t urlfifo_push_item(stream_id_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
                          size_t keep_first_n, urlfifo_item_id_t *item_id,
@@ -242,7 +242,7 @@ void urlfifo_free_item(struct urlfifo_item *item)
         free(item->url);
 
     item->is_valid = false;
-    item->id = 0;
+    item->id = STREAM_ID_SOURCE_INVALID | STREAM_ID_COOKIE_INVALID;
     item->url = NULL;
     item->data = NULL;
     item->data_ops = NULL;
@@ -284,7 +284,7 @@ size_t urlfifo_get_size(void)
     return urlfifo_get_queued_ids(NULL);
 }
 
-size_t urlfifo_get_queued_ids(uint16_t *ids_in_fifo)
+size_t urlfifo_get_queued_ids(stream_id_t *ids_in_fifo)
 {
     urlfifo_lock();
 

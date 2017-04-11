@@ -229,7 +229,7 @@ void test_fifo_is_empty_on_startup(void)
 
 void test_clear_all_on_empty_fifo(void)
 {
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(0, urlfifo_clear(0, ids));
@@ -249,7 +249,7 @@ void test_clear_non_empty_fifo(void)
     cut_assert_equal_size(2, urlfifo_get_size());
     cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
 
-    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(2, urlfifo_clear(0, &ids[URLFIFO_MAX_LENGTH]));
@@ -282,7 +282,7 @@ void test_clear_partial_non_empty_fifo(void)
     cut_assert_equal_size(2, urlfifo_get_size());
     cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
 
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(1, urlfifo_clear(1, ids));
@@ -347,7 +347,7 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
 
     /* we now have |42|32|123|132|223|232|323|332|, with 32 being the head
      * element */
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(7, urlfifo_clear(1, ids));
@@ -382,7 +382,7 @@ void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(0, urlfifo_clear(3, ids));
@@ -744,7 +744,7 @@ void test_push_one_replace_all_works_on_full_fifo(void)
 {
     static const uint16_t max_insertions = 10;
 
-    for(uint16_t id = 20; id < 20 + max_insertions; ++id)
+    for(stream_id_t id = 20; id < 20 + max_insertions; ++id)
     {
         if(urlfifo_push_item(id, default_url, NULL, NULL, SIZE_MAX, NULL,
                              NULL, NULL) == 0)
@@ -837,7 +837,7 @@ void test_pop_item_from_multi_item_fifo(void)
 
 void test_push_pop_chase(void)
 {
-    static const uint16_t id_base = 100;
+    static const stream_id_t id_base = 100;
     static const unsigned int num_of_iterations = 10;
 
     cut_assert_equal_size(1, urlfifo_push_item(id_base, default_url,
@@ -872,7 +872,7 @@ void test_get_queued_ids_count_for_empty_fifo(void)
 
 void test_get_queued_ids_for_empty_fifo(void)
 {
-    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(0, urlfifo_get_queued_ids(&ids[URLFIFO_MAX_LENGTH]));
@@ -888,7 +888,7 @@ void test_get_queued_ids_for_filled_fifo(void)
                                                        NULL, NULL, SIZE_MAX,
                                                        NULL, NULL, NULL));
 
-    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(URLFIFO_MAX_LENGTH,
@@ -897,7 +897,7 @@ void test_get_queued_ids_for_filled_fifo(void)
     for(size_t i = 0 * URLFIFO_MAX_LENGTH; i < 1 * URLFIFO_MAX_LENGTH; ++i)
         cut_assert_equal_uint(0x5555, ids[i]);
 
-    uint16_t expected_id = 100;
+    stream_id_t expected_id = 100;
     for(size_t i = 1 * URLFIFO_MAX_LENGTH; i < 2 * URLFIFO_MAX_LENGTH; ++i)
     {
         cut_assert_equal_uint(expected_id, ids[i]);
@@ -912,7 +912,7 @@ void test_urlfifo_is_full_interface(void)
 {
     cut_assert_false(urlfifo_is_full());
 
-    for(uint16_t i = 0; i < 10; ++i)
+    for(size_t i = 0; i < 10; ++i)
     {
         if(urlfifo_is_full())
         {

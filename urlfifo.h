@@ -23,6 +23,7 @@
 #include <stdbool.h>
 
 #include "streamtime.h"
+#include "stream_id.h"
 
 /*!
  * \addtogroup urlfifo URL FIFO
@@ -74,7 +75,7 @@ struct urlfifo_item
 {
     bool is_valid;
 
-    uint16_t id;
+    stream_id_t id;
     char *url;
     struct streamtime start_time;
     struct streamtime end_time;
@@ -123,7 +124,7 @@ void urlfifo_unlock(void);
  *     The number of items removed from the FIFO, corresponding to the number
  *     of items returned in \p ids_removed.
  */
-size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed);
+size_t urlfifo_clear(size_t keep_first_n, stream_id_t *ids_removed);
 
 /*!
  * Append new item to URL FIFO.
@@ -153,7 +154,7 @@ size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed);
  *     In the latter case, no new item is created and the URL FIFO remains
  *     untouched.
  */
-size_t urlfifo_push_item(uint16_t external_id, const char *url,
+size_t urlfifo_push_item(stream_id_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
                          size_t keep_first_n, urlfifo_item_id_t *item_id,
@@ -284,7 +285,7 @@ size_t urlfifo_get_size(void);
  *     The number of items in the FIFO, corresponding to the number of items
  *     returned in \p ids_in_fifo.
  */
-size_t urlfifo_get_queued_ids(uint16_t *ids_in_fifo);
+size_t urlfifo_get_queued_ids(stream_id_t *ids_in_fifo);
 
 /*!
  * Whether or not the FIFO is full.
