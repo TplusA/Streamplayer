@@ -1302,6 +1302,8 @@ static void handle_start_of_stream(GstMessage *message,
     {
         clear_current_meta_data(sd);
         invalidate_stream_position_information(data);
+        query_seconds(gst_element_query_duration, data->pipeline,
+                      &data->current_time.duration_s);
 
         if(stream == &data->next_stream)
             urlfifo_move_item(&data->current_stream, &data->next_stream);
