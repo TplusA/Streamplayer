@@ -268,7 +268,6 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
 
     G_STATIC_ASSERT(G_N_ELEMENTS(reasons) == STOPPED_REASON_LAST_VALUE + 1U);
 
-
     if(failed_stream->is_valid)
         tdbus_splay_playback_emit_stopped_with_error(playback_iface,
                                                      failed_stream->id,
