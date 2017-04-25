@@ -1168,12 +1168,13 @@ static void handle_stream_state_change(GstMessage *message,
     gst_message_parse_state_changed(message, &oldstate, &state, &pending);
 
     msg_vinfo(MESSAGE_LEVEL_TRACE,
-              "State change on %s \"%s\": state %s -> %s, pending %s",
+              "State change on %s \"%s\": state %s -> %s, pending %s (%sours)",
               G_OBJECT_TYPE_NAME(GST_MESSAGE_SRC(message)),
               GST_MESSAGE_SRC_NAME(message),
               gst_element_state_get_name(oldstate),
               gst_element_state_get_name(state),
-              gst_element_state_get_name(pending));
+              gst_element_state_get_name(pending),
+              is_ours ? "" : "not ");
 
     /* leave now if we came here only for the trace */
     if(!is_ours)
