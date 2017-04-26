@@ -97,6 +97,12 @@ void test_item_should_fail_only_once(void);
 void test_item_data_callbacks_are_called_for_push_pop(void);
 
 /*!\test
+ * Popping an item to a \c NULL pointer removes the item from the URL FIFO and
+ * frees the item.
+ */
+void test_item_data_callbacks_are_called_for_pop_to_drop(void);
+
+/*!\test
  * If defined, the URL FIFO item data operations are used when pushing data,
  * then clearing the FIFO.
  */
@@ -594,6 +600,40 @@ void test_item_data_callbacks_are_called_for_push_pop(void)
 
     test_data[1] = 0x12345678;
     urlfifo_free_item(&popped);
+    cut_assert_equal_uint(0x87654321, test_data[1]);
+}
+
+void test_item_data_callbacks_are_called_for_pop_to_drop(void)
+{
+    uint32_t test_data[2] = { 0, 0 };
+    urlfifo_item_id_t ids[2];
+
+    cut_assert_equal_size(1, urlfifo_push_item(642, default_url,
+                                               NULL, NULL, SIZE_MAX, &ids[0],
+                                               &test_data[0], &test_data_ops));
+    cut_assert_equal_size(2, urlfifo_push_item(172, default_url,
+                                               NULL, NULL, SIZE_MAX, &ids[1],
+                                               &test_data[1], &test_data_ops));
+
+    const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
+    cut_assert_not_null(item);
+    cut_assert_equal_pointer(&test_data[0], item->data);
+    cut_assert_equal_uint(0, test_data[0]);
+
+    test_data[0] = 0x12345678;
+    cut_assert_equal_size(1, urlfifo_pop_item(NULL, false));
+    cut_assert_equal_uint(0x87654321, test_data[0]);
+    cut_assert_equal_uint(0, test_data[1]);
+
+    item = urlfifo_unlocked_peek(ids[1]);
+    cut_assert_not_null(item);
+    cut_assert_equal_pointer(&test_data[1], item->data);
+    cut_assert_equal_uint(0, test_data[1]);
+
+    test_data[0] = 0;
+    test_data[1] = 0x12345678;
+    cut_assert_equal_size(0, urlfifo_pop_item(NULL, false));
+    cut_assert_equal_uint(0, test_data[0]);
     cut_assert_equal_uint(0x87654321, test_data[1]);
 }
 

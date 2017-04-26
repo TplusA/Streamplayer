@@ -156,8 +156,6 @@ size_t urlfifo_push_item(stream_id_t external_id, const char *url,
 
 ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
 {
-    log_assert(dest != NULL);
-
     urlfifo_lock();
 
     if(fifo_data.num_of_items == 0)
@@ -173,7 +171,10 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
 
     log_assert(src != dest);
 
-    urlfifo_move_item(dest, src);
+    if(dest != NULL)
+        urlfifo_move_item(dest, src);
+    else
+        urlfifo_free_item(src);
 
     fifo_data.first_item = add_to_id(fifo_data.first_item, 1);
     --fifo_data.num_of_items;

@@ -173,12 +173,13 @@ size_t urlfifo_push_item(stream_id_t external_id, const char *url,
  * destination item in case \p free_dest is \c true. Note that in this case,
  * the object that \p dest points to must have been initialized before.
  *
- * \param dest Where to write a copy of the item. This parameter may not be
- *     \c NULL. In case of error, the memory pointed to by \p dest remains
- *     untouched.
+ * \param dest Where to write a copy of the item. If \c NULL, then the item is
+ *     dropped from the URL FIFO. In case of error, the memory pointed to by
+ *     \p dest remains untouched.
  * \param free_dest If set to \c true, then call #urlfifo_free_item() for \p
  *     dest iff the URL FIFO is not empty when this function is called (i.e.,
- *     if the pop operation succeeds).
+ *     if the pop operation succeeds). This parameter must be \c false if
+ *     \p dest is \c NULL.
  *
  * \returns The number of items remaining in the FIFO after removing the new
  *     one, or -1 in case the URL FIFO was empty.
