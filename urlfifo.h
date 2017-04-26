@@ -187,12 +187,26 @@ size_t urlfifo_push_item(stream_id_t external_id, const char *url,
 ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest);
 
 /*!
+ * Return first item in URL FIFO if valid.
+ *
+ * \returns Pointer to item, or NULL if URL FIFO is empty.
+ */
+struct urlfifo_item *urlfifo_peek(void);
+
+/*!
  * Move URL item content from one object to another.
  *
  * The source item will be invalidated after the move.
  */
 void urlfifo_move_item(struct urlfifo_item *restrict dest,
                        struct urlfifo_item *restrict src);
+
+/*!
+ * Whether or not a given item is valid.
+ *
+ * Use this function instead of accessing the #urlfifo_item structure directly.
+ */
+bool urlfifo_is_item_valid(const struct urlfifo_item *item);
 
 /*!
  * Set failure.
@@ -287,6 +301,11 @@ size_t urlfifo_get_size(void);
  *     returned in \p ids_in_fifo.
  */
 size_t urlfifo_get_queued_ids(stream_id_t *ids_in_fifo);
+
+/*!
+ * Whether or not the FIFO is empty.
+ */
+bool urlfifo_is_empty(void);
 
 /*!
  * Whether or not the FIFO is full.

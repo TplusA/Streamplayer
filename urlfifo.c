@@ -186,6 +186,28 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
     return retval;
 }
 
+struct urlfifo_item *urlfifo_peek(void)
+{
+    urlfifo_lock();
+
+    struct urlfifo_item *const head = fifo_data.num_of_items > 0
+        ? &fifo_data.items[fifo_data.first_item]
+        : NULL;
+
+    urlfifo_unlock();
+
+    log_assert(head == NULL || head->is_valid);
+
+    return head;
+}
+
+bool urlfifo_is_item_valid(const struct urlfifo_item *item)
+{
+    log_assert(item != NULL);
+
+    return item->is_valid;
+}
+
 void urlfifo_move_item(struct urlfifo_item *restrict dest,
                        struct urlfifo_item *restrict src)
 {
@@ -299,6 +321,15 @@ size_t urlfifo_get_queued_ids(stream_id_t *ids_in_fifo)
             ids_in_fifo[retval] = fifo_data.items[retval].id;
     }
 
+    urlfifo_unlock();
+
+    return retval;
+}
+
+bool urlfifo_is_empty(void)
+{
+    urlfifo_lock();
+    bool retval = fifo_data.num_of_items == 0;
     urlfifo_unlock();
 
     return retval;
