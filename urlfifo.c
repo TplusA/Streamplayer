@@ -85,7 +85,7 @@ static void init_item(struct urlfifo_item *item, stream_id_t external_id,
                       const struct streamtime *stop,
                       void *data, const struct urlfifo_item_data_ops *ops)
 {
-    item->is_valid = true;
+    item->state = URLFIFO_ITEM_STATE_IN_QUEUE;
     item->id = external_id;
 
     if(url != NULL && url[0] != '\0')
@@ -154,6 +154,23 @@ size_t urlfifo_push_item(stream_id_t external_id, const char *url,
     return retval;
 }
 
+static void move_item(struct urlfifo_item *restrict dest,
+                      struct urlfifo_item *restrict src)
+{
+    log_assert(dest != NULL);
+    log_assert(src != NULL);
+
+    urlfifo_free_item(dest);
+
+    memcpy(dest, src, sizeof(*dest));
+
+    src->state = URLFIFO_ITEM_STATE_INVALID;
+    src->id = STREAM_ID_SOURCE_INVALID | STREAM_ID_COOKIE_INVALID;
+    src->url = NULL;
+    src->data = NULL;
+    src->data_ops = NULL;
+}
+
 ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
 {
     urlfifo_lock();
@@ -172,7 +189,7 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest)
     log_assert(src != dest);
 
     if(dest != NULL)
-        urlfifo_move_item(dest, src);
+        move_item(dest, src);
     else
         urlfifo_free_item(src);
 
@@ -196,7 +213,7 @@ struct urlfifo_item *urlfifo_peek(void)
 
     urlfifo_unlock();
 
-    log_assert(head == NULL || head->is_valid);
+    log_assert(head == NULL || head->state != URLFIFO_ITEM_STATE_INVALID);
 
     return head;
 }
@@ -205,30 +222,50 @@ bool urlfifo_is_item_valid(const struct urlfifo_item *item)
 {
     log_assert(item != NULL);
 
-    return item->is_valid;
+    return item->state != URLFIFO_ITEM_STATE_INVALID;
 }
 
-void urlfifo_move_item(struct urlfifo_item *restrict dest,
-                       struct urlfifo_item *restrict src)
+void urlfifo_set_item_state(struct urlfifo_item *item,
+                            enum urlfifo_item_state state)
 {
-    log_assert(dest != NULL);
-    log_assert(src != NULL);
+    log_assert(item != NULL);
+    log_assert(state != URLFIFO_ITEM_STATE_INVALID);
 
-    urlfifo_free_item(dest);
+    if(item->state != URLFIFO_ITEM_STATE_INVALID)
+        item->state = state;
+}
 
-    memcpy(dest, src, sizeof(*dest));
+const char *urlfifo_state_name(const enum urlfifo_item_state state)
+{
+    switch(state)
+    {
+      case URLFIFO_ITEM_STATE_INVALID:
+        return "INVALID";
 
-    src->is_valid = false;
-    src->url = NULL;
-    src->data = NULL;
-    src->data_ops = NULL;
+      case URLFIFO_ITEM_STATE_IN_QUEUE:
+        return "IN_QUEUE";
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE:
+        return "ABOUT_TO_ACTIVATE";
+
+      case URLFIFO_ITEM_STATE_ACTIVE:
+        return "ACTIVE";
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT:
+        return "ABOUT_TO_PHASE_OUT";
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED:
+        return "ABOUT_TO_BE_SKIPPED";
+    }
+
+    return "*** UNKNOWN ***";
 }
 
 bool urlfifo_fail_item(struct urlfifo_item *item, void *user_data)
 {
     log_assert(item != NULL);
 
-    if(!item->is_valid)
+    if(item->state == URLFIFO_ITEM_STATE_INVALID)
         return false;
 
     switch(item->fail_state)
@@ -255,7 +292,7 @@ void urlfifo_free_item(struct urlfifo_item *item)
 {
     log_assert(item != NULL);
 
-    if(!item->is_valid)
+    if(item->state == URLFIFO_ITEM_STATE_INVALID)
         return;
 
     if(item->data_ops != NULL)
@@ -264,7 +301,7 @@ void urlfifo_free_item(struct urlfifo_item *item)
     if(item->url != NULL)
         free(item->url);
 
-    item->is_valid = false;
+    item->state = URLFIFO_ITEM_STATE_INVALID;
     item->id = STREAM_ID_SOURCE_INVALID | STREAM_ID_COOKIE_INVALID;
     item->url = NULL;
     item->data = NULL;

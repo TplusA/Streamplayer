@@ -111,25 +111,13 @@ struct streamer_data
     gulong signal_handler_ids[2];
 
     /*!
-     * The item currently played/paused.
+     * The item currently played/paused/handled.
      *
      * The item is moved from the URL FIFO into this place using
-     * #urlfifo_pop_item(). Check #urlfifo_item::is_valid to tell valid from
-     * invalid (unused) items.
+     * #urlfifo_pop_item() before the item is actually playing. Check
+     * #urlfifo_item::state to tell what is supposed to be done with the item.
      */
     struct urlfifo_item current_stream;
-
-    /*!
-     * The item to be played/paused next.
-     *
-     * The item is moved from the URL FIFO into this place using
-     * #urlfifo_pop_item() soon before the currently playing stream ends. It is
-     * moved to #streamer_data::current_stream when the stream actually starts
-     * playing.
-     *
-     * Check #urlfifo_item::is_valid to tell valid from invalid (unused) items.
-     */
-    struct urlfifo_item next_stream;
 
     struct failure_data fail;
 
@@ -268,16 +256,26 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
 
     G_STATIC_ASSERT(G_N_ELEMENTS(reasons) == STOPPED_REASON_LAST_VALUE + 1U);
 
-    if(failed_stream->is_valid)
+    switch(failed_stream->state)
+    {
+      case URLFIFO_ITEM_STATE_INVALID:
+        tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
+                                                     urlfifo_get_size() == 0,
+                                                     reasons[reason]);
+        break;
+
+      case URLFIFO_ITEM_STATE_IN_QUEUE:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE:
+      case URLFIFO_ITEM_STATE_ACTIVE:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED:
         tdbus_splay_playback_emit_stopped_with_error(playback_iface,
                                                      failed_stream->id,
                                                      failed_stream->url,
                                                      urlfifo_get_size() == 0,
                                                      reasons[reason]);
-    else
-        tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
-                                                     urlfifo_get_size() == 0,
-                                                     reasons[reason]);
+        break;
+    }
 }
 
 static int rebuild_playbin(const char *context);
@@ -313,20 +311,13 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
     if(data->fail.clear_fifo_on_error)
         urlfifo_clear(0, NULL);
 
-    const struct urlfifo_item *const failed_stream =
-        ((data->next_stream.is_valid &&
-          data->next_stream.fail_state != URLFIFO_FAIL_STATE_NOT_FAILED)
-         ? &data->next_stream
-         : &data->current_stream);
-
     invalidate_stream_position_information(data);
     emit_stopped_with_error(dbus_get_playback_iface(),
-                            failed_stream, data->fail.reason);
+                            &data->current_stream, data->fail.reason);
 
     data->stream_has_just_started = false;
 
     urlfifo_free_item(&data->current_stream);
-    urlfifo_free_item(&data->next_stream);
     memset(&data->fail, 0, sizeof(data->fail));
 }
 
@@ -384,55 +375,156 @@ static void item_data_free(void **data)
     *data = NULL;
 }
 
-static uint32_t try_dequeue_next(struct streamer_data *data,
-                                 bool is_queued_item_expected,
-                                 const char *context)
+/*!
+ * Return next item from queue, if any.
+ *
+ * The function takes a look at the URL FIFO. In case it is empty, this
+ * function returns \c NULL to indicate that there is no next item. Depending
+ * on context, error recovery might be required to handle this case (see
+ * parameter \p is_queued_item_expected).
+ *
+ * In case the URL FIFO is not empty, it will return a pointer to the head
+ * element. The head element will remain in the URL FIFO in case the current
+ * stream in \p data is still valid, otherwise the element will be moved to the
+ * current stream structure. That is, the returned pointer will point either to
+ * a URL FIFO element or to the current stream structure.
+ * See \p replaced_current_stream for how to distinguish these two cases.
+ *
+ * \param data
+ *     Structure to take the current stream from, also used for error recovery
+ *     (see #schedule_error_recovery()).
+ *
+ * \param is_queued_item_expected
+ *     If this parameter is \c true, then error recovery is scheduled in case
+ *     the queue is empty. If it is \c false and the queue is empty, then
+ *     nothing special happens and the function simply returns \c NULL.
+ *
+ * \param[out] replaced_current_stream
+ *     If this function returns a non-NULL pointer, then \c true is returned
+ *     through this parameter in case the pointer points to the current stream
+ *     structure in \p data, and \c false is returned in case the current
+ *     stream was not changed and the pointer points directly to an item in the
+ *     URL FIFO. If this function returns a NULL pointer, then \c true is
+ *     returned through this parameter in case the current stream has been
+ *     replaced by the next item from the URL FIFO (which also will have been
+ *     marked as failed), and \c false is returned in case the current stream
+ *     has been marked as failed (if any).
+ *
+ * \param context
+ *     For better logs.
+ *
+ * \returns
+ *     A pointer to the next stream information, or \c NULL in case there is no
+ *     such stream.
+ */
+static struct urlfifo_item *try_take_next(struct streamer_data *data,
+                                          bool is_queued_item_expected,
+                                          bool *replaced_current_stream,
+                                          const char *context)
 {
     struct failure_data fdata =
     {
         .reason = STOPPED_REASON_UNKNOWN,
-        .report_on_stream_stop = data->current_stream.is_valid,
+        .report_on_stream_stop = urlfifo_is_item_valid(&data->current_stream),
     };
 
-    if(urlfifo_pop_item(&data->next_stream, true) < 0)
+    struct urlfifo_item *head = urlfifo_peek();
+
+    if(head == NULL)
     {
         if(!is_queued_item_expected)
-            return UINT32_MAX;
+        {
+            *replaced_current_stream = false;
+            return NULL;
+        }
 
         msg_info("[%s] Cannot dequeue, URL FIFO is empty", context);
         fdata.reason = STOPPED_REASON_QUEUE_EMPTY;
     }
-    else if(data->next_stream.url == NULL)
+    else if(head->url == NULL)
     {
         msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
                   "[%s] Cannot dequeue, URL in item is empty", context);
         fdata.reason = STOPPED_REASON_URL_MISSING;
     }
     else
-        return data->next_stream.id;
-
-    if(data->current_stream.is_valid)
-        urlfifo_fail_item(&data->current_stream, &fdata);
-    else if(data->next_stream.is_valid)
     {
-        urlfifo_move_item(&data->current_stream, &data->next_stream);
+        *replaced_current_stream = !urlfifo_is_item_valid(&data->current_stream);
+
+        if(*replaced_current_stream)
+        {
+            urlfifo_pop_item(&data->current_stream, false);
+            head = &data->current_stream;
+        }
+
+        return head;
+    }
+
+    /* error, failure handling below */
+    *replaced_current_stream = urlfifo_is_item_valid(&data->current_stream);
+
+    if(*replaced_current_stream || head != NULL)
+    {
+        if(*replaced_current_stream)
+            urlfifo_pop_item(&data->current_stream, false);
+        else
+            urlfifo_pop_item(NULL, false);
+
         urlfifo_fail_item(&data->current_stream, &fdata);
     }
     else
+    {
+        *replaced_current_stream = false;
         schedule_error_recovery(data, fdata.reason);
+    }
 
-    return UINT32_MAX;
+    return NULL;
 }
 
-static bool play_next_stream(struct streamer_data *data, GstState next_state,
-                             const char *context)
+static bool play_next_stream(struct streamer_data *data,
+                             struct urlfifo_item *replaced_stream,
+                             struct urlfifo_item *next_stream,
+                             GstState next_state, bool is_skipping,
+                             bool is_prefetching_for_gapless, const char *context)
 {
-    g_object_set(data->pipeline, "uri", data->next_stream.url, NULL);
+    log_assert(next_stream != NULL);
+    log_assert(urlfifo_is_item_valid(next_stream));
 
-    urlfifo_free_item(&data->current_stream);
+    switch(next_stream->state)
+    {
+      case URLFIFO_ITEM_STATE_INVALID:
+      case URLFIFO_ITEM_STATE_ACTIVE:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED:
+        BUG("[%s] Unexpected stream state %s",
+            context, urlfifo_state_name(next_stream->state));
+        return false;
 
-    const bool retval =
-        set_stream_state(data->pipeline, next_state, "play queued");
+      case URLFIFO_ITEM_STATE_IN_QUEUE:
+        urlfifo_set_item_state(next_stream,
+                               URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE);
+        break;
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE:
+        /* already in the making, don't be so hasty */
+        return true;
+    }
+
+    if(replaced_stream != NULL)
+        urlfifo_set_item_state(replaced_stream,
+                               is_skipping
+                               ? URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED
+                               : URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT);
+
+    msg_info("Setting URL %s for next stream %u",
+             next_stream->url, next_stream->id);
+
+    g_object_set(data->pipeline, "uri", next_stream->url, NULL);
+
+    if(is_prefetching_for_gapless)
+        return true;
+
+    const bool retval = set_stream_state(data->pipeline, next_state, "play queued");
 
     if(retval)
         invalidate_stream_position_information(data);
@@ -440,27 +532,38 @@ static bool play_next_stream(struct streamer_data *data, GstState next_state,
     return retval;
 }
 
-static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
+static inline void queue_stream_from_url_fifo__unlocked(GstElement *elem,
+                                                        struct streamer_data *data)
 {
     static const char context[] = "need next stream";
 
-    struct streamer_data *data = user_data;
+    bool is_next_current;
+    struct urlfifo_item *const next_stream =
+        try_take_next(data, false, &is_next_current, context);
 
-    LOCK_DATA(data);
-
-    if(data->current_stream.is_valid && !data->next_stream.is_valid)
+    if(!urlfifo_is_item_valid(&data->current_stream) && next_stream == NULL)
     {
-        if(try_dequeue_next(data, false, context) != UINT32_MAX)
-        {
-            msg_info("Setting URL %s for next stream %u",
-                     data->next_stream.url, data->next_stream.id);
-
-            g_object_set(data->pipeline, "uri", data->next_stream.url, NULL);
-        }
+        BUG("Having nothing to play, have nothing in queue, "
+            "but GStreamer is asking for more");
+        return;
     }
-    else
-        urlfifo_move_item(&data->current_stream, &data->next_stream);
 
+    if(next_stream == NULL)
+    {
+        /* we are done here */
+        urlfifo_set_item_state(&data->current_stream,
+                               URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT);
+        return;
+    }
+
+    play_next_stream(data, is_next_current ? NULL : &data->current_stream,
+                     next_stream, GST_STATE_NULL, false, true, context);
+}
+
+static void queue_stream_from_url_fifo(GstElement *elem, struct streamer_data *data)
+{
+    LOCK_DATA(data);
+    queue_stream_from_url_fifo__unlocked(elem, data);
     UNLOCK_DATA(data);
 }
 
@@ -776,7 +879,7 @@ static gboolean emit_tags(gpointer user_data)
 
     LOCK_DATA(data);
 
-    if(data->current_stream.is_valid)
+    if(urlfifo_is_item_valid(&data->current_stream))
         emit_tags__unlocked(data);
     else
         data->is_tag_update_scheduled = false;
@@ -788,7 +891,7 @@ static gboolean emit_tags(gpointer user_data)
 
 static void handle_tag__unlocked(GstMessage *message, struct streamer_data *data)
 {
-    if(!data->current_stream.is_valid)
+    if(!urlfifo_is_item_valid(&data->current_stream))
         return;
 
     GstTagList *tags = NULL;
@@ -984,7 +1087,7 @@ static enum stopped_reason gerror_to_stopped_reason(GError *error,
 
 static bool determine_is_local_error_by_url(const struct urlfifo_item *item)
 {
-    if(!item->is_valid)
+    if(!urlfifo_is_item_valid(item))
         return true;
 
     if(item->url == NULL)
@@ -1022,30 +1125,36 @@ static void handle_error_message(GstMessage *message, struct streamer_data *data
 
     LOCK_DATA(data);
 
-    struct urlfifo_item *const failed_stream = data->next_stream.is_valid
-        ? &data->next_stream
-        : &data->current_stream;
+    struct urlfifo_item *const failed_stream =
+        urlfifo_is_item_valid(&data->current_stream)
+        ? &data->current_stream
+        : urlfifo_peek();
 
-    const bool is_local_error = determine_is_local_error_by_url(failed_stream);
-
-    GstElement *source_elem;
-    g_object_get(data->pipeline, "source", &source_elem, NULL);
-
-    struct failure_data fdata =
+    if(failed_stream == NULL)
+        BUG("Supposed to handle error, but have no item");
+    else
     {
-        .reason = gerror_to_stopped_reason(error, is_local_error),
-        .report_on_stream_stop = false,
-    };
+        const bool is_local_error = determine_is_local_error_by_url(failed_stream);
 
-    msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
-              error->code, g_quark_to_string(error->domain),
-              GST_MESSAGE_SRC_NAME(message));
-    msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
-    msg_error(0, LOG_ERR, "ERROR debug: %s", debug);
-    msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
-              fdata.reason, fdata.report_on_stream_stop ? "on stop" : "now");
+        GstElement *source_elem;
+        g_object_get(data->pipeline, "source", &source_elem, NULL);
 
-    urlfifo_fail_item(failed_stream, &fdata);
+        struct failure_data fdata =
+        {
+            .reason = gerror_to_stopped_reason(error, is_local_error),
+            .report_on_stream_stop = false,
+        };
+
+        msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
+                  error->code, g_quark_to_string(error->domain),
+                  GST_MESSAGE_SRC_NAME(message));
+        msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
+        msg_error(0, LOG_ERR, "ERROR debug: %s", debug);
+        msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
+                  fdata.reason, fdata.report_on_stream_stop ? "on stop" : "now");
+
+        urlfifo_fail_item(failed_stream, &fdata);
+    }
 
     UNLOCK_DATA(data);
 
@@ -1104,7 +1213,7 @@ static gboolean report_progress(gpointer user_data)
 
     LOCK_DATA(data);
 
-    if(!data->current_stream.is_valid)
+    if(!urlfifo_is_item_valid(&data->current_stream))
     {
         data->progress_watcher = 0;
         UNLOCK_DATA(data);
@@ -1147,6 +1256,41 @@ static gboolean report_progress(gpointer user_data)
     return G_SOURCE_CONTINUE;
 }
 
+static bool activate_stream(struct streamer_data *data,
+                            GstState pipeline_state)
+{
+    switch(data->current_stream.state)
+    {
+      case URLFIFO_ITEM_STATE_INVALID:
+        BUG("Current item is invalid, switched to %s",
+            gst_element_state_get_name(pipeline_state));
+        break;
+
+      case URLFIFO_ITEM_STATE_ACTIVE:
+        return true;
+
+      case URLFIFO_ITEM_STATE_IN_QUEUE:
+        BUG("Unexpected state %s for stream switched to %s",
+            urlfifo_state_name(data->current_stream.state),
+            gst_element_state_get_name(pipeline_state));
+        urlfifo_set_item_state(&data->current_stream,
+                               URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED);
+
+        /* fall-through */
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED:
+        break;
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE:
+        urlfifo_set_item_state(&data->current_stream,
+                               URLFIFO_ITEM_STATE_ACTIVE);
+        return true;
+    }
+
+    return false;
+}
+
 static void handle_stream_state_change(GstMessage *message,
                                        struct streamer_data *data)
 {
@@ -1168,12 +1312,13 @@ static void handle_stream_state_change(GstMessage *message,
     gst_message_parse_state_changed(message, &oldstate, &state, &pending);
 
     msg_vinfo(MESSAGE_LEVEL_TRACE,
-              "State change on %s \"%s\": state %s -> %s, pending %s (%sours)",
+              "State change on %s \"%s\": state %s -> %s, pending %s, target %s (%sours)",
               G_OBJECT_TYPE_NAME(GST_MESSAGE_SRC(message)),
               GST_MESSAGE_SRC_NAME(message),
               gst_element_state_get_name(oldstate),
               gst_element_state_get_name(state),
               gst_element_state_get_name(pending),
+              gst_element_state_get_name(GST_STATE_TARGET(data->pipeline)),
               is_ours ? "" : "not ");
 
     /* leave now if we came here only for the trace */
@@ -1199,66 +1344,77 @@ static void handle_stream_state_change(GstMessage *message,
         }
     }
 
-    if(pending != GST_STATE_VOID_PENDING)
-    {
-        if((oldstate == GST_STATE_READY || oldstate == GST_STATE_NULL) &&
-           state == GST_STATE_PAUSED && pending == GST_STATE_PLAYING)
-        {
-            data->stream_has_just_started = true;
-        }
-        else
-        {
-            /* we are currently not interested in other transients */
-            UNLOCK_DATA(data);
-            return;
-        }
-    }
-
     tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
-
-    struct urlfifo_item *const active_stream = data->current_stream.is_valid
-        ? &data->current_stream
-        : &data->next_stream;
 
     switch(state)
     {
-      case GST_STATE_READY:
       case GST_STATE_NULL:
+      case GST_STATE_READY:
         if(data->progress_watcher != 0)
         {
             g_source_remove(data->progress_watcher);
             data->progress_watcher = 0;
         }
 
-        gchar *current_uri = NULL;
-        g_object_get(GST_OBJECT(data->pipeline), "current-uri", &current_uri, NULL);
+        break;
 
-        if(current_uri == NULL)
+      case GST_STATE_PAUSED:
+        if((oldstate == GST_STATE_READY || oldstate == GST_STATE_NULL) &&
+           pending == GST_STATE_PLAYING)
         {
-            if(dbus_playback_iface != NULL && active_stream->is_valid)
-            {
-                tdbus_splay_playback_emit_stopped(dbus_playback_iface,
-                                                  active_stream->id);
-            }
-
-            if(active_stream->is_valid)
-                urlfifo_free_item(active_stream);
+            data->stream_has_just_started = true;
         }
-        else
-            g_free(current_uri);
+
+        break;
+
+      case GST_STATE_PLAYING:
+      case GST_STATE_VOID_PENDING:
+        break;
+    }
+
+
+    switch(GST_STATE_TARGET(data->pipeline))
+    {
+      case GST_STATE_READY:
+        if(pending != GST_STATE_VOID_PENDING)
+        {
+            /* want to stop, but not there yet */
+            break;
+        }
+
+        if(dbus_playback_iface != NULL)
+            tdbus_splay_playback_emit_stopped(dbus_playback_iface,
+                                              data->current_stream.id);
+
+        if(urlfifo_pop_item(&data->current_stream, true) < 0)
+            urlfifo_free_item(&data->current_stream);
 
         data->stream_has_just_started = false;
 
         break;
 
       case GST_STATE_PAUSED:
-        if(dbus_playback_iface != NULL && pending == GST_STATE_VOID_PENDING)
+        if(pending != GST_STATE_VOID_PENDING)
+        {
+            /* want to pause, but not there yet */
+            break;
+        }
+
+        if(activate_stream(data, state) && dbus_playback_iface != NULL)
             tdbus_splay_playback_emit_paused(dbus_playback_iface,
-                                             active_stream->id);
+                                             data->current_stream.id);
+
         break;
 
       case GST_STATE_PLAYING:
-        if(dbus_playback_iface != NULL && !data->stream_has_just_started)
+        if(pending != GST_STATE_VOID_PENDING)
+        {
+            /* want to play, but not there yet */
+            break;
+        }
+
+        if(activate_stream(data, state) && dbus_playback_iface != NULL &&
+           !data->stream_has_just_started)
             emit_now_playing(dbus_playback_iface, data);
 
         data->stream_has_just_started = false;
@@ -1269,6 +1425,9 @@ static void handle_stream_state_change(GstMessage *message,
         break;
 
       case GST_STATE_VOID_PENDING:
+      case GST_STATE_NULL:
+        BUG("Ignoring state transition for bogus pipeline target %s",
+            gst_element_state_get_name(GST_STATE_TARGET(data->pipeline)));
         break;
     }
 
@@ -1293,10 +1452,33 @@ static void handle_start_of_stream(GstMessage *message,
 
     LOCK_DATA(data);
 
-    struct urlfifo_item *const stream = (data->next_stream.is_valid
-                                         ? &data->next_stream
-                                         : &data->current_stream);
-    struct stream_data *sd = item_data_get_nonconst(stream);
+    switch(data->current_stream.state)
+    {
+      case URLFIFO_ITEM_STATE_INVALID:
+      case URLFIFO_ITEM_STATE_IN_QUEUE:
+        BUG("Replace current by next in unexpected state %s",
+            urlfifo_state_name(data->current_stream.state));
+        log_assert(!urlfifo_is_empty());
+
+        /* fall-through */
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED:
+      case URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT:
+        if(urlfifo_pop_item(&data->current_stream, true) < 0)
+            break;
+
+        /* fall-through */
+
+      case URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE:
+        urlfifo_set_item_state(&data->current_stream,
+                               URLFIFO_ITEM_STATE_ACTIVE);
+        break;
+
+      case URLFIFO_ITEM_STATE_ACTIVE:
+        break;
+    }
+
+    struct stream_data *sd = item_data_get_nonconst(&data->current_stream);
 
     if(sd != NULL)
     {
@@ -1304,10 +1486,6 @@ static void handle_start_of_stream(GstMessage *message,
         invalidate_stream_position_information(data);
         query_seconds(gst_element_query_duration, data->pipeline,
                       &data->current_time.duration_s);
-
-        if(stream == &data->next_stream)
-            urlfifo_move_item(&data->current_stream, &data->next_stream);
-
         emit_now_playing(dbus_get_playback_iface(), data);
     }
 
@@ -1445,6 +1623,18 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
     }
 
     return G_SOURCE_CONTINUE;
+}
+
+static void try_play_next_stream(struct streamer_data *data,
+                                 GstState next_state, const char *context)
+{
+    bool is_next_current;
+    struct urlfifo_item *const next_stream =
+        try_take_next(data, true, &is_next_current, context);
+
+    if(next_stream != NULL && is_next_current)
+        play_next_stream(data, NULL, next_stream, next_state,
+                         false, false, context);
 }
 
 static struct streamer_data streamer_data;
@@ -1589,9 +1779,7 @@ void streamer_start(void)
 
           case GST_STATE_READY:
           case GST_STATE_NULL:
-            if(try_dequeue_next(&streamer_data, true, context) != UINT32_MAX)
-                play_next_stream(&streamer_data, GST_STATE_PLAYING, context);
-
+            try_play_next_stream(&streamer_data, GST_STATE_PLAYING, context);
             break;
 
           case GST_STATE_PAUSED:
@@ -1600,7 +1788,8 @@ void streamer_start(void)
 
           case GST_STATE_VOID_PENDING:
             msg_error(ENOSYS, LOG_ERR,
-                      "Start: pipeline is in unhandled state %d", state);
+                      "Start: pipeline is in unhandled state %s",
+                      gst_element_state_get_name(state));
             break;
         }
     }
@@ -1646,7 +1835,8 @@ void streamer_stop(void)
 
       case GST_STATE_VOID_PENDING:
         msg_error(ENOSYS, LOG_ERR,
-                  "Start: pipeline is in unhandled state %d", state);
+                  "Start: pipeline is in unhandled state %s",
+                  gst_element_state_get_name(state));
         break;
     }
 
@@ -1690,9 +1880,7 @@ void streamer_pause(void)
         break;
 
       case GST_STATE_NULL:
-        if(try_dequeue_next(&streamer_data, true, context) != UINT32_MAX)
-            play_next_stream(&streamer_data, GST_STATE_PAUSED, context);
-
+        try_play_next_stream(&streamer_data, GST_STATE_PAUSED, context);
         break;
 
       case GST_STATE_READY:
@@ -1702,7 +1890,8 @@ void streamer_pause(void)
 
       case GST_STATE_VOID_PENDING:
         msg_error(ENOSYS, LOG_ERR,
-                  "Pause: pipeline is in unhandled state %d", state);
+                  "Pause: pipeline is in unhandled state %s",
+                  gst_element_state_get_name(state));
         break;
     }
 
@@ -1874,20 +2063,48 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
     msg_info("Next requested");
     log_assert(streamer_data.pipeline != NULL);
 
-    const uint32_t replaced_next_id = streamer_data.next_stream.is_valid
-        ? streamer_data.next_stream.id
+    const bool is_dequeuing_permitted =
+        (streamer_data.supposed_play_status != PLAY_STATUS_STOPPED || !skip_only_if_not_stopped);
+    uint32_t skipped_id = urlfifo_is_item_valid(&streamer_data.current_stream)
+        ? streamer_data.current_stream.id
         : UINT32_MAX;
-    uint32_t next_id =
-        (streamer_data.supposed_play_status != PLAY_STATUS_STOPPED || !skip_only_if_not_stopped)
-        ? try_dequeue_next(&streamer_data, true, context)
-        : UINT32_MAX;
-    const uint32_t skipped_id = (replaced_next_id != UINT32_MAX
-                                 ? replaced_next_id
-                                 : (streamer_data.current_stream.is_valid
-                                    ? streamer_data.current_stream.id
-                                    : UINT32_MAX));
+    bool is_next_current = false;
+    struct urlfifo_item *next_stream =
+        is_dequeuing_permitted
+        ? try_take_next(&streamer_data, true, &is_next_current, context)
+        : NULL;
 
-    if(next_id == UINT32_MAX)
+    uint32_t next_id = UINT32_MAX;
+
+    if(next_stream != NULL && !is_next_current)
+    {
+        switch(streamer_data.current_stream.state)
+        {
+          case URLFIFO_ITEM_STATE_INVALID:
+          case URLFIFO_ITEM_STATE_IN_QUEUE:
+            BUG("[%s] Wrong state %s of current straem",
+                context, urlfifo_state_name(streamer_data.current_stream.state));
+            break;
+
+          case URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE:
+          case URLFIFO_ITEM_STATE_ACTIVE:
+            /* mark current stream as to-be-skipped */
+            urlfifo_set_item_state(&streamer_data.current_stream,
+                                   URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED);
+            break;
+
+          case URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT:
+          case URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED:
+            /* current stream is already being taken down, cannot do it again;
+             * also, we cannot drop directly from URL FIFO because in the
+             * meantime it may have been refilled */
+            next_stream = NULL;
+            skipped_id = UINT32_MAX;
+            break;
+        }
+    }
+
+    if(next_stream == NULL)
         streamer_data.supposed_play_status = PLAY_STATUS_STOPPED;
     else
     {
@@ -1909,11 +2126,12 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                 break;
             }
 
-            if(!play_next_stream(&streamer_data, next_state, context))
-                next_id = UINT32_MAX;
+            if(play_next_stream(&streamer_data,
+                                is_next_current ? NULL : &streamer_data.current_stream,
+                                next_stream, next_state, true, false,
+                                context))
+                next_id = next_stream->id;
         }
-        else
-            next_id = UINT32_MAX;
     }
 
     if(out_skipped_id != NULL)

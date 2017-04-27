@@ -68,12 +68,23 @@ enum urlfifo_fail_state
     URLFIFO_FAIL_STATE_FAILURE_DETECTED,
 };
 
+enum urlfifo_item_state
+{
+    URLFIFO_ITEM_STATE_INVALID,
+    URLFIFO_ITEM_STATE_IN_QUEUE,
+
+    URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE,
+    URLFIFO_ITEM_STATE_ACTIVE,
+    URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT,
+    URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED,
+};
+
 /*!
  * URL FIFO item data.
  */
 struct urlfifo_item
 {
-    bool is_valid;
+    enum urlfifo_item_state state;
 
     stream_id_t id;
     char *url;
@@ -194,19 +205,31 @@ ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest);
 struct urlfifo_item *urlfifo_peek(void);
 
 /*!
- * Move URL item content from one object to another.
- *
- * The source item will be invalidated after the move.
- */
-void urlfifo_move_item(struct urlfifo_item *restrict dest,
-                       struct urlfifo_item *restrict src);
-
-/*!
  * Whether or not a given item is valid.
  *
  * Use this function instead of accessing the #urlfifo_item structure directly.
  */
 bool urlfifo_is_item_valid(const struct urlfifo_item *item);
+
+/*!
+ * Set item state if not invalid.
+ *
+ * Any attempts to change state of invalid items are ignored.
+ *
+ * \param item
+ *     Item whose state shall be changed.
+ *
+ * \param state
+ *     The new state the \p item shall assume. It is not permitted to pass
+ *     #URLFIFO_ITEM_STATE_INVALID.
+ */
+void urlfifo_set_item_state(struct urlfifo_item *item,
+                            enum urlfifo_item_state state);
+
+/*!
+ * Convert numeric item state to printable string for diagnostic purposes.
+ */
+const char *urlfifo_state_name(const enum urlfifo_item_state state);
 
 /*!
  * Set failure.
