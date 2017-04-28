@@ -609,6 +609,13 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
         snprintf(buffer, sizeof(buffer), "%" PRIu32, g_value_get_uint(value));
         g_variant_builder_add(builder, "(ss)", tag, buffer);
     }
+    else if(G_VALUE_HOLDS_UINT64(value))
+    {
+        char buffer[256];
+
+        snprintf(buffer, sizeof(buffer), "%" PRIu64, g_value_get_uint64(value));
+        g_variant_builder_add(builder, "(ss)", tag, buffer);
+    }
     else
         msg_error(ENOSYS, LOG_ERR, "stream tag \"%s\" is of type %s",
                   tag, G_VALUE_TYPE_NAME(value));
