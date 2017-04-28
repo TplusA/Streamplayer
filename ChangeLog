@@ -1,3 +1,21 @@
+2017-05-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.4 released.
+
+	* Playback: Emission of stop signals and other signals is more
+	  reliable now.
+
+	* Playback: Report correct stream duration with PositionChanged
+	  signals.
+
+	* Playback: Report correct play state on push-to-queue. The previous
+	  version caused a mess-up of dcpd's app mode after a list has
+	  finished playing.
+
+	* Meta data: Support extraction of tags that are naturally represented
+	  as 64 bit unsigned integers. This also avoids warnings when
+	  encountering such tags (most notably, the "duration" tag).
+
 2017-04-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.3 released.
