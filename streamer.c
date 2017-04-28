@@ -606,7 +606,7 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
     {
         char buffer[256];
 
-        snprintf(buffer, sizeof(buffer), "%u", g_value_get_uint(value));
+        snprintf(buffer, sizeof(buffer), "%" PRIu32, g_value_get_uint(value));
         g_variant_builder_add(builder, "(ss)", tag, buffer);
     }
     else
