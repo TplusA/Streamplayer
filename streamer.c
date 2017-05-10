@@ -221,10 +221,22 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
     return false;
 }
 
+static void emit_stopped(tdbussplayPlayback *playback_iface,
+                         struct streamer_data *data)
+{
+    data->supposed_play_status = PLAY_STATUS_STOPPED;
+
+    if(playback_iface != NULL)
+        tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
+                                          data->current_stream.id);
+}
+
 static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
-                                    const struct urlfifo_item *failed_stream,
+                                    struct streamer_data *data,
                                     enum stopped_reason reason)
 {
+    data->supposed_play_status = PLAY_STATUS_STOPPED;
+
     if(playback_iface == NULL)
         return;
 
@@ -255,6 +267,8 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     };
 
     G_STATIC_ASSERT(G_N_ELEMENTS(reasons) == STOPPED_REASON_LAST_VALUE + 1U);
+
+    const struct urlfifo_item *failed_stream = &data->current_stream;
 
     switch(failed_stream->state)
     {
@@ -312,8 +326,8 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
         urlfifo_clear(0, NULL);
 
     invalidate_stream_position_information(data);
-    emit_stopped_with_error(dbus_get_playback_iface(),
-                            &data->current_stream, data->fail.reason);
+    emit_stopped_with_error(dbus_get_playback_iface(), data,
+                            data->fail.reason);
 
     data->stream_has_just_started = false;
 
@@ -579,8 +593,7 @@ static void handle_end_of_stream(GstMessage *message,
 
     if(set_stream_state(data->pipeline, GST_STATE_READY, "EOS"))
     {
-        tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
-                                          data->current_stream.id);
+        emit_stopped(dbus_get_playback_iface(), data);
         urlfifo_free_item(&data->current_stream);
     }
 
@@ -1389,9 +1402,7 @@ static void handle_stream_state_change(GstMessage *message,
             break;
         }
 
-        if(dbus_playback_iface != NULL)
-            tdbus_splay_playback_emit_stopped(dbus_playback_iface,
-                                              data->current_stream.id);
+        emit_stopped(dbus_playback_iface, data);
 
         if(urlfifo_pop_item(&data->current_stream, true) < 0)
             urlfifo_free_item(&data->current_stream);
@@ -1852,8 +1863,7 @@ void streamer_stop(void)
         GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
        pending == GST_STATE_VOID_PENDING)
     {
-        emit_stopped_with_error(dbus_get_playback_iface(),
-                                &streamer_data.current_stream,
+        emit_stopped_with_error(dbus_get_playback_iface(), &streamer_data,
                                 STOPPED_REASON_ALREADY_STOPPED);
     }
 
