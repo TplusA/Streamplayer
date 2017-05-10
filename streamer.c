@@ -1605,6 +1605,7 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 
       case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
+      case GST_MESSAGE_RESET_TIME:
         /* these messages are not handled, and they are explicitly ignored */
         break;
 
@@ -1626,7 +1627,6 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_QOS:
       case GST_MESSAGE_PROGRESS:
       case GST_MESSAGE_TOC:
-      case GST_MESSAGE_RESET_TIME:
       case GST_MESSAGE_NEED_CONTEXT:
       case GST_MESSAGE_HAVE_CONTEXT:
       case GST_MESSAGE_ANY:
