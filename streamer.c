@@ -119,6 +119,7 @@ struct streamer_data
      */
     struct urlfifo_item current_stream;
 
+    bool is_failing;
     struct failure_data fail;
 
     struct time_data previous_time;
@@ -292,7 +293,7 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     }
 }
 
-static int rebuild_playbin(const char *context);
+static int rebuild_playbin(struct streamer_data *data, const char *context);
 
 static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
 {
@@ -318,7 +319,7 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
      * There is no real cure to that problem, but destroying the whole pipeline
      * and creating a new one seems to work.
      */
-    rebuild_playbin(context);
+    rebuild_playbin(data, context);
 
     msg_info("Stop reason is %d", data->fail.reason);
 
@@ -330,6 +331,7 @@ static void do_stop_pipeline_and_recover_from_error(struct streamer_data *data)
                             data->fail.reason);
 
     data->stream_has_just_started = false;
+    data->is_failing = false;
 
     urlfifo_free_item(&data->current_stream);
     memset(&data->fail, 0, sizeof(data->fail));
@@ -351,6 +353,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
 static void schedule_error_recovery(struct streamer_data *data,
                                     enum stopped_reason reason)
 {
+    data->is_failing = true;
     data->fail.reason = reason;
     data->fail.clear_fifo_on_error = false;
 
@@ -577,7 +580,8 @@ static inline void queue_stream_from_url_fifo__unlocked(GstElement *elem,
 static void queue_stream_from_url_fifo(GstElement *elem, struct streamer_data *data)
 {
     LOCK_DATA(data);
-    queue_stream_from_url_fifo__unlocked(elem, data);
+    if(!data->is_failing)
+        queue_stream_from_url_fifo__unlocked(elem, data);
     UNLOCK_DATA(data);
 }
 
@@ -1558,6 +1562,9 @@ static void setup_source_element(GstElement *playbin,
 {
     struct streamer_data *data = user_data;
 
+    if(data->is_failing)
+        return;
+
     if(strcmp(G_OBJECT_TYPE_NAME(source), "GstSoupHTTPSrc") == 0)
         g_object_set(source, "blocksize", &data->soup_http_block_size, NULL);
 }
@@ -1686,6 +1693,21 @@ static int create_playbin(const char *context)
     return 0;
 }
 
+static void disconnect_playbin_signals(void)
+{
+    if(streamer_data.pipeline == NULL)
+        return;
+
+    for(size_t i = 0;
+        i < sizeof(streamer_data.signal_handler_ids) / sizeof(streamer_data.signal_handler_ids[0]);
+        ++i)
+    {
+        g_signal_handler_disconnect(streamer_data.pipeline,
+                                    streamer_data.signal_handler_ids[i]);
+        streamer_data.signal_handler_ids[i] = 0;
+    }
+}
+
 static void teardown_playbin(void)
 {
     if(streamer_data.pipeline == NULL)
@@ -1698,21 +1720,19 @@ static void teardown_playbin(void)
     log_assert(bus != NULL);
     gst_object_unref(bus);
 
-    for(size_t i = 0;
-        i < sizeof(streamer_data.signal_handler_ids) / sizeof(streamer_data.signal_handler_ids[0]);
-        ++i)
-    {
-        g_signal_handler_disconnect(streamer_data.pipeline,
-                                    streamer_data.signal_handler_ids[i]);
-        streamer_data.signal_handler_ids[i] = 0;
-    }
-
     gst_object_unref(GST_OBJECT(streamer_data.pipeline));
     streamer_data.pipeline = NULL;
 }
 
-static int rebuild_playbin(const char *context)
+static int rebuild_playbin(struct streamer_data *data, const char *context)
 {
+    disconnect_playbin_signals();
+
+    /* allow signal handlers already waiting for the lock to pass */
+    UNLOCK_DATA(data);
+    g_usleep(500000);
+    LOCK_DATA(data);
+
     set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "rebuild");
     teardown_playbin();
     return create_playbin(context);
@@ -1752,8 +1772,8 @@ void streamer_shutdown(GMainLoop *loop)
 
     g_main_loop_unref(loop);
 
+    disconnect_playbin_signals();
     set_stream_state(streamer_data.pipeline, GST_STATE_NULL, "shutdown");
-
     teardown_playbin();
 
     gst_object_unref(GST_OBJECT(streamer_data.system_clock));
