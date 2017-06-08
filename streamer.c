@@ -2100,6 +2100,9 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
     msg_info("Next requested");
     log_assert(streamer_data.pipeline != NULL);
 
+    if(skip_only_if_not_stopped)
+        urlfifo_free_item(&streamer_data.current_stream);
+
     const bool is_dequeuing_permitted =
         (streamer_data.supposed_play_status != PLAY_STATUS_STOPPED || !skip_only_if_not_stopped);
     uint32_t skipped_id = urlfifo_is_item_valid(&streamer_data.current_stream)
