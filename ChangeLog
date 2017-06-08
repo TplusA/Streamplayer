@@ -1,3 +1,11 @@
+2017-06-08  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.5 released.
+
+	* Playback: Fix deadlock on error recovery.
+
+	* Playback: Fix playing from empty queue after error recovery.
+
 2017-05-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.4 released.
