@@ -23,6 +23,7 @@
 #include <stdbool.h>
 
 #include "streamtime.h"
+#include "stream_id.h"
 
 /*!
  * \addtogroup urlfifo URL FIFO
@@ -67,14 +68,25 @@ enum urlfifo_fail_state
     URLFIFO_FAIL_STATE_FAILURE_DETECTED,
 };
 
+enum urlfifo_item_state
+{
+    URLFIFO_ITEM_STATE_INVALID,
+    URLFIFO_ITEM_STATE_IN_QUEUE,
+
+    URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE,
+    URLFIFO_ITEM_STATE_ACTIVE,
+    URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT,
+    URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED,
+};
+
 /*!
  * URL FIFO item data.
  */
 struct urlfifo_item
 {
-    bool is_valid;
+    enum urlfifo_item_state state;
 
-    uint16_t id;
+    stream_id_t id;
     char *url;
     struct streamtime start_time;
     struct streamtime end_time;
@@ -123,7 +135,7 @@ void urlfifo_unlock(void);
  *     The number of items removed from the FIFO, corresponding to the number
  *     of items returned in \p ids_removed.
  */
-size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed);
+size_t urlfifo_clear(size_t keep_first_n, stream_id_t *ids_removed);
 
 /*!
  * Append new item to URL FIFO.
@@ -153,7 +165,7 @@ size_t urlfifo_clear(size_t keep_first_n, uint16_t *ids_removed);
  *     In the latter case, no new item is created and the URL FIFO remains
  *     untouched.
  */
-size_t urlfifo_push_item(uint16_t external_id, const char *url,
+size_t urlfifo_push_item(stream_id_t external_id, const char *url,
                          const struct streamtime *start,
                          const struct streamtime *stop,
                          size_t keep_first_n, urlfifo_item_id_t *item_id,
@@ -172,12 +184,13 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
  * destination item in case \p free_dest is \c true. Note that in this case,
  * the object that \p dest points to must have been initialized before.
  *
- * \param dest Where to write a copy of the item. This parameter may not be
- *     \c NULL. In case of error, the memory pointed to by \p dest remains
- *     untouched.
+ * \param dest Where to write a copy of the item. If \c NULL, then the item is
+ *     dropped from the URL FIFO. In case of error, the memory pointed to by
+ *     \p dest remains untouched.
  * \param free_dest If set to \c true, then call #urlfifo_free_item() for \p
  *     dest iff the URL FIFO is not empty when this function is called (i.e.,
- *     if the pop operation succeeds).
+ *     if the pop operation succeeds). This parameter must be \c false if
+ *     \p dest is \c NULL.
  *
  * \returns The number of items remaining in the FIFO after removing the new
  *     one, or -1 in case the URL FIFO was empty.
@@ -185,12 +198,38 @@ size_t urlfifo_push_item(uint16_t external_id, const char *url,
 ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest);
 
 /*!
- * Move URL item content from one object to another.
+ * Return first item in URL FIFO if valid.
  *
- * The source item will be invalidated after the move.
+ * \returns Pointer to item, or NULL if URL FIFO is empty.
  */
-void urlfifo_move_item(struct urlfifo_item *restrict dest,
-                       struct urlfifo_item *restrict src);
+struct urlfifo_item *urlfifo_peek(void);
+
+/*!
+ * Whether or not a given item is valid.
+ *
+ * Use this function instead of accessing the #urlfifo_item structure directly.
+ */
+bool urlfifo_is_item_valid(const struct urlfifo_item *item);
+
+/*!
+ * Set item state if not invalid.
+ *
+ * Any attempts to change state of invalid items are ignored.
+ *
+ * \param item
+ *     Item whose state shall be changed.
+ *
+ * \param state
+ *     The new state the \p item shall assume. It is not permitted to pass
+ *     #URLFIFO_ITEM_STATE_INVALID.
+ */
+void urlfifo_set_item_state(struct urlfifo_item *item,
+                            enum urlfifo_item_state state);
+
+/*!
+ * Convert numeric item state to printable string for diagnostic purposes.
+ */
+const char *urlfifo_state_name(const enum urlfifo_item_state state);
 
 /*!
  * Set failure.
@@ -284,7 +323,12 @@ size_t urlfifo_get_size(void);
  *     The number of items in the FIFO, corresponding to the number of items
  *     returned in \p ids_in_fifo.
  */
-size_t urlfifo_get_queued_ids(uint16_t *ids_in_fifo);
+size_t urlfifo_get_queued_ids(stream_id_t *ids_in_fifo);
+
+/*!
+ * Whether or not the FIFO is empty.
+ */
+bool urlfifo_is_empty(void);
 
 /*!
  * Whether or not the FIFO is full.

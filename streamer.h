@@ -20,7 +20,8 @@
 #define STREAMER_H
 
 #include <stdbool.h>
-#include <inttypes.h>
+
+#include "stream_id.h"
 
 enum PlayStatus
 {
@@ -37,12 +38,14 @@ void streamer_deactivate(void);
 bool streamer_start(void);
 bool streamer_stop(void);
 bool streamer_pause(void);
-bool streamer_seek(guint64 position, const char *units);
+bool streamer_seek(int64_t position, const char *units);
+bool streamer_fast_winding(double factor);
+bool streamer_fast_winding_stop(void);
 enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                               uint32_t *out_skipped_id, uint32_t *out_next_id);
 bool streamer_is_playing(void);
-bool streamer_get_current_stream_id(uint16_t *id);
-bool streamer_push_item(uint16_t stream_id, GVariant *stream_key,
+bool streamer_get_current_stream_id(stream_id_t *id);
+bool streamer_push_item(stream_id_t stream_id, GVariant *stream_key,
                         const char *stream_url, size_t keep_items);
 
 #endif /* !STREAMER_H */

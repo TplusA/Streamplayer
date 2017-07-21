@@ -97,6 +97,12 @@ void test_item_should_fail_only_once(void);
 void test_item_data_callbacks_are_called_for_push_pop(void);
 
 /*!\test
+ * Popping an item to a \c NULL pointer removes the item from the URL FIFO and
+ * frees the item.
+ */
+void test_item_data_callbacks_are_called_for_pop_to_drop(void);
+
+/*!\test
  * If defined, the URL FIFO item data operations are used when pushing data,
  * then clearing the FIFO.
  */
@@ -131,6 +137,16 @@ void test_push_one_replace_all_works_on_empty_fifo(void);
  * Replacing the contents of an overflown URL FIFO with a new item is possible.
  */
 void test_push_one_replace_all_works_on_full_fifo(void);
+
+/*!\test
+ * Empty URL FIFO is handled correctly.
+ */
+void test_peek_empty_fifo_returns_null(void);
+
+/*!\test
+ * Head element can be inspected, also several times.
+ */
+void test_peek_fifo_returns_head_element(void);
 
 /*!\test
  * Removing a non-existent first item from the URL FIFO results in an error
@@ -225,11 +241,13 @@ void cut_teardown(void)
 void test_fifo_is_empty_on_startup(void)
 {
     cut_assert_equal_size(0, urlfifo_get_size());
+    cut_assert_true(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
 }
 
 void test_clear_all_on_empty_fifo(void)
 {
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(0, urlfifo_clear(0, ids));
@@ -240,19 +258,26 @@ void test_clear_all_on_empty_fifo(void)
 
 void test_clear_non_empty_fifo(void)
 {
+    cut_assert_true(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
+
     cut_assert_equal_size(1, urlfifo_push_item(23, "first",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
     cut_assert_equal_size(2, urlfifo_push_item(32, "second",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
     cut_assert_equal_size(2, urlfifo_get_size());
     cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
 
-    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(2, urlfifo_clear(0, &ids[URLFIFO_MAX_LENGTH]));
+
+    cut_assert_true(urlfifo_is_empty());
 
     for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
     {
@@ -282,7 +307,7 @@ void test_clear_partial_non_empty_fifo(void)
     cut_assert_equal_size(2, urlfifo_get_size());
     cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
 
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(1, urlfifo_clear(1, ids));
@@ -308,35 +333,56 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
      * maximum URL FIFO size */
     cut_assert_equal_size(8, URLFIFO_MAX_LENGTH);
 
+    cut_assert_true(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
+
     cut_assert_equal_size(1, urlfifo_push_item(23, "first",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(2, urlfifo_push_item(32, "second",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(3, urlfifo_push_item(123, "third",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(4, urlfifo_push_item(132, "fourth",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(5, urlfifo_push_item(223, "fifth",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(6, urlfifo_push_item(232, "sixth",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(7, urlfifo_push_item(323, "seventh",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(8, urlfifo_push_item(332, "eighth",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_true(urlfifo_is_full());
     cut_assert_equal_size(8, urlfifo_get_size());
 
     struct urlfifo_item item = { 0 };
 
     cut_assert_equal_size(7, urlfifo_pop_item(&item, false));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_uint(23, item.id);
     cut_assert_equal_string("first", item.url);
 
@@ -344,14 +390,18 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
     cut_assert_equal_size(8, urlfifo_push_item(42, "ninth",
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_true(urlfifo_is_full());
 
     /* we now have |42|32|123|132|223|232|323|332|, with 32 being the head
      * element */
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(7, urlfifo_clear(1, ids));
 
+    cut_assert_false(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_size(1, urlfifo_get_size());
     cut_assert_equal_uint(123,    ids[0]);
     cut_assert_equal_uint(132,    ids[1]);
@@ -363,6 +413,8 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
     cut_assert_equal_uint(0x5555, ids[7]);
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
+    cut_assert_true(urlfifo_is_empty());
+    cut_assert_false(urlfifo_is_full());
     cut_assert_equal_uint(32, item.id);
     cut_assert_equal_string("second", item.url);
 
@@ -382,7 +434,7 @@ void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    uint16_t ids[URLFIFO_MAX_LENGTH];
+    stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(0, urlfifo_clear(3, ids));
@@ -511,18 +563,18 @@ void test_item_data_callback_is_called_for_fail(void)
     struct urlfifo_item item = { 0 };
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
 
-    cut_assert_true(item.is_valid);
+    cut_assert_true(urlfifo_is_item_valid(&item));
     cut_assert_equal_pointer(&test_data, item.data);
     cut_assert_equal_uint(0, test_data);
 
     urlfifo_fail_item(&item, NULL);
 
-    cut_assert_true(item.is_valid);
+    cut_assert_true(urlfifo_is_item_valid(&item));
     cut_assert_equal_uint(0x12345678, test_data);
 
     urlfifo_free_item(&item);
 
-    cut_assert_false(item.is_valid);
+    cut_assert_false(urlfifo_is_item_valid(&item));
     cut_assert_equal_uint(0x87654321, test_data);
 }
 
@@ -539,28 +591,28 @@ void test_item_should_fail_only_once(void)
     struct urlfifo_item item = { 0 };
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
 
-    cut_assert_true(item.is_valid);
+    cut_assert_true(urlfifo_is_item_valid(&item));
     cut_assert_equal_int(URLFIFO_FAIL_STATE_NOT_FAILED, item.fail_state);
     cut_assert_equal_pointer(&test_data, item.data);
     cut_assert_equal_uint(0, test_data);
 
     urlfifo_fail_item(&item, NULL);
 
-    cut_assert_true(item.is_valid);
+    cut_assert_true(urlfifo_is_item_valid(&item));
     cut_assert_equal_int(URLFIFO_FAIL_STATE_FAILURE_DETECTED, item.fail_state);
     cut_assert_equal_uint(0x12345678, test_data);
 
     test_data = 0;
     urlfifo_fail_item(&item, NULL);
 
-    cut_assert_true(item.is_valid);
+    cut_assert_true(urlfifo_is_item_valid(&item));
     cut_assert_equal_int(URLFIFO_FAIL_STATE_FAILURE_DETECTED, item.fail_state);
     cut_assert_equal_uint(0, test_data);
 
     test_data = 0x12345678;
     urlfifo_free_item(&item);
 
-    cut_assert_false(item.is_valid);
+    cut_assert_false(urlfifo_is_item_valid(&item));
     cut_assert_equal_uint(0x87654321, test_data);
 }
 
@@ -594,6 +646,42 @@ void test_item_data_callbacks_are_called_for_push_pop(void)
 
     test_data[1] = 0x12345678;
     urlfifo_free_item(&popped);
+    cut_assert_equal_uint(0x87654321, test_data[1]);
+}
+
+void test_item_data_callbacks_are_called_for_pop_to_drop(void)
+{
+    uint32_t test_data[2] = { 0, 0 };
+    urlfifo_item_id_t ids[2];
+
+    cut_assert_equal_size(1, urlfifo_push_item(642, default_url,
+                                               NULL, NULL, SIZE_MAX, &ids[0],
+                                               &test_data[0], &test_data_ops));
+    cut_assert_equal_size(2, urlfifo_push_item(172, default_url,
+                                               NULL, NULL, SIZE_MAX, &ids[1],
+                                               &test_data[1], &test_data_ops));
+
+    const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
+    cut_assert_not_null(item);
+    cut_assert_equal_pointer(item, urlfifo_peek());
+    cut_assert_equal_pointer(&test_data[0], item->data);
+    cut_assert_equal_uint(0, test_data[0]);
+
+    test_data[0] = 0x12345678;
+    cut_assert_equal_size(1, urlfifo_pop_item(NULL, false));
+    cut_assert_equal_uint(0x87654321, test_data[0]);
+    cut_assert_equal_uint(0, test_data[1]);
+
+    item = urlfifo_unlocked_peek(ids[1]);
+    cut_assert_not_null(item);
+    cut_assert_equal_pointer(item, urlfifo_peek());
+    cut_assert_equal_pointer(&test_data[1], item->data);
+    cut_assert_equal_uint(0, test_data[1]);
+
+    test_data[0] = 0;
+    test_data[1] = 0x12345678;
+    cut_assert_equal_size(0, urlfifo_pop_item(NULL, false));
+    cut_assert_equal_uint(0, test_data[0]);
     cut_assert_equal_uint(0x87654321, test_data[1]);
 }
 
@@ -744,7 +832,7 @@ void test_push_one_replace_all_works_on_full_fifo(void)
 {
     static const uint16_t max_insertions = 10;
 
-    for(uint16_t id = 20; id < 20 + max_insertions; ++id)
+    for(stream_id_t id = 20; id < 20 + max_insertions; ++id)
     {
         if(urlfifo_push_item(id, default_url, NULL, NULL, SIZE_MAX, NULL,
                              NULL, NULL) == 0)
@@ -765,6 +853,34 @@ void test_push_one_replace_all_works_on_full_fifo(void)
     cut_assert_equal_uint(90, item.id);
 
     urlfifo_free_item(&item);
+}
+
+void test_peek_empty_fifo_returns_null(void)
+{
+    cut_assert_null(urlfifo_peek());
+}
+
+void test_peek_fifo_returns_head_element(void)
+{
+    cut_assert_equal_size(1, urlfifo_push_item(16, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+
+    const struct urlfifo_item *item = urlfifo_peek();
+
+    cut_assert_not_null(item);
+    cut_assert_equal_uint(16, item->id);
+    cut_assert_equal_string(default_url, item->url);
+
+    cut_assert_equal_pointer(item, urlfifo_peek());
+
+    cut_assert_equal_size(2, urlfifo_push_item(17, default_url,
+                                               NULL, NULL, SIZE_MAX, NULL,
+                                               NULL, NULL));
+
+    cut_assert_equal_pointer(item, urlfifo_peek());
+
+    cut_assert_equal_size(2, urlfifo_clear(0, NULL));
 }
 
 void test_pop_empty_fifo_detects_underflow(void)
@@ -837,7 +953,7 @@ void test_pop_item_from_multi_item_fifo(void)
 
 void test_push_pop_chase(void)
 {
-    static const uint16_t id_base = 100;
+    static const stream_id_t id_base = 100;
     static const unsigned int num_of_iterations = 10;
 
     cut_assert_equal_size(1, urlfifo_push_item(id_base, default_url,
@@ -872,7 +988,7 @@ void test_get_queued_ids_count_for_empty_fifo(void)
 
 void test_get_queued_ids_for_empty_fifo(void)
 {
-    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(0, urlfifo_get_queued_ids(&ids[URLFIFO_MAX_LENGTH]));
@@ -888,7 +1004,7 @@ void test_get_queued_ids_for_filled_fifo(void)
                                                        NULL, NULL, SIZE_MAX,
                                                        NULL, NULL, NULL));
 
-    uint16_t ids[3 * URLFIFO_MAX_LENGTH];
+    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
 
     cut_assert_equal_size(URLFIFO_MAX_LENGTH,
@@ -897,7 +1013,7 @@ void test_get_queued_ids_for_filled_fifo(void)
     for(size_t i = 0 * URLFIFO_MAX_LENGTH; i < 1 * URLFIFO_MAX_LENGTH; ++i)
         cut_assert_equal_uint(0x5555, ids[i]);
 
-    uint16_t expected_id = 100;
+    stream_id_t expected_id = 100;
     for(size_t i = 1 * URLFIFO_MAX_LENGTH; i < 2 * URLFIFO_MAX_LENGTH; ++i)
     {
         cut_assert_equal_uint(expected_id, ids[i]);
@@ -912,7 +1028,7 @@ void test_urlfifo_is_full_interface(void)
 {
     cut_assert_false(urlfifo_is_full());
 
-    for(uint16_t i = 0; i < 10; ++i)
+    for(size_t i = 0; i < 10; ++i)
     {
         if(urlfifo_is_full())
         {

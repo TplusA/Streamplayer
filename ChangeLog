@@ -1,4 +1,12 @@
-2017-03-13  Robert Tiemann  <r.tiemann@ta-hifi.de>
+2017-06-08  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.5 released.
+
+	* Playback: Fix deadlock on error recovery.
+
+	* Playback: Fix playing from empty queue after error recovery.
+
+2017-05-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 4.0 released.
 
@@ -9,6 +17,54 @@
 
 	* Misc: Asynchronous registration with dcpd (debugging stuff) for a
 	  significant speed-up of program start.
+
+2017-05-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.4 released.
+
+	* Playback: Emission of stop signals and other signals is more
+	  reliable now.
+
+	* Playback: Report correct stream duration with PositionChanged
+	  signals.
+
+	* Playback: Report correct play state on push-to-queue. The previous
+	  version caused a mess-up of dcpd's app mode after a list has
+	  finished playing.
+
+	* Meta data: Support extraction of tags that are naturally represented
+	  as 64 bit unsigned integers. This also avoids warnings when
+	  encountering such tags (most notably, the "duration" tag).
+
+2017-04-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.3 released.
+
+	* Playback: Support fast forward, fast reverse, and seeking. Seeking
+	  has been supported before, but it was never used except for jumping
+	  to the beginning to the stream.
+
+	* Playback: Avoid emission of signals in cases where GStreamer reports
+	  changes when there are none. This seriously confused the user
+	  interface and caused a lot of trouble in the skipping mechanism.
+
+	* Misc: Seek position can be given either as a percentage value, or as
+	  an absolute time (s, ms, us, or ns).
+
+	* Stability: Avoid rare crash.
+
+2017-03-29  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.2 released.
+
+	* Playback: Fix stopping stream. A signal was missing, causing the UI
+	  to stay in play view even when the stream has really stopped.
+
+	* Playback: Avoid sending now-playing notification twice on stream
+	  start. Not only was this wasteful, but it also confused dcpd,
+	  causing it to send the cover art hash to the SPI slave twice.
+
+	* Misc: Fix crash.
 
 2017-02-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
 

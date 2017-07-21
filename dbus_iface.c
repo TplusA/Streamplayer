@@ -108,24 +108,48 @@ static gboolean playback_seek(tdbussplayPlayback *object,
     return TRUE;
 }
 
+static gboolean playback_set_speed(tdbussplayPlayback *object,
+                                   GDBusMethodInvocation *invocation,
+                                   double speed_factor)
+{
+    enter_playback_handler(invocation);
+
+    const bool success =
+        (speed_factor < 0.0 ||
+         (speed_factor > 0.0 && (speed_factor < 1.0 || speed_factor > 1.0)))
+        ? streamer_fast_winding(speed_factor)
+        : streamer_fast_winding_stop();
+
+    if(success)
+        tdbus_splay_playback_complete_set_speed(object, invocation);
+    else
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+                                              G_DBUS_ERROR_FAILED,
+                                              "Set speed failed");
+
+    return TRUE;
+}
+
 static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
                            gint16 keep_first_n_entries)
 {
     enter_urlfifo_handler(invocation);
 
-    uint16_t temp;
+    stream_id_t temp;
     const uint32_t current_id =
         streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
 
-    uint16_t ids_removed[URLFIFO_MAX_LENGTH];
+    stream_id_t ids_removed[URLFIFO_MAX_LENGTH];
     const size_t ids_removed_count =
         (keep_first_n_entries >= 0)
         ? urlfifo_clear(keep_first_n_entries, ids_removed)
         : 0;
 
-    uint16_t ids_in_fifo[URLFIFO_MAX_LENGTH];
+    stream_id_t ids_in_fifo[URLFIFO_MAX_LENGTH];
     const size_t ids_in_fifo_count = urlfifo_get_queued_ids(ids_in_fifo);
+
+    G_STATIC_ASSERT(sizeof(stream_id_t) == 2);
 
     GVariant *const queued_ids =
         g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_in_fifo,
@@ -148,9 +172,6 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
     uint32_t skipped_id;
     uint32_t next_id;
     const enum PlayStatus play_status = streamer_next(false, &skipped_id, &next_id);
-
-    uint16_t temp;
-        streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
 
     tdbus_splay_urlfifo_complete_next(object, invocation,
                                       skipped_id, next_id, (uint8_t)play_status);
@@ -181,7 +202,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
         !streamer_push_item(stream_id, stream_key, stream_url, keep);
 
     const gboolean is_playing = (keep_first_n_entries == -2)
-        ? streamer_next(true, NULL, NULL)
+        ? streamer_next(true, NULL, NULL) == PLAY_STATUS_PLAYING
         : streamer_is_playing();
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
@@ -275,6 +296,8 @@ static void bus_acquired(GDBusConnection *connection,
                      G_CALLBACK(playback_pause), NULL);
     g_signal_connect(data->playback_iface, "handle-seek",
                      G_CALLBACK(playback_seek), NULL);
+    g_signal_connect(data->playback_iface, "handle-set-speed",
+                     G_CALLBACK(playback_set_speed), NULL);
 
     g_signal_connect(data->urlfifo_iface, "handle-clear",
                      G_CALLBACK(fifo_clear), NULL);

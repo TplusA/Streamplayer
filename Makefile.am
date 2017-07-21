@@ -32,7 +32,7 @@ streamplayer_SOURCES = \
     streamplayer.c messages.c messages.h messages_glib.c messages_glib.h \
     messages_dbus.c messages_dbus.h \
     dbus_iface.c dbus_iface.h dbus_iface_deep.h \
-    streamtime.h streamer.c streamer.h \
+    streamtime.h streamer.c streamer.h stream_id.h \
     os.c os.h
 
 AM_CFLAGS = $(CWARNINGS)
