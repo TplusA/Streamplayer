@@ -1557,6 +1557,20 @@ static void handle_stream_duration_async(GstMessage *message, struct streamer_da
     UNLOCK_DATA(data);
 }
 
+static void handle_clock_lost_message(GstMessage *message, struct streamer_data *data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    LOCK_DATA(data);
+
+    static const char context[] = "clock lost";
+    if(set_stream_state(data->pipeline, GST_STATE_PAUSED, context))
+        set_stream_state(data->pipeline, GST_STATE_PLAYING, context);
+
+    UNLOCK_DATA(data);
+}
+
 static void setup_source_element(GstElement *playbin,
                                  GstElement *source, gpointer user_data)
 {
@@ -1610,6 +1624,10 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         handle_warning_message(message, user_data);
         break;
 
+      case GST_MESSAGE_CLOCK_LOST:
+        handle_clock_lost_message(message, user_data);
+        break;
+
       case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
       case GST_MESSAGE_RESET_TIME:
@@ -1621,7 +1639,6 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_STATE_DIRTY:
       case GST_MESSAGE_STEP_DONE:
       case GST_MESSAGE_CLOCK_PROVIDE:
-      case GST_MESSAGE_CLOCK_LOST:
       case GST_MESSAGE_STRUCTURE_CHANGE:
       case GST_MESSAGE_APPLICATION:
       case GST_MESSAGE_ELEMENT:
