@@ -1,3 +1,12 @@
+2017-08-31  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.6 released.
+
+	* Playback: Fix automatic skipping of non-playable files (such a JPEG
+	  pictures). This used to work up until version 3.3, but stopped
+	  working in v3.4 as a result of the signal emission fixes added to
+	  that version.
+
 2017-06-08  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.5 released.
