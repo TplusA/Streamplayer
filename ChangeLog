@@ -1,3 +1,11 @@
+2017-09-01  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 4.1 released.
+
+	* Summary: This is a merge of versions 3.6 and 4.0. Since v4.0 was a
+	  fork of v3.1, this version includes all the fixes and changes for
+	  v3.2 through v3.6. No additional changes have been applied.
+
 2017-08-31  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.6 released.
