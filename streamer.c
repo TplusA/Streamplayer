@@ -148,11 +148,20 @@ struct streamer_data
     } \
     while(0)
 
+struct image_sent_data
+{
+    uint8_t *data;
+    size_t size;
+    uint8_t priority;
+};
+
 struct stream_data
 {
     struct streamer_data *streamer_data;
     GstTagList *tag_list;
     GVariant *stream_key;
+    struct image_sent_data big_image;
+    struct image_sent_data preview_image;
 };
 
 typedef enum
@@ -796,6 +805,7 @@ static enum ImageTagType get_image_tag_type(const GstCaps *caps)
 }
 
 static void send_image_data_to_cover_art_cache(GstSample *sample,
+                                               bool is_big_image,
                                                uint8_t base_priority,
                                                struct urlfifo_item *item)
 {
@@ -841,6 +851,13 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
 
     const uint8_t priority = base_priority + prio_raise_table[image_type];
 
+    struct stream_data *sd = item_data_get_nonconst(item);
+    struct image_sent_data *const sent_data =
+        is_big_image ? &sd->big_image : &sd->preview_image;
+
+    if(sent_data->priority > priority)
+        return;
+
     if(gst_buffer_n_memory(buffer) != 1)
     {
         BUG("Image data spans multiple memory regions (not implemented)");
@@ -856,16 +873,19 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
         return;
     }
 
-    struct stream_data *sd = item_data_get_nonconst(item);
+    if(sent_data->data == mi.data && sent_data->size == mi.size)
+        return;
 
-    GError *error = NULL;
-    tdbus_artcache_write_call_add_image_by_data_sync(dbus_artcache_get_write_iface(),
-                                                     sd->stream_key, priority,
-                                                     g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
-                                                                               mi.data, mi.size,
-                                                                               sizeof(mi.data[0])),
-                                                     NULL, &error);
-    dbus_handle_error(&error);
+    sent_data->data = mi.data;
+    sent_data->size = mi.size;
+    sent_data->priority = priority;
+
+    tdbus_artcache_write_call_add_image_by_data(dbus_artcache_get_write_iface(),
+                                                sd->stream_key, priority,
+                                                g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
+                                                                          mi.data, mi.size,
+                                                                          sizeof(mi.data[0])),
+                                                NULL, NULL, NULL);
 
     gst_memory_unmap(memory, &mi);
 }
@@ -908,7 +928,8 @@ static void update_picture_for_item(struct urlfifo_item *item,
             break;
 
           case IMAGE_TAG_TYPE_RAW_DATA:
-            send_image_data_to_cover_art_cache(sample, image_tags[i].priority, item);
+            send_image_data_to_cover_art_cache(sample, i == 0,
+                                               image_tags[i].priority, item);
             break;
 
           case IMAGE_TAG_TYPE_URI:
@@ -1527,6 +1548,8 @@ static void clear_current_meta_data(struct stream_data *sd)
         gst_tag_list_unref(list);
 
     sd->tag_list = gst_tag_list_new_empty();
+    memset(&sd->big_image, 0, sizeof(sd->big_image));
+    memset(&sd->preview_image, 0, sizeof(sd->preview_image));
 }
 
 static void handle_start_of_stream(GstMessage *message,
@@ -2320,6 +2343,9 @@ bool streamer_push_item(stream_id_t stream_id, GVariant *stream_key,
     }
     else
         sd->stream_key = NULL;
+
+    memset(&sd->big_image, 0, sizeof(sd->big_image));
+    memset(&sd->preview_image, 0, sizeof(sd->preview_image));
 
     return urlfifo_push_item(stream_id, stream_url, NULL, NULL,
                              keep_items, NULL, sd,
