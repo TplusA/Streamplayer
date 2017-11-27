@@ -2187,7 +2187,8 @@ bool streamer_seek(int64_t position, const char *units)
     }
 
     static const GstSeekFlags seek_flags =
-        GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE;
+        GST_SEEK_FLAG_FLUSH |
+        GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_NEAREST;
 
     if(strcmp(units, "%") == 0)
         position = compute_position_from_percentage(position, duration_ns);
@@ -2263,7 +2264,8 @@ static bool do_set_speed(struct streamer_data *data, double factor)
     }
 
     static const GstSeekFlags seek_flags =
-        GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE |
+        GST_SEEK_FLAG_FLUSH |
+        GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_NEAREST |
 #if GST_CHECK_VERSION(1, 5, 1)
         GST_SEEK_FLAG_TRICKMODE | GST_SEEK_FLAG_TRICKMODE_KEY_UNITS |
 #else
