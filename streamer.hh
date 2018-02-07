@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -16,8 +16,8 @@
  * along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef STREAMER_H
-#define STREAMER_H
+#ifndef STREAMER_HH
+#define STREAMER_HH
 
 #include <stdbool.h>
 
@@ -48,4 +48,4 @@ bool streamer_get_current_stream_id(stream_id_t *id);
 bool streamer_push_item(stream_id_t stream_id, GVariant *stream_key,
                         const char *stream_url, size_t keep_items);
 
-#endif /* !STREAMER_H */
+#endif /* !STREAMER_HH */

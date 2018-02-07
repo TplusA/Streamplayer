@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -16,13 +16,13 @@
  * along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef URLFIFO_H
-#define URLFIFO_H
+#ifndef URLFIFO_HH
+#define URLFIFO_HH
 
 #include <unistd.h>
 #include <stdbool.h>
 
-#include "streamtime.h"
+#include "streamtime.hh"
 #include "stream_id.h"
 
 /*!
@@ -353,4 +353,4 @@ void urlfifo_shutdown(void);
 
 /*!@}*/
 
-#endif /* !URLFIFO_H */
+#endif /* !URLFIFO_HH */

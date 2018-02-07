@@ -31,10 +31,10 @@ EXTRA_DIST = README.md
 CLEANFILES = README.html
 
 streamplayer_SOURCES = \
-    streamplayer.c messages.c messages.h messages_glib.c messages_glib.h \
+    streamplayer.cc messages.c messages.h messages_glib.c messages_glib.h \
     messages_dbus.c messages_dbus.h \
-    dbus_iface.c dbus_iface.h dbus_iface_deep.h \
-    streamtime.h streamer.c streamer.h stream_id.h \
+    dbus_iface.cc dbus_iface.hh dbus_iface_deep.hh \
+    streamtime.hh streamer.cc streamer.hh stream_id.h stream_id.hh \
     os.c os.h
 
 AM_CFLAGS = $(CWARNINGS)
@@ -45,7 +45,7 @@ noinst_LTLIBRARIES = libstreamplayer_dbus.la liburlfifo.la
 
 streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) $(noinst_LTLIBRARIES)
 
-liburlfifo_la_SOURCES = urlfifo.c urlfifo.h
+liburlfifo_la_SOURCES = urlfifo.cc urlfifo.hh
 
 nodist_libstreamplayer_dbus_la_SOURCES = \
     streamplayer_dbus.c streamplayer_dbus.h \

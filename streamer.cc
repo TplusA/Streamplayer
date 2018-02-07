@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -28,9 +28,9 @@
 #include <gst/gst.h>
 #include <gst/tag/tag.h>
 
-#include "streamer.h"
-#include "urlfifo.h"
-#include "dbus_iface_deep.h"
+#include "streamer.hh"
+#include "urlfifo.hh"
+#include "dbus_iface_deep.hh"
 #include "messages.h"
 
 enum stopped_reason
@@ -184,12 +184,12 @@ GstPlayFlags;
 
 static inline const struct stream_data *item_data_get(const struct urlfifo_item *item)
 {
-    return item->data;
+    return static_cast<const struct stream_data *>(item->data);
 }
 
 static inline struct stream_data *item_data_get_nonconst(struct urlfifo_item *item)
 {
-    return item->data;
+    return static_cast<struct stream_data *>(item->data);
 }
 
 static void invalidate_position_information(struct time_data *data)
@@ -352,7 +352,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
 {
     msg_vinfo(MESSAGE_LEVEL_DIAG, "Recover from error");
 
-    struct streamer_data *data = user_data;
+    auto *data = static_cast<struct streamer_data *>(user_data);
 
     LOCK_DATA(data);
     do_stop_pipeline_and_recover_from_error(data);
@@ -376,8 +376,8 @@ static void item_data_fail(void *data, void *user_data)
     if(data == NULL)
         return;
 
-    struct stream_data *const sd = data;
-    const struct failure_data *const fdata = user_data;
+    auto *const sd = static_cast<struct stream_data *>(data);
+    const auto *const fdata = static_cast<const struct failure_data *>(user_data);
 
     if(!fdata->report_on_stream_stop)
         schedule_error_recovery(sd->streamer_data, fdata->reason);
@@ -390,7 +390,7 @@ static void item_data_free(void **data)
     if(*data == NULL)
         return;
 
-    struct stream_data *sd = *data;
+    auto *const sd = static_cast<struct stream_data *>(*data);
 
     if(sd->tag_list != NULL)
         gst_tag_list_unref(sd->tag_list);
@@ -482,6 +482,7 @@ static struct urlfifo_item *try_take_next(struct streamer_data *data,
     struct failure_data fdata =
     {
         .reason = STOPPED_REASON_UNKNOWN,
+        .clear_fifo_on_error = false,
         .report_on_stream_stop = urlfifo_is_item_valid(&data->current_stream),
     };
 
@@ -661,7 +662,7 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
                                               const gchar *tag,
                                               gpointer user_data)
 {
-    GVariantBuilder *builder = user_data;
+    auto *builder = static_cast<GVariantBuilder *>(user_data);
     const GValue *value = gst_tag_list_get_value_index(list, tag, 0);
 
     if(value == NULL)
@@ -818,11 +819,14 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
 
     const GstStructure *sample_info = gst_sample_get_info(sample);
     GstTagImageType image_type;
+    gint image_type_value;
 
     if(sample_info == NULL ||
        !gst_structure_get_enum(sample_info, "image-type",
-                               GST_TYPE_TAG_IMAGE_TYPE, &image_type))
+                               GST_TYPE_TAG_IMAGE_TYPE, &image_type_value))
         image_type = GST_TAG_IMAGE_TYPE_UNDEFINED;
+    else
+        image_type = static_cast<GstTagImageType>(image_type_value);
 
     static uint8_t prio_raise_table[] =
     {
@@ -964,7 +968,7 @@ static void emit_tags__unlocked(struct streamer_data *data)
 
 static gboolean emit_tags(gpointer user_data)
 {
-    struct streamer_data *data = user_data;
+    auto *data = static_cast<struct streamer_data *>(user_data);
 
     LOCK_DATA(data);
 
@@ -1251,6 +1255,7 @@ static void handle_error_message(GstMessage *message, struct streamer_data *data
         struct failure_data fdata =
         {
             .reason = gerror_to_stopped_reason(error, is_local_error),
+            .clear_fifo_on_error = false,
             .report_on_stream_stop = false,
         };
 
@@ -1318,7 +1323,7 @@ static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
  */
 static gboolean report_progress(gpointer user_data)
 {
-    struct streamer_data *data = user_data;
+    auto *data = static_cast<struct streamer_data *>(user_data);
 
     LOCK_DATA(data);
 
@@ -1662,7 +1667,7 @@ static void handle_clock_lost_message(GstMessage *message, struct streamer_data 
 static void setup_source_element(GstElement *playbin,
                                  GstElement *source, gpointer user_data)
 {
-    struct streamer_data *data = user_data;
+    auto *data = static_cast<struct streamer_data *>(user_data);
 
     if(data->is_failing)
         return;
@@ -1674,46 +1679,48 @@ static void setup_source_element(GstElement *playbin,
 static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
                                     gpointer user_data)
 {
+    auto *data = static_cast<struct streamer_data *>(user_data);
+
     switch(GST_MESSAGE_TYPE(message))
     {
       case GST_MESSAGE_EOS:
-        handle_end_of_stream(message, user_data);
+        handle_end_of_stream(message, data);
         break;
 
       case GST_MESSAGE_TAG:
-        handle_tag(message, user_data);
+        handle_tag(message, data);
         break;
 
       case GST_MESSAGE_STATE_CHANGED:
-        handle_stream_state_change(message, user_data);
+        handle_stream_state_change(message, data);
         break;
 
       case GST_MESSAGE_STREAM_START:
-        handle_start_of_stream(message, user_data);
+        handle_start_of_stream(message, data);
         break;
 
       case GST_MESSAGE_BUFFERING:
-        handle_buffering(message, user_data);
+        handle_buffering(message, data);
         break;
 
       case GST_MESSAGE_DURATION_CHANGED:
-        handle_stream_duration(message, user_data);
+        handle_stream_duration(message, data);
         break;
 
       case GST_MESSAGE_ASYNC_DONE:
-        handle_stream_duration_async(message, user_data);
+        handle_stream_duration_async(message, data);
         break;
 
       case GST_MESSAGE_ERROR:
-        handle_error_message(message, user_data);
+        handle_error_message(message, data);
         break;
 
       case GST_MESSAGE_WARNING:
-        handle_warning_message(message, user_data);
+        handle_warning_message(message, data);
         break;
 
       case GST_MESSAGE_CLOCK_LOST:
-        handle_clock_lost_message(message, user_data);
+        handle_clock_lost_message(message, data);
         break;
 
       case GST_MESSAGE_NEW_CLOCK:
@@ -2186,9 +2193,10 @@ bool streamer_seek(int64_t position, const char *units)
         goto error_exit;
     }
 
-    static const GstSeekFlags seek_flags =
-        GST_SEEK_FLAG_FLUSH |
-        GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_NEAREST;
+    static const auto seek_flags =
+        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
+                                  GST_SEEK_FLAG_KEY_UNIT |
+                                  GST_SEEK_FLAG_SNAP_NEAREST);
 
     if(strcmp(units, "%") == 0)
         position = compute_position_from_percentage(position, duration_ns);
@@ -2263,15 +2271,17 @@ static bool do_set_speed(struct streamer_data *data, double factor)
         return false;
     }
 
-    static const GstSeekFlags seek_flags =
-        GST_SEEK_FLAG_FLUSH |
-        GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_NEAREST |
+    static const auto seek_flags =
+        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
+                                  GST_SEEK_FLAG_KEY_UNIT |
+                                  GST_SEEK_FLAG_SNAP_NEAREST |
 #if GST_CHECK_VERSION(1, 5, 1)
-        GST_SEEK_FLAG_TRICKMODE | GST_SEEK_FLAG_TRICKMODE_KEY_UNITS |
+                                  GST_SEEK_FLAG_TRICKMODE |
+                                  GST_SEEK_FLAG_TRICKMODE_KEY_UNITS |
 #else
-        GST_SEEK_FLAG_SKIP |
+                                  GST_SEEK_FLAG_SKIP |
 #endif /* minimum version 1.5.1 */
-        0;
+                                  0);
 
     const bool success =
         gst_element_seek(data->pipeline, factor, GST_FORMAT_TIME, seek_flags,
@@ -2457,7 +2467,7 @@ bool streamer_push_item(stream_id_t stream_id, GVariant *stream_key,
         .data_free = item_data_free,
     };
 
-    struct stream_data *sd = malloc(sizeof(*sd));
+    struct stream_data *sd = static_cast<struct stream_data *>(malloc(sizeof(*sd)));
 
     if(sd == NULL)
     {

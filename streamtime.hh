@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -16,8 +16,8 @@
  * along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef STREAMTIME_H
-#define STREAMTIME_H
+#ifndef STREAMTIME_HH
+#define STREAMTIME_HH
 
 #include <inttypes.h>
 
@@ -114,4 +114,4 @@ struct streamtime
 
 /*!@}*/
 
-#endif /* !STREAMTIME_H */
+#endif /* !STREAMTIME_HH */

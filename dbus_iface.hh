@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -16,8 +16,8 @@
  * along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DBUS_IFACE_H
-#define DBUS_IFACE_H
+#ifndef DBUS_IFACE_HH
+#define DBUS_IFACE_HH
 
 #include <stdbool.h>
 #include <glib.h>
@@ -25,4 +25,4 @@
 int dbus_setup(GMainLoop *loop, bool connect_to_session_bus);
 void dbus_shutdown(GMainLoop *loop);
 
-#endif /* !DBUS_IFACE_H */
+#endif /* !DBUS_IFACE_HH */

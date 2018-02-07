@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "urlfifo.h"
+#include "urlfifo.hh"
 #include "messages.h"
 
 /* there is no message mock in these tests */
@@ -34,218 +34,33 @@ void msg_error(int error_code, int priority, const char *error_format, ...) {}
  */
 /*!@{*/
 
-/*!\test
- * After initialization, the URL FIFO shall be empty.
- */
-void test_fifo_is_empty_on_startup(void);
+namespace urlfifo_tests
+{
 
-/*!\test
- * Clearing the whole FIFO works as expected with an empty FIFO.
- */
-void test_clear_all_on_empty_fifo(void);
-
-/*!\test
- * Clearing the whole FIFO results in an empty FIFO.
- */
-void test_clear_non_empty_fifo(void);
-
-/*!\test
- * Clearing the last few items in a non-empty FIFO results in a FIFO with as
- * many entries as have been specified in the argument to #urlfifo_clear().
- */
-void test_clear_partial_non_empty_fifo(void);
-
-/*!\test
- * Like #test_clear_partial_non_empty_fifo(), but pop items beforehand.
- *
- * Because we are operating on a ring buffer.
- */
-void test_partial_clear_after_pop_item_from_multi_item_fifo(void);
-
-/*!\test
- * Attempting to clear a FIFO with fewer items than specified in the argument
- * to #urlfifo_clear() results in unchanged FIFO content. No items are removed
- * in this case.
- */
-void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void);
-
-/*!\test
- * Add a single item to an empty FIFO.
- */
-void test_push_single_item(void);
-
-/*!\test
- * Add more than a single item to an empty FIFO.
- */
-void test_push_multiple_items(void);
-
-/*!\test
- * If defined, the URL FIFO item data fail operation is used when failing an
- * item.
- */
-void test_item_data_callback_is_called_for_fail(void);
-
-/*!\test
- * Failing an item multiple times is a bug, fail function is called only once.
- */
-void test_item_should_fail_only_once(void);
-
-/*!\test
- * If defined, the URL FIFO item free operation is used when popping an item
- * "over" an initialized item for the item that is being overwritten.
- */
-void test_item_data_callbacks_are_called_for_push_pop(void);
-
-/*!\test
- * Popping an item to a \c NULL pointer removes the item from the URL FIFO and
- * frees the item.
- */
-void test_item_data_callbacks_are_called_for_pop_to_drop(void);
-
-/*!\test
- * If defined, the URL FIFO item data operations are used when pushing data,
- * then clearing the FIFO.
- */
-void test_item_data_callbacks_are_called_for_push_clear(void);
-
-/*!\test
- * Adding more item to the FIFO than it has slots available results in an error
- * returned by #urlfifo_push_item(). The FIFO is expected to remain changed
- * after such an overflow.
- */
-void test_push_many_items_does_not_trash_fifo(void);
-
-/*!\test
- * It is possible to replace the items in a non-empty URL FIFO by a single item
- * by pushing the new item and specifying the number of items to keep as 0.
- */
-void test_push_one_replace_all(void);
-
-/*!\test
- * It is possible to replace the last few items in a non-empty URL FIFO by a
- * single item by pushing the new item and specifying the number of items to
- * keep as 1 (or greater).
- */
-void test_push_one_keep_first(void);
-
-/*!\test
- * Replacing the contents of an empty URL FIFO with a new item is possible.
- */
-void test_push_one_replace_all_works_on_empty_fifo(void);
-
-/*!\test
- * Replacing the contents of an overflown URL FIFO with a new item is possible.
- */
-void test_push_one_replace_all_works_on_full_fifo(void);
-
-/*!\test
- * Empty URL FIFO is handled correctly.
- */
-void test_peek_empty_fifo_returns_null(void);
-
-/*!\test
- * Head element can be inspected, also several times.
- */
-void test_peek_fifo_returns_head_element(void);
-
-/*!\test
- * Removing a non-existent first item from the URL FIFO results in an error
- * returned by #urlfifo_pop_item().
- */
-void test_pop_empty_fifo_detects_underflow(void);
-
-/*!\test
- * Remove first item from the URL FIFO which contains a single item.
- */
-void test_pop_item_from_single_item_fifo(void);
-
-/*!\test
- * Remove first item from the URL FIFO which contains more that one item.
- */
-void test_pop_item_from_multi_item_fifo(void);
-
-/*!\test
- * Stress test push and pop to trigger internal wraparound handling code.
- */
-void test_push_pop_chase(void);
-
-/*!\test
- * Number of queued IDs is 0 for empty URL FIFO.
- */
-void test_get_queued_ids_count_for_empty_fifo(void);
-
-/*!\test
- * No queued IDs are returned for empty URL FIFO.
- */
-void test_get_queued_ids_for_empty_fifo(void);
-
-/*!\test
- * Queued IDs are returned.
- */
-void test_get_queued_ids_for_filled_fifo(void);
-
-/*!\test
- * Basic tests for #urlfifo_is_full().
- */
-void test_urlfifo_is_full_interface(void);
-
-/*!\test
- * Trying to find anything in an empty FIFO never returns an item.
- */
-void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null(void);
-
-/*!\test
- * Find the only matching item in a FIFO with a single entry.
- */
-void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match(void);
-
-/*!\test
- * Find the only matching item in a filled FIFO.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match(void);
-
-/*!\test
- * Find the only matching item in a filled FIFO which is also the last item in
- * the FIFO.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match(void);
-
-/*!\test
- * Find multiple matching items in a filled FIFO, youngest first.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches(void);
-
-/*!\test
- * Searching for an item can be restarted at any time.
- */
-void test_urlfifo_find_item_by_url_can_be_restarted(void);
-
-/*!\test
- * Search for the given URL in a filled FIFO returns no item.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing(void);
-
-/*!@}*/
-
-
-void cut_setup(void)
+void cut_setup()
 {
     urlfifo_setup();
 }
 
-void cut_teardown(void)
+void cut_teardown()
 {
     urlfifo_shutdown();
 }
 
-void test_fifo_is_empty_on_startup(void)
+/*!\test
+ * After initialization, the URL FIFO shall be empty.
+ */
+void test_fifo_is_empty_on_startup()
 {
     cut_assert_equal_size(0, urlfifo_get_size());
     cut_assert_true(urlfifo_is_empty());
     cut_assert_false(urlfifo_is_full());
 }
 
-void test_clear_all_on_empty_fifo(void)
+/*!\test
+ * Clearing the whole FIFO works as expected with an empty FIFO.
+ */
+void test_clear_all_on_empty_fifo()
 {
     stream_id_t ids[URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
@@ -256,7 +71,10 @@ void test_clear_all_on_empty_fifo(void)
         cut_assert_equal_uint(0x5555, ids[i]);
 }
 
-void test_clear_non_empty_fifo(void)
+/*!\test
+ * Clearing the whole FIFO results in an empty FIFO.
+ */
+void test_clear_non_empty_fifo()
 {
     cut_assert_true(urlfifo_is_empty());
     cut_assert_false(urlfifo_is_full());
@@ -293,7 +111,11 @@ void test_clear_non_empty_fifo(void)
     cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
 }
 
-void test_clear_partial_non_empty_fifo(void)
+/*!\test
+ * Clearing the last few items in a non-empty FIFO results in a FIFO with as
+ * many entries as have been specified in the argument to #urlfifo_clear().
+ */
+void test_clear_partial_non_empty_fifo()
 {
     urlfifo_item_id_t id_first;
     urlfifo_item_id_t id_second;
@@ -327,7 +149,12 @@ void test_clear_partial_non_empty_fifo(void)
     urlfifo_unlock();
 }
 
-void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
+/*!\test
+ * Like #test_clear_partial_non_empty_fifo(), but pop items beforehand.
+ *
+ * Because we are operating on a ring buffer.
+ */
+void test_partial_clear_after_pop_item_from_multi_item_fifo()
 {
     /* we want to trigger wrap-around, and the test is hard-coded against the
      * maximum URL FIFO size */
@@ -378,7 +205,7 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
     cut_assert_true(urlfifo_is_full());
     cut_assert_equal_size(8, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(7, urlfifo_pop_item(&item, false));
     cut_assert_false(urlfifo_is_empty());
@@ -421,7 +248,12 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo(void)
     urlfifo_free_item(&item);
 }
 
-void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void)
+/*!\test
+ * Attempting to clear a FIFO with fewer items than specified in the argument
+ * to #urlfifo_clear() results in unchanged FIFO content. No items are removed
+ * in this case.
+ */
+void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing()
 {
     urlfifo_item_id_t id_first;
     urlfifo_item_id_t id_second;
@@ -460,7 +292,10 @@ void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing(void)
 
 static const char default_url[] = "http://ta-hifi.de/";
 
-void test_push_single_item(void)
+/*!\test
+ * Add a single item to an empty FIFO.
+ */
+void test_push_single_item()
 {
     urlfifo_item_id_t id;
 
@@ -481,7 +316,10 @@ void test_push_single_item(void)
     urlfifo_unlock();
 }
 
-void test_push_multiple_items(void)
+/*!\test
+ * Add more than a single item to an empty FIFO.
+ */
+void test_push_multiple_items()
 {
     static const size_t count = 2;
     urlfifo_item_id_t ids[count];
@@ -550,7 +388,11 @@ const struct urlfifo_item_data_ops test_data_ops_with_fail =
     .data_free = item_data_free,
 };
 
-void test_item_data_callback_is_called_for_fail(void)
+/*!\test
+ * If defined, the URL FIFO item data fail operation is used when failing an
+ * item.
+ */
+void test_item_data_callback_is_called_for_fail()
 {
     uint32_t test_data = 0;
     urlfifo_item_id_t id;
@@ -560,7 +402,7 @@ void test_item_data_callback_is_called_for_fail(void)
                                                &test_data,
                                                &test_data_ops_with_fail));
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
 
     cut_assert_true(urlfifo_is_item_valid(&item));
@@ -578,7 +420,10 @@ void test_item_data_callback_is_called_for_fail(void)
     cut_assert_equal_uint(0x87654321, test_data);
 }
 
-void test_item_should_fail_only_once(void)
+/*!\test
+ * Failing an item multiple times is a bug, fail function is called only once.
+ */
+void test_item_should_fail_only_once()
 {
     uint32_t test_data = 0;
     urlfifo_item_id_t id;
@@ -588,7 +433,7 @@ void test_item_should_fail_only_once(void)
                                                &test_data,
                                                &test_data_ops_with_fail));
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
 
     cut_assert_true(urlfifo_is_item_valid(&item));
@@ -616,7 +461,11 @@ void test_item_should_fail_only_once(void)
     cut_assert_equal_uint(0x87654321, test_data);
 }
 
-void test_item_data_callbacks_are_called_for_push_pop(void)
+/*!\test
+ * If defined, the URL FIFO item free operation is used when popping an item
+ * "over" an initialized item for the item that is being overwritten.
+ */
+void test_item_data_callbacks_are_called_for_push_pop()
 {
     uint32_t test_data[2] = { 0, 0 };
     urlfifo_item_id_t ids[2];
@@ -633,7 +482,7 @@ void test_item_data_callbacks_are_called_for_push_pop(void)
     cut_assert_equal_pointer(&test_data[0], item->data);
     cut_assert_equal_uint(0, test_data[0]);
 
-    struct urlfifo_item popped = { 0 };
+    struct urlfifo_item popped = { URLFIFO_ITEM_STATE_INVALID };
     cut_assert_equal_size(1, urlfifo_pop_item(&popped, false));
 
     cut_assert_equal_pointer(&test_data[0], popped.data);
@@ -649,7 +498,11 @@ void test_item_data_callbacks_are_called_for_push_pop(void)
     cut_assert_equal_uint(0x87654321, test_data[1]);
 }
 
-void test_item_data_callbacks_are_called_for_pop_to_drop(void)
+/*!\test
+ * Popping an item to a \c NULL pointer removes the item from the URL FIFO and
+ * frees the item.
+ */
+void test_item_data_callbacks_are_called_for_pop_to_drop()
 {
     uint32_t test_data[2] = { 0, 0 };
     urlfifo_item_id_t ids[2];
@@ -685,7 +538,11 @@ void test_item_data_callbacks_are_called_for_pop_to_drop(void)
     cut_assert_equal_uint(0x87654321, test_data[1]);
 }
 
-void test_item_data_callbacks_are_called_for_push_clear(void)
+/*!\test
+ * If defined, the URL FIFO item data operations are used when pushing data,
+ * then clearing the FIFO.
+ */
+void test_item_data_callbacks_are_called_for_push_clear()
 {
     uint32_t test_data[2] = { 0, 0 };
     urlfifo_item_id_t ids[2];
@@ -716,7 +573,12 @@ void test_item_data_callbacks_are_called_for_push_clear(void)
     cut_assert_equal_uint(0x87654321, test_data[1]);
 }
 
-void test_push_many_items_does_not_trash_fifo(void)
+/*!\test
+ * Adding more item to the FIFO than it has slots available results in an error
+ * returned by #urlfifo_push_item(). The FIFO is expected to remain changed
+ * after such an overflow.
+ */
+void test_push_many_items_does_not_trash_fifo()
 {
     urlfifo_item_id_t ids[URLFIFO_MAX_LENGTH];
 
@@ -762,7 +624,11 @@ void test_push_many_items_does_not_trash_fifo(void)
     urlfifo_unlock();
 }
 
-void test_push_one_replace_all(void)
+/*!\test
+ * It is possible to replace the items in a non-empty URL FIFO by a single item
+ * by pushing the new item and specifying the number of items to keep as 0.
+ */
+void test_push_one_replace_all()
 {
     cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
                                                NULL, NULL, SIZE_MAX, NULL,
@@ -776,7 +642,7 @@ void test_push_one_replace_all(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -785,7 +651,12 @@ void test_push_one_replace_all(void)
     urlfifo_free_item(&item);
 }
 
-void test_push_one_keep_first(void)
+/*!\test
+ * It is possible to replace the last few items in a non-empty URL FIFO by a
+ * single item by pushing the new item and specifying the number of items to
+ * keep as 1 (or greater).
+ */
+void test_push_one_keep_first()
 {
     cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
                                                NULL, NULL, SIZE_MAX, NULL,
@@ -799,7 +670,7 @@ void test_push_one_keep_first(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(1, urlfifo_get_size());
@@ -812,14 +683,17 @@ void test_push_one_keep_first(void)
     urlfifo_free_item(&item);
 }
 
-void test_push_one_replace_all_works_on_empty_fifo(void)
+/*!\test
+ * Replacing the contents of an empty URL FIFO with a new item is possible.
+ */
+void test_push_one_replace_all_works_on_empty_fifo()
 {
     cut_assert_equal_size(1, urlfifo_push_item(80, default_url,
                                                NULL, NULL, 0, NULL,
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -828,7 +702,10 @@ void test_push_one_replace_all_works_on_empty_fifo(void)
     urlfifo_free_item(&item);
 }
 
-void test_push_one_replace_all_works_on_full_fifo(void)
+/*!\test
+ * Replacing the contents of an overflown URL FIFO with a new item is possible.
+ */
+void test_push_one_replace_all_works_on_full_fifo()
 {
     static const uint16_t max_insertions = 10;
 
@@ -846,7 +723,7 @@ void test_push_one_replace_all_works_on_full_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -855,12 +732,18 @@ void test_push_one_replace_all_works_on_full_fifo(void)
     urlfifo_free_item(&item);
 }
 
-void test_peek_empty_fifo_returns_null(void)
+/*!\test
+ * Empty URL FIFO is handled correctly.
+ */
+void test_peek_empty_fifo_returns_null()
 {
     cut_assert_null(urlfifo_peek());
 }
 
-void test_peek_fifo_returns_head_element(void)
+/*!\test
+ * Head element can be inspected, also several times.
+ */
+void test_peek_fifo_returns_head_element()
 {
     cut_assert_equal_size(1, urlfifo_push_item(16, default_url,
                                                NULL, NULL, SIZE_MAX, NULL,
@@ -883,9 +766,13 @@ void test_peek_fifo_returns_head_element(void)
     cut_assert_equal_size(2, urlfifo_clear(0, NULL));
 }
 
-void test_pop_empty_fifo_detects_underflow(void)
+/*!\test
+ * Removing a non-existent first item from the URL FIFO results in an error
+ * returned by #urlfifo_pop_item().
+ */
+void test_pop_empty_fifo_detects_underflow()
 {
-    struct urlfifo_item dummy = { 0 };
+    struct urlfifo_item dummy = { URLFIFO_ITEM_STATE_INVALID };
     struct urlfifo_item expected;
 
     memset(&dummy, 0x55, sizeof(dummy));
@@ -894,11 +781,14 @@ void test_pop_empty_fifo_detects_underflow(void)
 
     /* cut_assert_equal_memory() hangs on failure, so we'll use plain memcmp()
      * instead */
-    if(memcmp(&expected, &dummy, sizeof(expected) != 0))
+    if(memcmp(&expected, &dummy, sizeof(expected)) != 0)
         cut_fail("urlfifo_pop_item() trashed memory");
 }
 
-void test_pop_item_from_single_item_fifo(void)
+/*!\test
+ * Remove first item from the URL FIFO which contains a single item.
+ */
+void test_pop_item_from_single_item_fifo()
 {
     urlfifo_item_id_t id;
 
@@ -907,7 +797,7 @@ void test_pop_item_from_single_item_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(1, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(0, urlfifo_get_size());
@@ -919,7 +809,10 @@ void test_pop_item_from_single_item_fifo(void)
     urlfifo_free_item(&item);
 }
 
-void test_pop_item_from_multi_item_fifo(void)
+/*!\test
+ * Remove first item from the URL FIFO which contains more that one item.
+ */
+void test_pop_item_from_multi_item_fifo()
 {
     urlfifo_item_id_t id_first;
     urlfifo_item_id_t id_second;
@@ -932,7 +825,7 @@ void test_pop_item_from_multi_item_fifo(void)
                                                NULL, NULL));
     cut_assert_equal_size(2, urlfifo_get_size());
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
     cut_assert_equal_size(1, urlfifo_get_size());
@@ -951,7 +844,10 @@ void test_pop_item_from_multi_item_fifo(void)
     urlfifo_free_item(&item);
 }
 
-void test_push_pop_chase(void)
+/*!\test
+ * Stress test push and pop to trigger internal wraparound handling code.
+ */
+void test_push_pop_chase()
 {
     static const stream_id_t id_base = 100;
     static const unsigned int num_of_iterations = 10;
@@ -960,7 +856,7 @@ void test_push_pop_chase(void)
                                                NULL, NULL, SIZE_MAX, NULL,
                                                NULL, NULL));
 
-    struct urlfifo_item item = { 0 };
+    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
 
     for(unsigned int i = 0; i < num_of_iterations; ++i)
     {
@@ -981,12 +877,18 @@ void test_push_pop_chase(void)
     urlfifo_free_item(&item);
 }
 
-void test_get_queued_ids_count_for_empty_fifo(void)
+/*!\test
+ * Number of queued IDs is 0 for empty URL FIFO.
+ */
+void test_get_queued_ids_count_for_empty_fifo()
 {
     cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
 }
 
-void test_get_queued_ids_for_empty_fifo(void)
+/*!\test
+ * No queued IDs are returned for empty URL FIFO.
+ */
+void test_get_queued_ids_for_empty_fifo()
 {
     stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
     memset(ids, 0x55, sizeof(ids));
@@ -997,7 +899,10 @@ void test_get_queued_ids_for_empty_fifo(void)
         cut_assert_equal_uint(0x5555, ids[i]);
 }
 
-void test_get_queued_ids_for_filled_fifo(void)
+/*!\test
+ * Queued IDs are returned.
+ */
+void test_get_queued_ids_for_filled_fifo()
 {
     for(size_t i = 0; i < URLFIFO_MAX_LENGTH; ++i)
         cut_assert_equal_size(i + 1, urlfifo_push_item(100 + i, "item",
@@ -1024,7 +929,10 @@ void test_get_queued_ids_for_filled_fifo(void)
         cut_assert_equal_uint(0x5555, ids[i]);
 }
 
-void test_urlfifo_is_full_interface(void)
+/*!\test
+ * Basic tests for #urlfifo_is_full().
+ */
+void test_urlfifo_is_full_interface()
 {
     cut_assert_false(urlfifo_is_full());
 
@@ -1045,14 +953,17 @@ void test_urlfifo_is_full_interface(void)
 
     cut_assert_true(urlfifo_is_full());
 
-    struct urlfifo_item dummy = { 0 };
+    struct urlfifo_item dummy = { URLFIFO_ITEM_STATE_INVALID };
     (void)urlfifo_pop_item(&dummy, false);
     urlfifo_free_item(&dummy);
 
     cut_assert_false(urlfifo_is_full());
 }
 
-void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null(void)
+/*!\test
+ * Trying to find anything in an empty FIFO never returns an item.
+ */
+void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null()
 {
     const char *urls[] =
     {
@@ -1069,7 +980,10 @@ void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null(void)
     }
 }
 
-void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match(void)
+/*!\test
+ * Find the only matching item in a FIFO with a single entry.
+ */
+void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match()
 {
     const char url[] = "http://find.me/";
 
@@ -1086,7 +1000,10 @@ void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match(void)
     cut_assert_null(item);
 }
 
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match(void)
+/*!\test
+ * Find the only matching item in a filled FIFO.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match()
 {
     const char url[] = "http://find.me/";
 
@@ -1106,7 +1023,11 @@ void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match(void)
     cut_assert_null(item);
 }
 
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match(void)
+/*!\test
+ * Find the only matching item in a filled FIFO which is also the last item in
+ * the FIFO.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match()
 {
     const char url[] = "http://find.me/";
 
@@ -1126,7 +1047,10 @@ void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match(void)
     cut_assert_null(item);
 }
 
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches(void)
+/*!\test
+ * Find multiple matching items in a filled FIFO, youngest first.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches()
 {
     const char url[] = "http://find.me/";
 
@@ -1157,7 +1081,10 @@ void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches(void)
     cut_assert_null(item);
 }
 
-void test_urlfifo_find_item_by_url_can_be_restarted(void)
+/*!\test
+ * Searching for an item can be restarted at any time.
+ */
+void test_urlfifo_find_item_by_url_can_be_restarted()
 {
     const char url[] = "http://find.me/";
 
@@ -1191,7 +1118,10 @@ void test_urlfifo_find_item_by_url_can_be_restarted(void)
     }
 }
 
-void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing(void)
+/*!\test
+ * Search for the given URL in a filled FIFO returns no item.
+ */
+void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing()
 {
     cut_assert_equal_size(1, urlfifo_push_item(1, "first",
                                                NULL, NULL, SIZE_MAX, NULL,
@@ -1204,3 +1134,7 @@ void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing(void)
 
     cut_assert_null(urlfifo_find_next_item_by_url(&iter, default_url));
 }
+
+}
+
+/*!@}*/

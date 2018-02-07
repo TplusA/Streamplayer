@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -30,9 +30,9 @@
 #include <glib-unix.h>
 #include <gst/gst.h>
 
-#include "streamer.h"
-#include "dbus_iface.h"
-#include "dbus_iface_deep.h"
+#include "streamer.hh"
+#include "dbus_iface.hh"
+#include "dbus_iface_deep.hh"
 #include "messages.h"
 #include "messages_glib.h"
 #include "versioninfo.h"
@@ -173,7 +173,7 @@ static int process_command_line(int argc, char *argv[],
 
 static gboolean signal_handler(gpointer user_data)
 {
-    g_main_loop_quit(user_data);
+    g_main_loop_quit(static_cast<GMainLoop *>(user_data));
     return G_SOURCE_REMOVE;
 }
 

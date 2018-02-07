@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -23,12 +23,12 @@
 #include <string.h>
 #include <errno.h>
 
-#include "dbus_iface.h"
-#include "dbus_iface_deep.h"
+#include "dbus_iface.hh"
+#include "dbus_iface_deep.hh"
 #include "streamplayer_dbus.h"
 #include "artcache_dbus.h"
-#include "streamer.h"
-#include "urlfifo.h"
+#include "streamer.hh"
+#include "urlfifo.hh"
 #include "messages.h"
 #include "messages_dbus.h"
 
@@ -283,7 +283,7 @@ static void try_export_iface(GDBusConnection *connection,
 static void bus_acquired(GDBusConnection *connection,
                          const gchar *name, gpointer user_data)
 {
-    struct dbus_data *data = user_data;
+    auto *data = static_cast<struct dbus_data *>(user_data);
 
     data->playback_iface = tdbus_splay_playback_skeleton_new();
     data->urlfifo_iface = tdbus_splay_urlfifo_skeleton_new();
@@ -326,7 +326,7 @@ static void bus_acquired(GDBusConnection *connection,
 static void created_config_proxy(GObject *source_object, GAsyncResult *res,
                                  gpointer user_data)
 {
-    struct dbus_data *data = user_data;
+    auto *data = static_cast<struct dbus_data *>(user_data);
     GError *error = NULL;
 
     data->debug_logging_config_proxy =
@@ -341,7 +341,7 @@ static void created_config_proxy(GObject *source_object, GAsyncResult *res,
 static void name_acquired(GDBusConnection *connection,
                           const gchar *name, gpointer user_data)
 {
-    struct dbus_data *data = user_data;
+    auto *data = static_cast<struct dbus_data *>(user_data);
 
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" acquired", name);
     data->acquired = 1;
@@ -374,7 +374,7 @@ static void name_acquired(GDBusConnection *connection,
 static void name_lost(GDBusConnection *connection,
                       const gchar *name, gpointer user_data)
 {
-    struct dbus_data *data = user_data;
+    auto *data = static_cast<struct dbus_data *>(user_data);
 
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" lost", name);
     data->acquired = -1;
