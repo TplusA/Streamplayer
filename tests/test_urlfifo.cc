@@ -16,15 +16,16 @@
  * along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cutter.h>
-#include <stdio.h>
-#include <string.h>
+#if HAVE_CONFIG_H
+#include <config.h>
+#endif /* HAVE_CONFIG_H */
+
+#include <cppcutter.h>
+#include <memory>
+#include <string>
+#include <algorithm>
 
 #include "urlfifo.hh"
-#include "messages.h"
-
-/* there is no message mock in these tests */
-void msg_error(int error_code, int priority, const char *error_format, ...) {}
 
 /*!
  * \addtogroup urlfifo_tests Unit tests
@@ -37,14 +38,33 @@ void msg_error(int error_code, int priority, const char *error_format, ...) {}
 namespace urlfifo_tests
 {
 
+class TestItem
+{
+  public:
+    const unsigned int value_;
+    const std::string name_;
+
+    TestItem(const TestItem &) = delete;
+    TestItem &operator=(const TestItem &) = delete;
+
+    explicit TestItem(unsigned int value, const std::string &name):
+        value_(value),
+        name_(name)
+    {}
+};
+
+static constexpr size_t MAX_QUEUE_LENGTH = 8;
+PlayQueue::Queue<TestItem> *queue;
+
 void cut_setup()
 {
-    urlfifo_setup();
+    queue = new PlayQueue::Queue<TestItem>(MAX_QUEUE_LENGTH);
 }
 
 void cut_teardown()
 {
-    urlfifo_shutdown();
+    delete queue;
+    queue = nullptr;
 }
 
 /*!\test
@@ -52,9 +72,11 @@ void cut_teardown()
  */
 void test_fifo_is_empty_on_startup()
 {
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_true(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
+    cut_assert_equal_size(0, queue->size());
+    cut_assert_true(queue->empty());
+    cut_assert_false(queue->full());
+    cppcut_assert_equal(size_t(0),
+                        size_t(std::distance(queue->begin(), queue->end())));
 }
 
 /*!\test
@@ -62,13 +84,21 @@ void test_fifo_is_empty_on_startup()
  */
 void test_clear_all_on_empty_fifo()
 {
-    stream_id_t ids[URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
+    cut_assert_true(queue->clear(0).empty());
+}
 
-    cut_assert_equal_size(0, urlfifo_clear(0, ids));
+template <typename StringType>
+static unsigned int push(PlayQueue::Queue<TestItem> &q, unsigned int value,
+                         const StringType &name, size_t expected_result,
+                         size_t keep_first_n = SIZE_MAX)
+{
+    const size_t result =
+        q.push(std::unique_ptr<TestItem>(new TestItem(value, name)),
+               keep_first_n);
 
-    for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
-        cut_assert_equal_uint(0x5555, ids[i]);
+    cppcut_assert_equal(expected_result, result);
+
+    return result;
 }
 
 /*!\test
@@ -76,77 +106,50 @@ void test_clear_all_on_empty_fifo()
  */
 void test_clear_non_empty_fifo()
 {
-    cut_assert_true(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
+    cut_assert_true(queue->empty());
+    cut_assert_false(queue->full());
 
-    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_equal_size(2, urlfifo_get_size());
-    cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
+    push(*queue, 23, "first", 1);
 
-    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
+    cut_assert_false(queue->empty());
 
-    cut_assert_equal_size(2, urlfifo_clear(0, &ids[URLFIFO_MAX_LENGTH]));
+    push(*queue, 32, "second", 2);
 
-    cut_assert_true(urlfifo_is_empty());
+    cut_assert_false(queue->empty());
+    cppcut_assert_equal(size_t(2), queue->size());
+    cppcut_assert_equal(size_t(2),
+                        size_t(std::distance(queue->begin(), queue->end())));
 
-    for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
-    {
-        if((i == URLFIFO_MAX_LENGTH + 0) || (i == URLFIFO_MAX_LENGTH + 1))
-            continue;
+    cppcut_assert_equal(size_t(2), queue->clear(0).size());
 
-        cut_assert_equal_uint(0x5555, ids[i]);
-    }
-    cut_assert_equal_uint(23, ids[URLFIFO_MAX_LENGTH + 0]);
-    cut_assert_equal_uint(32, ids[URLFIFO_MAX_LENGTH + 1]);
-
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
+    cut_assert_true(queue->empty());
+    cppcut_assert_equal(size_t(0), queue->size());
+    cppcut_assert_equal(size_t(0),
+                        size_t(std::distance(queue->begin(), queue->end())));
 }
 
 /*!\test
  * Clearing the last few items in a non-empty FIFO results in a FIFO with as
- * many entries as have been specified in the argument to #urlfifo_clear().
+ * many entries as have been specified in the argument to
+ * #PlayQueue::Queue::clear().
  */
 void test_clear_partial_non_empty_fifo()
 {
-    urlfifo_item_id_t id_first;
-    urlfifo_item_id_t id_second;
+    push(*queue, 23, "first",  1);
+    push(*queue, 32, "second", 2);
 
-    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
-                                               NULL, NULL, SIZE_MAX, &id_first,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
-                                               NULL, NULL, SIZE_MAX, &id_second,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_get_size());
-    cut_assert_equal_size(2, urlfifo_get_queued_ids(NULL));
+    auto removed(queue->clear(1));
+    cppcut_assert_equal(size_t(1), removed.size());
 
-    stream_id_t ids[URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
+    cppcut_assert_equal(32U,      removed[0]->value_);
+    cppcut_assert_equal("second", removed[0]->name_.c_str());
 
-    cut_assert_equal_size(1, urlfifo_clear(1, ids));
+    cppcut_assert_equal(size_t(1), queue->size());
 
-    cut_assert_equal_uint(32,     ids[0]);
-    cut_assert_equal_uint(0x5555, ids[1]);
-
-    cut_assert_equal_size(1, urlfifo_get_size());
-    cut_assert_equal_size(1, urlfifo_get_queued_ids(NULL));
-
-    urlfifo_lock();
-
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(id_first);
-    cut_assert_not_null(item);
-    cut_assert_equal_string("first", item->url);
-
-    urlfifo_unlock();
+    const TestItem *item = queue->peek();
+    cppcut_assert_not_null(item);
+    cppcut_assert_equal(23U,     item->value_);
+    cppcut_assert_equal("first", item->name_.c_str());
 }
 
 /*!\test
@@ -156,164 +159,122 @@ void test_clear_partial_non_empty_fifo()
  */
 void test_partial_clear_after_pop_item_from_multi_item_fifo()
 {
-    /* we want to trigger wrap-around, and the test is hard-coded against the
-     * maximum URL FIFO size */
-    cut_assert_equal_size(8, URLFIFO_MAX_LENGTH);
+    cut_assert_true(queue->empty());
+    cut_assert_false(queue->full());
 
-    cut_assert_true(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
+    push(*queue, 23, "first", 1);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(3, urlfifo_push_item(123, "third",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(4, urlfifo_push_item(132, "fourth",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(5, urlfifo_push_item(223, "fifth",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(6, urlfifo_push_item(232, "sixth",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(7, urlfifo_push_item(323, "seventh",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(8, urlfifo_push_item(332, "eighth",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_true(urlfifo_is_full());
-    cut_assert_equal_size(8, urlfifo_get_size());
+    push(*queue, 32, "second", 2);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    push(*queue, 123, "third", 3);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    cut_assert_equal_size(7, urlfifo_pop_item(&item, false));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_uint(23, item.id);
-    cut_assert_equal_string("first", item.url);
+    push(*queue, 132, "fourth", 4);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    /* this one ends up in the first slot */
-    cut_assert_equal_size(8, urlfifo_push_item(42, "ninth",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_true(urlfifo_is_full());
+    push(*queue, 223, "fifth", 5);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    /* we now have |42|32|123|132|223|232|323|332|, with 32 being the head
-     * element */
-    stream_id_t ids[URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
+    push(*queue, 232, "sixth", 6);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    cut_assert_equal_size(7, urlfifo_clear(1, ids));
+    push(*queue, 323, "seventh", 7);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
 
-    cut_assert_false(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_size(1, urlfifo_get_size());
-    cut_assert_equal_uint(123,    ids[0]);
-    cut_assert_equal_uint(132,    ids[1]);
-    cut_assert_equal_uint(223,    ids[2]);
-    cut_assert_equal_uint(232,    ids[3]);
-    cut_assert_equal_uint(323,    ids[4]);
-    cut_assert_equal_uint(332,    ids[5]);
-    cut_assert_equal_uint(42,     ids[6]);
-    cut_assert_equal_uint(0x5555, ids[7]);
+    push(*queue, 332, "eighth", 8);
+    cut_assert_false(queue->empty());
+    cut_assert_true(queue->full());
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
-    cut_assert_true(urlfifo_is_empty());
-    cut_assert_false(urlfifo_is_full());
-    cut_assert_equal_uint(32, item.id);
-    cut_assert_equal_string("second", item.url);
+    cppcut_assert_equal(size_t(8), queue->size());
 
-    urlfifo_free_item(&item);
+    size_t remaining;
+    auto item = queue->pop(remaining);
+
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(size_t(7), remaining);
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
+    cppcut_assert_equal(23U,     item->value_);
+    cppcut_assert_equal("first", item->name_.c_str());
+
+    push(*queue, 42, "ninth", 8);
+    cut_assert_false(queue->empty());
+    cut_assert_true(queue->full());
+
+    auto removed = queue->clear(1);
+    cppcut_assert_equal(size_t(7), removed.size());
+
+    cut_assert_false(queue->empty());
+    cut_assert_false(queue->full());
+    cppcut_assert_equal(size_t(1), queue->size());
+    cppcut_assert_equal(42U,  removed[0]->value_);
+    cppcut_assert_equal(332U, removed[1]->value_);
+    cppcut_assert_equal(323U, removed[2]->value_);
+    cppcut_assert_equal(232U, removed[3]->value_);
+    cppcut_assert_equal(223U, removed[4]->value_);
+    cppcut_assert_equal(132U, removed[5]->value_);
+    cppcut_assert_equal(123U, removed[6]->value_);
+
+    item = queue->pop(remaining);
+
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(size_t(0), remaining);
+
+    cut_assert_true(queue->empty());
+    cut_assert_false(queue->full());
+    cppcut_assert_equal(32U,      item->value_);
+    cppcut_assert_equal("second", item->name_.c_str());
 }
 
 /*!\test
  * Attempting to clear a FIFO with fewer items than specified in the argument
- * to #urlfifo_clear() results in unchanged FIFO content. No items are removed
- * in this case.
+ * to #PlayQueue::Queue::clear() results in unchanged FIFO content. No items
+ * are removed in this case.
  */
 void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing()
 {
-    urlfifo_item_id_t id_first;
-    urlfifo_item_id_t id_second;
+    push(*queue, 23, "first", 1);
+    push(*queue, 32, "second", 2);
+    cut_assert_equal_size(2, queue->size());
 
-    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
-                                               NULL, NULL, SIZE_MAX, &id_first,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
-                                               NULL, NULL, SIZE_MAX, &id_second,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_get_size());
+    cut_assert_true(queue->clear(3).empty());
+    cut_assert_true(queue->clear(SIZE_MAX).empty());
+    cut_assert_true(queue->clear(2).empty());
 
-    stream_id_t ids[URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
+    cppcut_assert_equal(size_t(2), queue->size());
 
-    cut_assert_equal_size(0, urlfifo_clear(3, ids));
-    cut_assert_equal_uint(0x5555, ids[0]);
-    cut_assert_equal_size(0, urlfifo_clear(SIZE_MAX, ids));
-    cut_assert_equal_uint(0x5555, ids[0]);
-    cut_assert_equal_size(0, urlfifo_clear(2, ids));
-    cut_assert_equal_uint(0x5555, ids[0]);
-    cut_assert_equal_size(2, urlfifo_get_size());
+    const TestItem *item = queue->peek();
+    cppcut_assert_not_null(item);
+    cppcut_assert_equal("first", item->name_.c_str());
 
-    urlfifo_lock();
-
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(id_first);
-    cut_assert_not_null(item);
-    cut_assert_equal_string("first", item->url);
-
-    item = urlfifo_unlocked_peek(id_second);
-    cut_assert_not_null(item);
-    cut_assert_equal_string("second", item->url);
-
-    urlfifo_unlock();
+    item = queue->peek(1);
+    cppcut_assert_not_null(item);
+    cppcut_assert_equal("second", item->name_.c_str());
 }
 
-static const char default_url[] = "http://ta-hifi.de/";
+static const std::string default_url("http://ta-hifi.de/");
 
 /*!\test
  * Add a single item to an empty FIFO.
  */
 void test_push_single_item()
 {
-    urlfifo_item_id_t id;
+    push(*queue, 42, default_url, 1);
+    cppcut_assert_equal(size_t(1), queue->size());
 
-    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
-                                               NULL, NULL, SIZE_MAX, &id,
-                                               NULL, NULL));
-    cut_assert_equal_size(1, urlfifo_get_size());
-
-    urlfifo_lock();
-
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(id);
-    cut_assert_not_null(item);
-    cut_assert_equal_uint(42, item->id);
-    cut_assert_equal_string(default_url, item->url);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item->start_time.type);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item->end_time.type);
-
-    urlfifo_unlock();
+    const TestItem *item = queue->peek();
+    cppcut_assert_not_null(item);
+    cppcut_assert_equal(42U, item->value_);
+    cppcut_assert_equal(default_url, item->name_);
 }
 
 /*!\test
@@ -321,307 +282,64 @@ void test_push_single_item()
  */
 void test_push_multiple_items()
 {
-    static const size_t count = 2;
-    urlfifo_item_id_t ids[count];
+    static constexpr size_t count = 2;
 
     for(unsigned int i = 0; i < count; ++i)
     {
-        char temp[sizeof(default_url) + 16];
-
-        snprintf(temp, sizeof(temp), "%s %u", default_url, i);
-        cut_assert_equal_size(i + 1,
-                              urlfifo_push_item(23 + i, temp,
-                                                NULL, NULL, SIZE_MAX, &ids[i],
-                                                NULL, NULL));
+        std::ostringstream temp;
+        temp << default_url << ' ' << i;
+        cppcut_assert_equal(i + 1, push(*queue, 23 + i, temp.str(), i + 1));
     }
 
-    cut_assert_equal_size(count, urlfifo_get_size());
+    cppcut_assert_equal(count, queue->size());
 
     /* check if we can read back what we've written */
-    urlfifo_lock();
-
     for(unsigned int i = 0; i < count; ++i)
     {
-        const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[i]);
-        char temp[sizeof(default_url) + 16];
+        const TestItem *item = queue->peek(i);
 
-        snprintf(temp, sizeof(temp), "%s %u", default_url, i);
+        std::ostringstream temp;
+        temp <<  default_url << ' ' << i;
 
-        cut_assert_not_null(item);
-        cut_assert_equal_uint(23 + i, item->id);
-        cut_assert_equal_string(temp, item->url);
-        cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item->start_time.type);
-        cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item->end_time.type);
+        cppcut_assert_not_null(item);
+        cppcut_assert_equal(23 + i, item->value_);
+        cppcut_assert_equal(temp.str(), item->name_);
     }
-
-    urlfifo_unlock();
-}
-
-static void item_data_fail(void *data, void *user_data)
-{
-    cut_assert_not_null(data);
-    cut_fail("unexpected call");
-}
-
-static void item_data_fail_set_uint32_data(void *data, void *user_data)
-{
-    cut_assert_not_null(data);
-    *(uint32_t *)data = 0x12345678;
-}
-
-static void item_data_free(void **data)
-{
-    cut_assert_not_null(data);
-    cut_assert_equal_uint(0x12345678, **(uint32_t **)data);
-    **(uint32_t **)data = 0x87654321;
-}
-
-const struct urlfifo_item_data_ops test_data_ops =
-{
-    .data_fail = item_data_fail,
-    .data_free = item_data_free,
-};
-
-const struct urlfifo_item_data_ops test_data_ops_with_fail =
-{
-    .data_fail = item_data_fail_set_uint32_data,
-    .data_free = item_data_free,
-};
-
-/*!\test
- * If defined, the URL FIFO item data fail operation is used when failing an
- * item.
- */
-void test_item_data_callback_is_called_for_fail()
-{
-    uint32_t test_data = 0;
-    urlfifo_item_id_t id;
-
-    cut_assert_equal_size(1, urlfifo_push_item(851, default_url,
-                                               NULL, NULL, SIZE_MAX, &id,
-                                               &test_data,
-                                               &test_data_ops_with_fail));
-
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-
-    cut_assert_true(urlfifo_is_item_valid(&item));
-    cut_assert_equal_pointer(&test_data, item.data);
-    cut_assert_equal_uint(0, test_data);
-
-    urlfifo_fail_item(&item, NULL);
-
-    cut_assert_true(urlfifo_is_item_valid(&item));
-    cut_assert_equal_uint(0x12345678, test_data);
-
-    urlfifo_free_item(&item);
-
-    cut_assert_false(urlfifo_is_item_valid(&item));
-    cut_assert_equal_uint(0x87654321, test_data);
-}
-
-/*!\test
- * Failing an item multiple times is a bug, fail function is called only once.
- */
-void test_item_should_fail_only_once()
-{
-    uint32_t test_data = 0;
-    urlfifo_item_id_t id;
-
-    cut_assert_equal_size(1, urlfifo_push_item(907, default_url,
-                                               NULL, NULL, SIZE_MAX, &id,
-                                               &test_data,
-                                               &test_data_ops_with_fail));
-
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-
-    cut_assert_true(urlfifo_is_item_valid(&item));
-    cut_assert_equal_int(URLFIFO_FAIL_STATE_NOT_FAILED, item.fail_state);
-    cut_assert_equal_pointer(&test_data, item.data);
-    cut_assert_equal_uint(0, test_data);
-
-    urlfifo_fail_item(&item, NULL);
-
-    cut_assert_true(urlfifo_is_item_valid(&item));
-    cut_assert_equal_int(URLFIFO_FAIL_STATE_FAILURE_DETECTED, item.fail_state);
-    cut_assert_equal_uint(0x12345678, test_data);
-
-    test_data = 0;
-    urlfifo_fail_item(&item, NULL);
-
-    cut_assert_true(urlfifo_is_item_valid(&item));
-    cut_assert_equal_int(URLFIFO_FAIL_STATE_FAILURE_DETECTED, item.fail_state);
-    cut_assert_equal_uint(0, test_data);
-
-    test_data = 0x12345678;
-    urlfifo_free_item(&item);
-
-    cut_assert_false(urlfifo_is_item_valid(&item));
-    cut_assert_equal_uint(0x87654321, test_data);
-}
-
-/*!\test
- * If defined, the URL FIFO item free operation is used when popping an item
- * "over" an initialized item for the item that is being overwritten.
- */
-void test_item_data_callbacks_are_called_for_push_pop()
-{
-    uint32_t test_data[2] = { 0, 0 };
-    urlfifo_item_id_t ids[2];
-
-    cut_assert_equal_size(1, urlfifo_push_item(851, default_url,
-                                               NULL, NULL, SIZE_MAX, &ids[0],
-                                               &test_data[0], &test_data_ops));
-    cut_assert_equal_size(2, urlfifo_push_item(158, default_url,
-                                               NULL, NULL, SIZE_MAX, &ids[1],
-                                               &test_data[1], &test_data_ops));
-
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
-    cut_assert_not_null(item);
-    cut_assert_equal_pointer(&test_data[0], item->data);
-    cut_assert_equal_uint(0, test_data[0]);
-
-    struct urlfifo_item popped = { URLFIFO_ITEM_STATE_INVALID };
-    cut_assert_equal_size(1, urlfifo_pop_item(&popped, false));
-
-    cut_assert_equal_pointer(&test_data[0], popped.data);
-    cut_assert_equal_uint(0, test_data[0]);
-
-    test_data[0] = 0x12345678;
-    cut_assert_equal_size(0, urlfifo_pop_item(&popped, true));
-    cut_assert_equal_uint(0x87654321, test_data[0]);
-    cut_assert_equal_uint(0, test_data[1]);
-
-    test_data[1] = 0x12345678;
-    urlfifo_free_item(&popped);
-    cut_assert_equal_uint(0x87654321, test_data[1]);
-}
-
-/*!\test
- * Popping an item to a \c NULL pointer removes the item from the URL FIFO and
- * frees the item.
- */
-void test_item_data_callbacks_are_called_for_pop_to_drop()
-{
-    uint32_t test_data[2] = { 0, 0 };
-    urlfifo_item_id_t ids[2];
-
-    cut_assert_equal_size(1, urlfifo_push_item(642, default_url,
-                                               NULL, NULL, SIZE_MAX, &ids[0],
-                                               &test_data[0], &test_data_ops));
-    cut_assert_equal_size(2, urlfifo_push_item(172, default_url,
-                                               NULL, NULL, SIZE_MAX, &ids[1],
-                                               &test_data[1], &test_data_ops));
-
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
-    cut_assert_not_null(item);
-    cut_assert_equal_pointer(item, urlfifo_peek());
-    cut_assert_equal_pointer(&test_data[0], item->data);
-    cut_assert_equal_uint(0, test_data[0]);
-
-    test_data[0] = 0x12345678;
-    cut_assert_equal_size(1, urlfifo_pop_item(NULL, false));
-    cut_assert_equal_uint(0x87654321, test_data[0]);
-    cut_assert_equal_uint(0, test_data[1]);
-
-    item = urlfifo_unlocked_peek(ids[1]);
-    cut_assert_not_null(item);
-    cut_assert_equal_pointer(item, urlfifo_peek());
-    cut_assert_equal_pointer(&test_data[1], item->data);
-    cut_assert_equal_uint(0, test_data[1]);
-
-    test_data[0] = 0;
-    test_data[1] = 0x12345678;
-    cut_assert_equal_size(0, urlfifo_pop_item(NULL, false));
-    cut_assert_equal_uint(0, test_data[0]);
-    cut_assert_equal_uint(0x87654321, test_data[1]);
-}
-
-/*!\test
- * If defined, the URL FIFO item data operations are used when pushing data,
- * then clearing the FIFO.
- */
-void test_item_data_callbacks_are_called_for_push_clear()
-{
-    uint32_t test_data[2] = { 0, 0 };
-    urlfifo_item_id_t ids[2];
-
-    cut_assert_equal_size(1, urlfifo_push_item(851, default_url,
-                                               NULL, NULL, SIZE_MAX, &ids[0],
-                                               &test_data[0], &test_data_ops));
-    cut_assert_equal_size(2, urlfifo_push_item(158, default_url,
-                                               NULL, NULL, SIZE_MAX, &ids[1],
-                                               &test_data[1], &test_data_ops));
-
-    const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[0]);
-    cut_assert_not_null(item);
-    cut_assert_equal_pointer(&test_data[0], item->data);
-    cut_assert_equal_uint(0, test_data[0]);
-
-    item = urlfifo_unlocked_peek(ids[1]);
-    cut_assert_not_null(item);
-    cut_assert_equal_pointer(&test_data[1], item->data);
-    cut_assert_equal_uint(0, test_data[1]);
-
-    test_data[0] = 0x12345678;
-    test_data[1] = 0x12345678;
-
-    urlfifo_clear(0, NULL);
-
-    cut_assert_equal_uint(0x87654321, test_data[0]);
-    cut_assert_equal_uint(0x87654321, test_data[1]);
 }
 
 /*!\test
  * Adding more item to the FIFO than it has slots available results in an error
- * returned by #urlfifo_push_item(). The FIFO is expected to remain changed
- * after such an overflow.
+ * returned by #PlayQueue::Queue::push(). The FIFO is expected to remain
+ * changed after such an overflow.
  */
 void test_push_many_items_does_not_trash_fifo()
 {
-    urlfifo_item_id_t ids[URLFIFO_MAX_LENGTH];
-
-    for(unsigned int i = 0; i < URLFIFO_MAX_LENGTH; ++i)
+    for(unsigned int i = 0; i < MAX_QUEUE_LENGTH; ++i)
     {
-        char temp[sizeof(default_url) + 16];
-
-        snprintf(temp, sizeof(temp), "%s %u", default_url, i + 50);
-        cut_assert_equal_size(i + 1,
-                              urlfifo_push_item(123 + i, temp,
-                                                NULL, NULL, SIZE_MAX, &ids[i],
-                                                NULL, NULL));
+        std::ostringstream temp;
+        temp <<  default_url << ' ' << i + 50;
+        push(*queue, 123 + i, temp.str(), i + 1);
     }
 
-    cut_assert_equal_size(URLFIFO_MAX_LENGTH, urlfifo_get_size());
+    cppcut_assert_equal(MAX_QUEUE_LENGTH, queue->size());
 
     /* next push should fail */
-    urlfifo_item_id_t id = 12345;
-    cut_assert_equal_size(0, urlfifo_push_item(0, default_url,
-                                               NULL, NULL, SIZE_MAX, &id,
-                                               NULL, NULL));
+    push(*queue, 0, default_url, 0);
 
-    cut_assert_equal_size(URLFIFO_MAX_LENGTH, urlfifo_get_size());
-    cut_assert_equal_size(12345, id);
+    cppcut_assert_equal(MAX_QUEUE_LENGTH, queue->size());
 
     /* check that FIFO still has the expected content */
-    urlfifo_lock();
-
-    for(unsigned int i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
+    for(unsigned int i = 0; i < MAX_QUEUE_LENGTH; ++i)
     {
-        const struct urlfifo_item *item = urlfifo_unlocked_peek(ids[i]);
-        char temp[sizeof(default_url) + 16];
+        const TestItem *item = queue->peek(i);
 
-        snprintf(temp, sizeof(temp), "%s %u", default_url, i + 50);
+        std::ostringstream temp;
+        temp <<  default_url << ' ' << i + 50;
 
-        cut_assert_not_null(item);
-        cut_assert_equal_uint(123 + i, item->id);
-        cut_assert_equal_string(temp, item->url);
-        cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item->start_time.type);
-        cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item->end_time.type);
+        cppcut_assert_not_null(item);
+        cppcut_assert_equal(123 + i, item->value_);
+        cppcut_assert_equal(temp.str(), item->name_);
     }
-
-    urlfifo_unlock();
 }
 
 /*!\test
@@ -630,25 +348,19 @@ void test_push_many_items_does_not_trash_fifo()
  */
 void test_push_one_replace_all()
 {
-    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(43, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
+    push(*queue, 42, default_url, 1);
+    push(*queue, 43, default_url, 2);
+    push(*queue, 45, default_url, 1, 0);
 
-    cut_assert_equal_size(1, urlfifo_push_item(45, default_url,
-                                               NULL, NULL, 0, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(1, urlfifo_get_size());
+    cppcut_assert_equal(size_t(1), queue->size());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    size_t remaining = 987;
+    auto item = queue->pop(remaining);
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(45, item.id);
-
-    urlfifo_free_item(&item);
+    cut_assert_true(queue->empty());
+    cppcut_assert_equal(size_t(0), remaining);
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(45U, item->value_);
 }
 
 /*!\test
@@ -658,29 +370,25 @@ void test_push_one_replace_all()
  */
 void test_push_one_keep_first()
 {
-    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(43, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
+    push(*queue, 42, default_url, 1);
+    push(*queue, 43, default_url, 2);
+    push(*queue, 45, default_url, 2, 1);
 
-    cut_assert_equal_size(2, urlfifo_push_item(45, default_url,
-                                               NULL, NULL, 1, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_get_size());
+    cppcut_assert_equal(size_t(2), queue->size());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    size_t remaining = 987;
+    auto item = queue->pop(remaining);
 
-    cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(1, urlfifo_get_size());
-    cut_assert_equal_uint(42, item.id);
+    cppcut_assert_equal(size_t(1), remaining);
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(size_t(1), queue->size());
+    cppcut_assert_equal(42U, item->value_);
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(45, item.id);
+    item = queue->pop();
 
-    urlfifo_free_item(&item);
+    cppcut_assert_equal(size_t(0), queue->size());
+    cut_assert_true(queue->empty());
+    cppcut_assert_equal(45U, item->value_);
 }
 
 /*!\test
@@ -688,18 +396,16 @@ void test_push_one_keep_first()
  */
 void test_push_one_replace_all_works_on_empty_fifo()
 {
-    cut_assert_equal_size(1, urlfifo_push_item(80, default_url,
-                                               NULL, NULL, 0, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(1, urlfifo_get_size());
+    push(*queue, 80, default_url, 1, 0);
+    cppcut_assert_equal(size_t(1), queue->size());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    std::unique_ptr<TestItem> item;
+    cut_assert_true(queue->pop(item));
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(80, item.id);
-
-    urlfifo_free_item(&item);
+    cut_assert_true(queue->empty());
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(80U, item->value_);
+    cppcut_assert_equal(default_url, item->name_);
 }
 
 /*!\test
@@ -707,29 +413,29 @@ void test_push_one_replace_all_works_on_empty_fifo()
  */
 void test_push_one_replace_all_works_on_full_fifo()
 {
-    static const uint16_t max_insertions = 10;
+    static constexpr unsigned int max_insertions = 10;
 
-    for(stream_id_t id = 20; id < 20 + max_insertions; ++id)
+    for(unsigned int id = 20; id < 20 + max_insertions; ++id)
     {
-        if(urlfifo_push_item(id, default_url, NULL, NULL, SIZE_MAX, NULL,
-                             NULL, NULL) == 0)
+        const size_t result =
+            queue->push(std::unique_ptr<TestItem>(new TestItem(id, default_url)),
+                        SIZE_MAX);
+
+        if(result == 0)
             break;
     }
 
-    cut_assert_not_equal_size(max_insertions, urlfifo_get_size());
+    cppcut_assert_operator(size_t(max_insertions), >, queue->size());
 
-    cut_assert_equal_size(1, urlfifo_push_item(90, default_url,
-                                               NULL, NULL, 0, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(1, urlfifo_get_size());
+    push(*queue, 90, default_url, 1, 0);
+    cppcut_assert_equal(size_t(1), queue->size());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    auto item = queue->pop();
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(90, item.id);
-
-    urlfifo_free_item(&item);
+    cut_assert_true(queue->empty());
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(90U, item->value_);
+    cppcut_assert_equal(default_url, item->name_);
 }
 
 /*!\test
@@ -737,7 +443,10 @@ void test_push_one_replace_all_works_on_full_fifo()
  */
 void test_peek_empty_fifo_returns_null()
 {
-    cut_assert_null(urlfifo_peek());
+    cppcut_assert_null(queue->peek());
+    cppcut_assert_null(queue->peek(0));
+    cppcut_assert_null(queue->peek(1));
+    cppcut_assert_null(queue->peek(2));
 }
 
 /*!\test
@@ -745,44 +454,34 @@ void test_peek_empty_fifo_returns_null()
  */
 void test_peek_fifo_returns_head_element()
 {
-    cut_assert_equal_size(1, urlfifo_push_item(16, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
+    push(*queue, 16, default_url, 1);
 
-    const struct urlfifo_item *item = urlfifo_peek();
+    const TestItem *item = queue->peek();
 
-    cut_assert_not_null(item);
-    cut_assert_equal_uint(16, item->id);
-    cut_assert_equal_string(default_url, item->url);
+    cppcut_assert_not_null(item);
+    cppcut_assert_equal(16U, item->value_);
+    cppcut_assert_equal(default_url, item->name_);
 
-    cut_assert_equal_pointer(item, urlfifo_peek());
+    cppcut_assert_equal(item, queue->peek());
 
-    cut_assert_equal_size(2, urlfifo_push_item(17, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
+    push(*queue, 17, default_url, 2);
 
-    cut_assert_equal_pointer(item, urlfifo_peek());
+    cppcut_assert_equal(item, queue->peek());
 
-    cut_assert_equal_size(2, urlfifo_clear(0, NULL));
+    cppcut_assert_equal(size_t(2), queue->clear(0).size());
 }
 
 /*!\test
  * Removing a non-existent first item from the URL FIFO results in an error
- * returned by #urlfifo_pop_item().
+ * returned by #PlayQueue::Queue::pop().
  */
 void test_pop_empty_fifo_detects_underflow()
 {
-    struct urlfifo_item dummy = { URLFIFO_ITEM_STATE_INVALID };
-    struct urlfifo_item expected;
+    std::unique_ptr<TestItem> dummy;
+    cut_assert_false(queue->pop(dummy));
+    cppcut_assert_null(dummy.get());
 
-    memset(&dummy, 0x55, sizeof(dummy));
-    memset(&expected, 0x55, sizeof(expected));
-    cut_assert_equal_int(-1, urlfifo_pop_item(&dummy, false));
-
-    /* cut_assert_equal_memory() hangs on failure, so we'll use plain memcmp()
-     * instead */
-    if(memcmp(&expected, &dummy, sizeof(expected)) != 0)
-        cut_fail("urlfifo_pop_item() trashed memory");
+    cppcut_assert_null(queue->pop().get());
 }
 
 /*!\test
@@ -790,23 +489,17 @@ void test_pop_empty_fifo_detects_underflow()
  */
 void test_pop_item_from_single_item_fifo()
 {
-    urlfifo_item_id_t id;
+    push(*queue, 42, default_url, 1);
 
-    cut_assert_equal_size(1, urlfifo_push_item(42, default_url,
-                                               NULL, NULL, SIZE_MAX, &id,
-                                               NULL, NULL));
-    cut_assert_equal_size(1, urlfifo_get_size());
+    cppcut_assert_equal(size_t(1), queue->size());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    size_t remaining = 123;
+    auto item = queue->pop(remaining);
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(42, item.id);
-    cut_assert_equal_string(default_url, item.url);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
-
-    urlfifo_free_item(&item);
+    cut_assert_true(queue->empty());
+    cppcut_assert_equal(size_t(0), remaining);
+    cppcut_assert_equal(42U, item->value_);
+    cppcut_assert_equal(default_url, item->name_);
 }
 
 /*!\test
@@ -814,34 +507,24 @@ void test_pop_item_from_single_item_fifo()
  */
 void test_pop_item_from_multi_item_fifo()
 {
-    urlfifo_item_id_t id_first;
-    urlfifo_item_id_t id_second;
+    push(*queue, 23, "first", 1);
+    push(*queue, 32, "second", 2);
 
-    cut_assert_equal_size(1, urlfifo_push_item(23, "first",
-                                               NULL, NULL, SIZE_MAX, &id_first,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(32, "second",
-                                               NULL, NULL, SIZE_MAX, &id_second,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_get_size());
+    cppcut_assert_equal(size_t(2), queue->size());
 
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    auto item = queue->pop();
 
-    cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(1, urlfifo_get_size());
-    cut_assert_equal_uint(23, item.id);
-    cut_assert_equal_string("first", item.url);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+    cppcut_assert_equal(size_t(1), queue->size());
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(23U, item->value_);
+    cppcut_assert_equal("first", item->name_.c_str());
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, true));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(32, item.id);
-    cut_assert_equal_string("second", item.url);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.start_time.type);
-    cut_assert_equal_int(STREAMTIME_TYPE_END_OF_STREAM, item.end_time.type);
+    item = queue->pop();
 
-    urlfifo_free_item(&item);
+    cut_assert_true(queue->empty());
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(32U, item->value_);
+    cppcut_assert_equal("second", item->name_.c_str());
 }
 
 /*!\test
@@ -849,54 +532,39 @@ void test_pop_item_from_multi_item_fifo()
  */
 void test_push_pop_chase()
 {
-    static const stream_id_t id_base = 100;
-    static const unsigned int num_of_iterations = 10;
+    static constexpr unsigned int id_base = 100;
+    static constexpr unsigned int num_of_iterations = 10;
 
-    cut_assert_equal_size(1, urlfifo_push_item(id_base, default_url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-
-    struct urlfifo_item item = { URLFIFO_ITEM_STATE_INVALID };
+    push(*queue, id_base, default_url, 1);
 
     for(unsigned int i = 0; i < num_of_iterations; ++i)
     {
-        cut_assert_equal_size(2, urlfifo_push_item(i + id_base + 1, default_url,
-                                                   NULL, NULL, SIZE_MAX,
-                                                   NULL, NULL, NULL));
-        cut_assert_equal_size(2, urlfifo_get_size());
+        push(*queue, i + id_base + 1, default_url, 2);
+        cppcut_assert_equal(size_t(2), queue->size());
 
-        cut_assert_equal_size(1, urlfifo_pop_item(&item, false));
-        cut_assert_equal_size(1, urlfifo_get_size());
-        cut_assert_equal_uint(i + id_base, item.id);
-        urlfifo_free_item(&item);
+        auto item = queue->pop();
+
+        cppcut_assert_equal(size_t(1), queue->size());
+        cppcut_assert_not_null(item.get());
+        cppcut_assert_equal(i + id_base, item->value_);
     }
 
-    cut_assert_equal_size(0, urlfifo_pop_item(&item, false));
-    cut_assert_equal_size(0, urlfifo_get_size());
-    cut_assert_equal_uint(num_of_iterations + id_base + 0, item.id);
-    urlfifo_free_item(&item);
+    size_t remaining = 5;
+    auto item = queue->pop(remaining);
+
+    cut_assert_true(queue->empty());
+    cppcut_assert_not_null(item.get());
+    cppcut_assert_equal(size_t(0), remaining);
+    cppcut_assert_equal(num_of_iterations + id_base + 0, item->value_);
 }
 
 /*!\test
- * Number of queued IDs is 0 for empty URL FIFO.
+ * No items to iterate in empty URL FIFO.
  */
 void test_get_queued_ids_count_for_empty_fifo()
 {
-    cut_assert_equal_size(0, urlfifo_get_queued_ids(NULL));
-}
-
-/*!\test
- * No queued IDs are returned for empty URL FIFO.
- */
-void test_get_queued_ids_for_empty_fifo()
-{
-    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
-
-    cut_assert_equal_size(0, urlfifo_get_queued_ids(&ids[URLFIFO_MAX_LENGTH]));
-
-    for(size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
-        cut_assert_equal_uint(0x5555, ids[i]);
+    cut_assert_true(queue->begin() == queue->end());
+    cppcut_assert_equal(ssize_t(0), std::distance(queue->begin(), queue->end()));
 }
 
 /*!\test
@@ -904,235 +572,44 @@ void test_get_queued_ids_for_empty_fifo()
  */
 void test_get_queued_ids_for_filled_fifo()
 {
-    for(size_t i = 0; i < URLFIFO_MAX_LENGTH; ++i)
-        cut_assert_equal_size(i + 1, urlfifo_push_item(100 + i, "item",
-                                                       NULL, NULL, SIZE_MAX,
-                                                       NULL, NULL, NULL));
+    for(size_t i = 0; i < MAX_QUEUE_LENGTH; ++i)
+        push(*queue, 100 + i, "item", i + 1);
 
-    stream_id_t ids[3 * URLFIFO_MAX_LENGTH];
-    memset(ids, 0x55, sizeof(ids));
+    cppcut_assert_equal(ssize_t(MAX_QUEUE_LENGTH),
+                        std::distance(queue->begin(), queue->end()));
 
-    cut_assert_equal_size(URLFIFO_MAX_LENGTH,
-                          urlfifo_get_queued_ids(&ids[URLFIFO_MAX_LENGTH]));
-
-    for(size_t i = 0 * URLFIFO_MAX_LENGTH; i < 1 * URLFIFO_MAX_LENGTH; ++i)
-        cut_assert_equal_uint(0x5555, ids[i]);
-
-    stream_id_t expected_id = 100;
-    for(size_t i = 1 * URLFIFO_MAX_LENGTH; i < 2 * URLFIFO_MAX_LENGTH; ++i)
+    unsigned int expected_id = 100;
+    for(const auto &it : *queue)
     {
-        cut_assert_equal_uint(expected_id, ids[i]);
+        cppcut_assert_equal(expected_id, it->value_);
+        cppcut_assert_equal("item", it->name_.c_str());
         ++expected_id;
     }
-
-    for(size_t i = 2 * URLFIFO_MAX_LENGTH; i < 3 * URLFIFO_MAX_LENGTH; ++i)
-        cut_assert_equal_uint(0x5555, ids[i]);
 }
 
 /*!\test
- * Basic tests for #urlfifo_is_full().
+ * Basic tests for #PlayQueue::Queue::full().
  */
 void test_urlfifo_is_full_interface()
 {
-    cut_assert_false(urlfifo_is_full());
+    cut_assert_false(queue->full());
 
     for(size_t i = 0; i < 10; ++i)
     {
-        if(urlfifo_is_full())
+        if(queue->full())
         {
-            cut_assert_equal_size(0, urlfifo_push_item(0, default_url,
-                                                       NULL, NULL, SIZE_MAX,
-                                                       NULL, NULL, NULL));
+            push(*queue, 0, default_url, 0);
             break;
         }
 
-        cut_assert_equal_size(i + 1, urlfifo_push_item(0, default_url,
-                                                       NULL, NULL, SIZE_MAX,
-                                                       NULL, NULL, NULL));
+        push(*queue, 0, default_url, i + 1);
     }
 
-    cut_assert_true(urlfifo_is_full());
+    cut_assert_true(queue->full());
 
-    struct urlfifo_item dummy = { URLFIFO_ITEM_STATE_INVALID };
-    (void)urlfifo_pop_item(&dummy, false);
-    urlfifo_free_item(&dummy);
+    queue->pop();
 
-    cut_assert_false(urlfifo_is_full());
-}
-
-/*!\test
- * Trying to find anything in an empty FIFO never returns an item.
- */
-void test_urlfifo_find_item_by_url_in_empty_fifo_returns_null()
-{
-    const char *urls[] =
-    {
-        "http://awesome.stream.com:8080/",
-        "x",
-        "",
-    };
-
-    for(size_t i = 0; i < sizeof(urls) / sizeof(urls[0]); ++i)
-    {
-        urlfifo_item_id_t iter = urlfifo_find_item_begin();
-
-        cut_assert_null(urlfifo_find_next_item_by_url(&iter, urls[i]));
-    }
-}
-
-/*!\test
- * Find the only matching item in a FIFO with a single entry.
- */
-void test_urlfifo_find_item_by_url_in_single_entry_fifo_find_match()
-{
-    const char url[] = "http://find.me/";
-
-    cut_assert_equal_size(1, urlfifo_push_item(19, url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-
-    urlfifo_item_id_t iter = urlfifo_find_item_begin();
-    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_not_null(item);
-    cut_assert_equal_string(url, item->url);
-
-    item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_null(item);
-}
-
-/*!\test
- * Find the only matching item in a filled FIFO.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_match()
-{
-    const char url[] = "http://find.me/";
-
-    cut_assert_equal_size(1, urlfifo_push_item(19, url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(10, "second",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-
-    urlfifo_item_id_t iter = urlfifo_find_item_begin();
-    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_not_null(item);
-    cut_assert_equal_string(url, item->url);
-
-    item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_null(item);
-}
-
-/*!\test
- * Find the only matching item in a filled FIFO which is also the last item in
- * the FIFO.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_last_match()
-{
-    const char url[] = "http://find.me/";
-
-    cut_assert_equal_size(1, urlfifo_push_item(10, "first",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(25, url,
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-
-    urlfifo_item_id_t iter = urlfifo_find_item_begin();
-    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_not_null(item);
-    cut_assert_equal_string(url, item->url);
-
-    item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_null(item);
-}
-
-/*!\test
- * Find multiple matching items in a filled FIFO, youngest first.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_finds_multiple_matches()
-{
-    const char url[] = "http://find.me/";
-
-    urlfifo_item_id_t expected_first_found_id;
-    urlfifo_item_id_t expected_second_found_id;
-
-    cut_assert_equal_size(1, urlfifo_push_item(4, url,
-                                               NULL, NULL, SIZE_MAX,
-                                               &expected_first_found_id,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(25, url,
-                                               NULL, NULL, SIZE_MAX,
-                                               &expected_second_found_id,
-                                               NULL, NULL));
-
-    urlfifo_item_id_t iter = urlfifo_find_item_begin();
-    const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_not_null(item);
-    cut_assert_equal_string(url, item->url);
-    cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_first_found_id), item);
-
-    item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_not_null(item);
-    cut_assert_equal_string(url, item->url);
-    cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_second_found_id), item);
-
-    item = urlfifo_find_next_item_by_url(&iter, url);
-    cut_assert_null(item);
-}
-
-/*!\test
- * Searching for an item can be restarted at any time.
- */
-void test_urlfifo_find_item_by_url_can_be_restarted()
-{
-    const char url[] = "http://find.me/";
-
-    urlfifo_item_id_t expected_first_found_id;
-    urlfifo_item_id_t expected_second_found_id;
-
-    cut_assert_equal_size(1, urlfifo_push_item(4, url,
-                                               NULL, NULL, SIZE_MAX,
-                                               &expected_first_found_id,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(25, url,
-                                               NULL, NULL, SIZE_MAX,
-                                               &expected_second_found_id,
-                                               NULL, NULL));
-
-    for(int i = 0; i < 3; ++i)
-    {
-        urlfifo_item_id_t iter = urlfifo_find_item_begin();
-        const struct urlfifo_item *item = urlfifo_find_next_item_by_url(&iter, url);
-        cut_assert_not_null(item);
-        cut_assert_equal_string(url, item->url);
-        cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_first_found_id), item);
-
-        item = urlfifo_find_next_item_by_url(&iter, url);
-        cut_assert_not_null(item);
-        cut_assert_equal_string(url, item->url);
-        cut_assert_equal_pointer(urlfifo_unlocked_peek(expected_second_found_id), item);
-
-        item = urlfifo_find_next_item_by_url(&iter, url);
-        cut_assert_null(item);
-    }
-}
-
-/*!\test
- * Search for the given URL in a filled FIFO returns no item.
- */
-void test_urlfifo_find_item_by_url_in_filled_fifo_may_find_nothing()
-{
-    cut_assert_equal_size(1, urlfifo_push_item(1, "first",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-    cut_assert_equal_size(2, urlfifo_push_item(11, "second",
-                                               NULL, NULL, SIZE_MAX, NULL,
-                                               NULL, NULL));
-
-    urlfifo_item_id_t iter = urlfifo_find_item_begin();
-
-    cut_assert_null(urlfifo_find_next_item_by_url(&iter, default_url));
+    cut_assert_false(queue->full());
 }
 
 }

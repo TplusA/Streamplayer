@@ -32,6 +32,8 @@
 #include "messages.h"
 #include "messages_dbus.h"
 
+using FifoType = PlayQueue::Queue<PlayQueue::Item>;
+
 static void enter_urlfifo_handler(GDBusMethodInvocation *invocation)
 {
     static const char iface_name[] = "de.tahifi.Streamplayer.URLFIFO";
@@ -132,31 +134,46 @@ static gboolean playback_set_speed(tdbussplayPlayback *object,
 
 static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
-                           gint16 keep_first_n_entries)
+                           gint16 keep_first_n_entries,
+                           FifoType *url_fifo)
 {
     enter_urlfifo_handler(invocation);
+
+    auto fifo_lock(url_fifo->lock());
 
     stream_id_t temp;
     const uint32_t current_id =
         streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
 
-    stream_id_t ids_removed[URLFIFO_MAX_LENGTH];
-    const size_t ids_removed_count =
-        (keep_first_n_entries >= 0)
-        ? urlfifo_clear(keep_first_n_entries, ids_removed)
-        : 0;
+    const auto items_removed = keep_first_n_entries >= 0
+        ? url_fifo->clear(keep_first_n_entries)
+        : std::vector<std::unique_ptr<PlayQueue::Item>>();
 
-    stream_id_t ids_in_fifo[URLFIFO_MAX_LENGTH];
-    const size_t ids_in_fifo_count = urlfifo_get_queued_ids(ids_in_fifo);
+    /*
+     * The "+ 1" is added to the array sizes to avoid C++ standard violation
+     * (empty arrays are not allowed).
+     */
+    stream_id_t ids_removed[items_removed.size() + 1];
+    stream_id_t ids_in_fifo[url_fifo->size() + 1];
 
-    G_STATIC_ASSERT(sizeof(stream_id_t) == 2);
+    size_t ids_count = 0;
+
+    for(const auto &item : items_removed)
+        ids_removed[ids_count++] = item->stream_id_;
+
+    ids_count = 0;
+
+    for(const auto &item : *url_fifo)
+        ids_in_fifo[ids_count++] = item->stream_id_;
+
+    static_assert(sizeof(stream_id_t) == 2, "Unexpected stream ID size");
 
     GVariant *const queued_ids =
         g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_in_fifo,
-                                  ids_in_fifo_count, sizeof(ids_in_fifo[0]));
+                                  ids_count, sizeof(ids_in_fifo[0]));
     GVariant *const removed_ids =
         g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_removed,
-                                  ids_removed_count, sizeof(ids_removed[0]));
+                                  items_removed.size(), sizeof(ids_removed[0]));
 
     tdbus_splay_urlfifo_complete_clear(object, invocation,
                                        current_id, queued_ids, removed_ids);
@@ -165,7 +182,8 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
 }
 
 static gboolean fifo_next(tdbussplayURLFIFO *object,
-                          GDBusMethodInvocation *invocation)
+                          GDBusMethodInvocation *invocation,
+                          FifoType *url_fifo)
 {
     enter_urlfifo_handler(invocation);
 
@@ -185,7 +203,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                           GVariant *stream_key,
                           gint64 start_position, const gchar *start_units,
                           gint64 stop_position, const gchar *stop_units,
-                          gint16 keep_first_n_entries)
+                          gint16 keep_first_n_entries,
+                          FifoType *url_fifo)
 {
     enter_urlfifo_handler(invocation);
 
@@ -199,7 +218,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
     const bool failed =
-        !streamer_push_item(stream_id, stream_key, stream_url, keep);
+        !streamer_push_item(stream_id, std::move(GVariantWrapper(stream_key)),
+                            stream_url, keep);
 
     const gboolean is_playing = (keep_first_n_entries == -2)
         ? streamer_next(true, NULL, NULL) == PLAY_STATUS_PLAYING
@@ -207,7 +227,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
 
-    msg_vinfo(MESSAGE_LEVEL_DEBUG, "Have %zu FIFO entries", urlfifo_get_size());
+    auto fifo_lock(url_fifo->lock());
+    msg_vinfo(MESSAGE_LEVEL_DEBUG, "Have %zu FIFO entries", url_fifo->size());
 
     return TRUE;
 }
@@ -252,8 +273,10 @@ bool dbus_handle_error(GError **error)
     return false;
 }
 
-struct dbus_data
+struct DBusData
 {
+    FifoType *url_fifo;
+
     guint owner_id;
     int acquired;
     tdbussplayPlayback *playback_iface;
@@ -268,8 +291,6 @@ struct dbus_data
     tdbusdebugLoggingConfig *debug_logging_config_proxy;
 };
 
-static struct dbus_data dbus_data;
-
 static void try_export_iface(GDBusConnection *connection,
                              GDBusInterfaceSkeleton *iface)
 {
@@ -283,7 +304,7 @@ static void try_export_iface(GDBusConnection *connection,
 static void bus_acquired(GDBusConnection *connection,
                          const gchar *name, gpointer user_data)
 {
-    auto *data = static_cast<struct dbus_data *>(user_data);
+    auto *data = static_cast<struct DBusData *>(user_data);
 
     data->playback_iface = tdbus_splay_playback_skeleton_new();
     data->urlfifo_iface = tdbus_splay_urlfifo_skeleton_new();
@@ -302,11 +323,11 @@ static void bus_acquired(GDBusConnection *connection,
                      G_CALLBACK(playback_set_speed), NULL);
 
     g_signal_connect(data->urlfifo_iface, "handle-clear",
-                     G_CALLBACK(fifo_clear), NULL);
+                     G_CALLBACK(fifo_clear), data->url_fifo);
     g_signal_connect(data->urlfifo_iface, "handle-next",
-                     G_CALLBACK(fifo_next), NULL);
+                     G_CALLBACK(fifo_next), data->url_fifo);
     g_signal_connect(data->urlfifo_iface, "handle-push",
-                     G_CALLBACK(fifo_push), NULL);
+                     G_CALLBACK(fifo_push), data->url_fifo);
 
     g_signal_connect(data->audiopath_player_iface, "handle-activate",
                      G_CALLBACK(audiopath_player_activate), NULL);
@@ -326,14 +347,14 @@ static void bus_acquired(GDBusConnection *connection,
 static void created_config_proxy(GObject *source_object, GAsyncResult *res,
                                  gpointer user_data)
 {
-    auto *data = static_cast<struct dbus_data *>(user_data);
+    auto *data = static_cast<struct DBusData *>(user_data);
     GError *error = NULL;
 
     data->debug_logging_config_proxy =
         tdbus_debug_logging_config_proxy_new_finish(res, &error);
 
     if(dbus_handle_error(&error))
-        g_signal_connect(dbus_data.debug_logging_config_proxy, "g-signal",
+        g_signal_connect(data->debug_logging_config_proxy, "g-signal",
                          G_CALLBACK(msg_dbus_handle_global_debug_level_changed),
                          NULL);
 }
@@ -341,7 +362,7 @@ static void created_config_proxy(GObject *source_object, GAsyncResult *res,
 static void name_acquired(GDBusConnection *connection,
                           const gchar *name, gpointer user_data)
 {
-    auto *data = static_cast<struct dbus_data *>(user_data);
+    auto *data = static_cast<struct DBusData *>(user_data);
 
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" acquired", name);
     data->acquired = 1;
@@ -374,7 +395,7 @@ static void name_acquired(GDBusConnection *connection,
 static void name_lost(GDBusConnection *connection,
                       const gchar *name, gpointer user_data)
 {
-    auto *data = static_cast<struct dbus_data *>(user_data);
+    auto *data = static_cast<struct DBusData *>(user_data);
 
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" lost", name);
     data->acquired = -1;
@@ -385,7 +406,10 @@ static void destroy_notification(gpointer data)
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Bus destroyed.");
 }
 
-int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
+static struct DBusData dbus_data;
+
+int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
+               PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     memset(&dbus_data, 0, sizeof(dbus_data));
 
@@ -394,6 +418,7 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
 
     static const char bus_name[] = "de.tahifi.Streamplayer";
 
+    dbus_data.url_fifo = &url_fifo;
     dbus_data.owner_id =
         g_bus_own_name(bus_type, bus_name, G_BUS_NAME_OWNER_FLAGS_NONE,
                        bus_acquired, name_acquired, name_lost, &dbus_data,

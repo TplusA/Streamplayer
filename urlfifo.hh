@@ -19,11 +19,10 @@
 #ifndef URLFIFO_HH
 #define URLFIFO_HH
 
-#include <unistd.h>
-#include <stdbool.h>
-
-#include "streamtime.hh"
-#include "stream_id.h"
+#include <deque>
+#include <vector>
+#include <mutex>
+#include <memory>
 
 /*!
  * \addtogroup urlfifo URL FIFO
@@ -49,307 +48,206 @@
  */
 /*!@{*/
 
-#define URLFIFO_MAX_LENGTH 8U
+namespace PlayQueue
+{
 
 /*!
- * Opaque identifier for items in the URL FIFO.
+ * Class template for a FIFO of items to play.
+ *
+ * \note
+ *     The queue's lock must be acquired before calling any of its methods.
  */
-typedef size_t urlfifo_item_id_t;
-
-struct urlfifo_item_data_ops
+template <typename T>
+class Queue
 {
-    void (*const data_fail)(void *data, void *user_data);
-    void (*const data_free)(void **data);
-};
+  private:
+    const size_t max_number_of_items_;
 
-enum urlfifo_fail_state
-{
-    URLFIFO_FAIL_STATE_NOT_FAILED,
-    URLFIFO_FAIL_STATE_FAILURE_DETECTED,
-};
+    std::deque<std::unique_ptr<T>> queue_;
+    std::recursive_mutex lock_;
 
-enum urlfifo_item_state
-{
-    URLFIFO_ITEM_STATE_INVALID,
-    URLFIFO_ITEM_STATE_IN_QUEUE,
+  public:
+    Queue(const Queue &) = delete;
+    Queue &operator=(const Queue &) = delete;
 
-    URLFIFO_ITEM_STATE_ABOUT_TO_ACTIVATE,
-    URLFIFO_ITEM_STATE_ACTIVE,
-    URLFIFO_ITEM_STATE_ABOUT_TO_PHASE_OUT,
-    URLFIFO_ITEM_STATE_ABOUT_TO_BE_SKIPPED,
-};
-
-/*!
- * URL FIFO item data.
- */
-struct urlfifo_item
-{
-    enum urlfifo_item_state state;
-
-    stream_id_t id;
-    char *url;
-    struct streamtime start_time;
-    struct streamtime end_time;
-
-    enum urlfifo_fail_state fail_state;
+    explicit Queue(size_t max_number_of_items = 8):
+        max_number_of_items_(max_number_of_items)
+    {}
 
     /*!
-     * Pointer to any extra data for this item.
+     * Lock access to the URL FIFO.
+     */
+    std::unique_lock<std::recursive_mutex> lock()
+    {
+        return std::unique_lock<std::recursive_mutex>(lock_);
+    }
+
+    typename std::deque<std::unique_ptr<T>>::const_iterator begin() const { return queue_.begin(); }
+    typename std::deque<std::unique_ptr<T>>::const_iterator end() const   { return queue_.end(); }
+
+    /*!
+     * Return the number of items in the URL FIFO.
+     */
+    size_t size() const { return queue_.size(); }
+
+    /*!
+     * Whether or not the URL FIFO is empty.
+     */
+    bool empty() const { return queue_.empty(); }
+
+    /*!
+     * Whether or not the FIFO is full.
+     */
+    bool full() const { return size() >= max_number_of_items_; }
+
+    /*!
+     * Append new item to URL FIFO.
      *
-     * This is a \c void pointer to avoid strong coupling with GStreamer, GLib,
-     * or anything like that.
+     * \param item
+     *     The Item to add to the URL FIFO.
+     * \param keep_first_n
+     *     The number of items to keep untouched at top of the FIFO. If set to
+     *     0, then the whole FIFO will be cleared before adding the new item.
+     *     If set to \c SIZE_MAX, then no existing items will be removed.
+     *
+     * \returns
+     *     The number of items in the FIFO after inserting the new one, or 0
+     *     in case the URL FIFO was full, even after considering \p keep_first_n.
+     *     In the latter case, no new item is created and the URL FIFO remains
+     *     untouched.
      */
-    void *data;
+    size_t push(std::unique_ptr<T> item, size_t keep_first_n)
+    {
+        while(keep_first_n < size())
+            queue_.pop_back();
+
+        if(full())
+            return 0;
+
+        queue_.emplace_back(std::move(item));
+
+        return size();
+    }
 
     /*!
-     * Operations on #urlfifo_item::data.
+     * Remove first item from URL FIFO and return it.
+     *
+     * \param[out] remaining
+     *     The number of items remaining in the FIFO after removing the head
+     *     element, if any.
+     *
+     * \returns
+     *     The first item in the FIFO, or \c nullptr in case the URL FIFO was
+     *     empty.
      */
-    const struct urlfifo_item_data_ops *data_ops;
+    std::unique_ptr<T> pop(size_t &remaining)
+    {
+        if(empty())
+        {
+            remaining = 0;
+            return nullptr;
+        }
+
+        auto result = std::move(queue_.front());
+
+        queue_.pop_front();
+        remaining = size();
+
+        return result;
+    }
+
+    /*!
+     * Remove first item from URL FIFO and return it.
+     *
+     * Simplified version for callers not interested in number of remaining
+     * items.
+     */
+    std::unique_ptr<T> pop()
+    {
+        size_t dummy;
+        return pop(dummy);
+    }
+
+    /*!
+     * Remove first item from URL FIFO, assign to destination if not empty.
+     */
+    bool pop(std::unique_ptr<T> &dest)
+    {
+        if(empty())
+            return false;
+
+        dest = std::move(queue_.front());
+        queue_.pop_front();
+
+        return true;
+    }
+
+    /*!
+     * Clear URL FIFO, keep number of items at top untouched.
+     *
+     * This is a bit like a pop operation, but for an implicitly specified
+     * amount of items and for item at the back of the FIFO.
+     *
+     * \param keep_first_n
+     *     The number of items to keep untouched. If set to 0, then
+     *     the whole FIFO will be cleared.
+     *
+     * \returns
+     *     The items removed from the FIFO.
+     */
+    std::vector<std::unique_ptr<T>> clear(size_t keep_first_n)
+    {
+        std::vector<std::unique_ptr<T>> result;
+
+        while(keep_first_n < size())
+        {
+            result.emplace_back(std::move(queue_.back()));
+            queue_.pop_back();
+        }
+
+        return result;
+    }
+
+    /*!
+     * Return raw pointer to first item in URL FIFO.
+     *
+     * The item will still be owned by the URL FIFO.
+     */
+    T *peek()
+    {
+        return empty() ? nullptr : queue_.front().get();
+    }
+
+    const T *peek() const
+    {
+        return const_cast<Queue<T> *>(this)->peek();
+    }
+
+    /*!
+     * Return raw pointer to any item in URL FIFO.
+     *
+     * The item will still be owned by the URL FIFO.
+     */
+    T *peek(size_t pos)
+    {
+        try
+        {
+            return queue_.at(pos).get();
+        }
+        catch(const std::out_of_range &e)
+        {
+            return nullptr;
+        }
+    }
+
+    const T *peek(size_t pos) const
+    {
+        return const_cast<Queue<T> *>(this)->peek(pos);
+    }
+
 };
 
-/*!
- * Lock access to the URL FIFO.
- */
-void urlfifo_lock(void);
-
-/*!
- * Unlock access to the URL FIFO.
- */
-void urlfifo_unlock(void);
-
-/*!
- * Clear URL FIFO, keep number of item on top untouched.
- *
- * The #urlfifo_item_data_ops::data_free() function is called for each item
- * removed from the FIFO.
- *
- * \param keep_first_n
- *     The number of items to keep untouched. If set to 0, then
- *     the whole FIFO will be cleared.
- *
- * \param[out] ids_removed
- *     Array with at least #URLFIFO_MAX_LENGTH entries; may be \c NULL. The IDs
- *     of items removed from the FIFO are returned here.
- *
- * \returns
- *     The number of items removed from the FIFO, corresponding to the number
- *     of items returned in \p ids_removed.
- */
-size_t urlfifo_clear(size_t keep_first_n, stream_id_t *ids_removed);
-
-/*!
- * Append new item to URL FIFO.
- *
- * \param external_id Any ID to be associated with the item. The ID is assigned
- *     by external processes and not assumed to be a true ID; therefore, it is
- *     not used internally for anything except passing it around.
- * \param url The stream URL to play. This parameter may not be \c NULL.
- * \param start, stop The start and stop position of the stretch in a stream to
- *     be played. These may be \c NULL to indicate "natural start of stream"
- *     and "natural end of stream", respectively. A #streamtime with type
- *     #STREAMTIME_TYPE_END_OF_STREAM has the same meaning ("end" referes to
- *     either end, so it means start of stream in case of the \p start
- *     parameter).
- * \param keep_first_n The number of items to keep untouched. If set to 0, then
- *     the whole FIFO will be cleared before adding the new item. If set to
- *     \c SIZE_MAX, then no existing items will be removed.
- * \param item_id Opaque identifier of the newly added item. If this function
- *     fails to insert a new item, then the memory pointed to remains
- *     unchanged. This parameter may be \c NULL in case the caller is not
- *     interested in the identifier.
- * \param data Initial value of item data.
- * \param ops Operations on data. May be \c NULL.
- *
- * \returns The number of items in the FIFO after inserting the new one, or 0
- *     in case the URL FIFO was full, even after considering \p keep_first_n.
- *     In the latter case, no new item is created and the URL FIFO remains
- *     untouched.
- */
-size_t urlfifo_push_item(stream_id_t external_id, const char *url,
-                         const struct streamtime *start,
-                         const struct streamtime *stop,
-                         size_t keep_first_n, urlfifo_item_id_t *item_id,
-                         void *data, const struct urlfifo_item_data_ops *ops);
-
-/*!
- * Remove first item in URL FIFO and return a copy in \p dest.
- *
- * Note that the semantics of this function is that of a move operation. That
- * is, the popped item remains valid, but the new owner is the caller of this
- * function. Consequently, the #urlfifo_item_data_ops::data_free() function is
- * not called for the item returned by this function. Use #urlfifo_free_item()
- * or manually call your \c data_free() function to avoid resource leaks.
- *
- * The #urlfifo_item_data_ops::data_free() function is called for the
- * destination item in case \p free_dest is \c true. Note that in this case,
- * the object that \p dest points to must have been initialized before.
- *
- * \param dest Where to write a copy of the item. If \c NULL, then the item is
- *     dropped from the URL FIFO. In case of error, the memory pointed to by
- *     \p dest remains untouched.
- * \param free_dest If set to \c true, then call #urlfifo_free_item() for \p
- *     dest iff the URL FIFO is not empty when this function is called (i.e.,
- *     if the pop operation succeeds). This parameter must be \c false if
- *     \p dest is \c NULL.
- *
- * \returns The number of items remaining in the FIFO after removing the new
- *     one, or -1 in case the URL FIFO was empty.
- */
-ssize_t urlfifo_pop_item(struct urlfifo_item *dest, bool free_dest);
-
-/*!
- * Return first item in URL FIFO if valid.
- *
- * \returns Pointer to item, or NULL if URL FIFO is empty.
- */
-struct urlfifo_item *urlfifo_peek(void);
-
-/*!
- * Whether or not a given item is valid.
- *
- * Use this function instead of accessing the #urlfifo_item structure directly.
- */
-bool urlfifo_is_item_valid(const struct urlfifo_item *item);
-
-/*!
- * Set item state if not invalid.
- *
- * Any attempts to change state of invalid items are ignored.
- *
- * \param item
- *     Item whose state shall be changed.
- *
- * \param state
- *     The new state the \p item shall assume. It is not permitted to pass
- *     #URLFIFO_ITEM_STATE_INVALID.
- */
-void urlfifo_set_item_state(struct urlfifo_item *item,
-                            enum urlfifo_item_state state);
-
-/*!
- * Convert numeric item state to printable string for diagnostic purposes.
- */
-const char *urlfifo_state_name(const enum urlfifo_item_state state);
-
-/*!
- * Set failure.
- */
-bool urlfifo_fail_item(struct urlfifo_item *item, void *user_data);
-
-/*!
- * Free item data.
- */
-void urlfifo_free_item(struct urlfifo_item *item);
-
-/*!
- * Retrieve item stored in URL FIFO.
- *
- * This function returns a pointer to the stored data inside the FIFO.
- *
- * \param item_id The identifier of the stored item as returned by
- *     #urlfifo_push_item().
- *
- * \returns A pointer to the stored data.
- *
- * \note The URL FIFO must be locked using #urlfifo_lock() before this function
- *     can be called safely. If the locking is omitted, then the returned
- *     pointer may point to invalid data in the instant this function is
- *     returning.
- */
-const struct urlfifo_item *urlfifo_unlocked_peek(urlfifo_item_id_t item_id);
-
-/*!
- * Start searching for item by given URL.
- *
- * This function must be called before starting any search.
- *
- * \returns
- *     An item ID for use with #urlfifo_find_next_item_by_url(). This ID
- *     remains valid as long as the URL FIFO lock is held.
- *
- * \attention
- *     This function must be called with the URL FIFO lock held, i.e.,
- *     #urlfifo_lock() must be called before calling this function.
- */
-urlfifo_item_id_t urlfifo_find_item_begin(void);
-
-/*!
- * Return next item containing the given URL.
- *
- * This function may be called successively to iterate over all FIFO items
- * whose stream URL match the URL passed in the \p url parameter. In case there
- * are multiple matching items in the FIFO, they are reported in the order they
- * have been inserted into the FIFO.
- *
- * There is no need for cleaning up anything after the search other than
- * releasing the URL FIFO lock.
- *
- * \param iter
- *     Pointer to an item ID as returned by #urlfifo_find_item_begin().
- *
- * \param url
- *     The URL to be used as search key.
- *
- * \returns
- *     A pointer to an item with matching URL, or \c NULL in case there are no
- *     further items in the FIFO matching the given URL. In the latter case, a
- *     call of #urlfifo_find_item_begin() is required to restart the search,
- *     even if the first call of #urlfifo_find_next_item_by_url() failed
- *     already.
- *
- * \attention
- *     This function must be called with the URL FIFO lock held, i.e.,
- *     #urlfifo_lock() must be called before calling this function.
- *
- * \see #urlfifo_lock(), #urlfifo_unlock(), #urlfifo_find_item_begin().
- */
-struct urlfifo_item *urlfifo_find_next_item_by_url(urlfifo_item_id_t *iter,
-                                                   const char *url);
-
-/*!
- * Return the number of items in the URL FIFO.
- */
-size_t urlfifo_get_size(void);
-
-/*!
- * Get IDs of items queued in the URL FIFO.
- *
- * \param ids_in_fifo
- *     Array with at least #URLFIFO_MAX_LENGTH entries. The IDs of the items
- *     queued in the FIFO are returned here. If \c NULL, then this function is
- *     equivalent to #urlfifo_get_size().
- *
- * \returns
- *     The number of items in the FIFO, corresponding to the number of items
- *     returned in \p ids_in_fifo.
- */
-size_t urlfifo_get_queued_ids(stream_id_t *ids_in_fifo);
-
-/*!
- * Whether or not the FIFO is empty.
- */
-bool urlfifo_is_empty(void);
-
-/*!
- * Whether or not the FIFO is full.
- */
-bool urlfifo_is_full(void);
-
-/*!
- * Initialization for unit tests.
- *
- * There is static data inside the URL FIFO implementation to simplify the
- * interface and avoid needless dynamic memory allocation. This function
- * emulates the static initialization usually done by the C startup code.
- *
- * \note Calling this function is not required for production code.
- */
-void urlfifo_setup(void);
-
-/*!
- * Shutdown for unit tests.
- */
-void urlfifo_shutdown(void);
+}
 
 /*!@}*/
 

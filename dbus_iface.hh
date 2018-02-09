@@ -19,10 +19,13 @@
 #ifndef DBUS_IFACE_HH
 #define DBUS_IFACE_HH
 
-#include <stdbool.h>
 #include <glib.h>
 
-int dbus_setup(GMainLoop *loop, bool connect_to_session_bus);
+#include "urlfifo.hh"
+#include "playitem.hh"
+
+int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
+               PlayQueue::Queue<PlayQueue::Item> &url_fifo);
 void dbus_shutdown(GMainLoop *loop);
 
 #endif /* !DBUS_IFACE_HH */

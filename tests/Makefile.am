@@ -36,12 +36,24 @@ AM_CXXFLAGS = $(CXXWARNINGS)
 
 LIBS += $(CPPCUTTER_LIBS)
 
-check_LTLIBRARIES = test_urlfifo.la
+check_LTLIBRARIES = test_urlfifo.la test_playitem.la
 
 test_urlfifo_la_SOURCES = test_urlfifo.cc
 test_urlfifo_la_LIBADD = ../liburlfifo.la
 test_urlfifo_la_CFLAGS = $(AM_CFLAGS)
 test_urlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
+
+test_playitem_la_SOURCES = \
+    test_playitem.cc \
+    mock_messages.hh mock_messages.cc \
+    mock_expectation.hh
+test_playitem_la_LIBADD = \
+    ../liburlfifo.la \
+    ../libgvariantwrapper.la \
+    $(STREAMPLAYER_DEPENDENCIES_LIBS)
+test_playitem_la_CPPFLAGS = $(AM_CPPFLAGS) $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
+test_playitem_la_CFLAGS = $(AM_CFLAGS)
+test_playitem_la_CXXFLAGS = $(AM_CXXFLAGS)
 
 CLEANFILES = test_report.xml test_report_junit.xml valgrind.xml
 

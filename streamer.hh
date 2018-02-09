@@ -19,9 +19,8 @@
 #ifndef STREAMER_HH
 #define STREAMER_HH
 
-#include <stdbool.h>
-
-#include "stream_id.h"
+#include "urlfifo.hh"
+#include "playitem.hh"
 
 enum PlayStatus
 {
@@ -30,22 +29,23 @@ enum PlayStatus
     PLAY_STATUS_PAUSED,
 };
 
-int streamer_setup(GMainLoop *loop, guint soup_http_block_size);
+int streamer_setup(GMainLoop *loop, guint soup_http_block_size,
+                   PlayQueue::Queue<PlayQueue::Item> &url_fifo);
 void streamer_shutdown(GMainLoop *loop);
 
-void streamer_activate(void);
-void streamer_deactivate(void);
-bool streamer_start(void);
-bool streamer_stop(void);
-bool streamer_pause(void);
+void streamer_activate();
+void streamer_deactivate();
+bool streamer_start();
+bool streamer_stop();
+bool streamer_pause();
 bool streamer_seek(int64_t position, const char *units);
 bool streamer_fast_winding(double factor);
-bool streamer_fast_winding_stop(void);
+bool streamer_fast_winding_stop();
 enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
                               uint32_t *out_skipped_id, uint32_t *out_next_id);
 bool streamer_is_playing(void);
 bool streamer_get_current_stream_id(stream_id_t *id);
-bool streamer_push_item(stream_id_t stream_id, GVariant *stream_key,
+bool streamer_push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                         const char *stream_url, size_t keep_items);
 
 #endif /* !STREAMER_HH */

@@ -34,18 +34,22 @@ streamplayer_SOURCES = \
     streamplayer.cc messages.c messages.h messages_glib.c messages_glib.h \
     messages_dbus.c messages_dbus.h \
     dbus_iface.cc dbus_iface.hh dbus_iface_deep.hh \
-    streamtime.hh streamer.cc streamer.hh stream_id.h stream_id.hh \
+    streamer.cc streamer.hh stream_id.h stream_id.hh \
+    urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     os.c os.h
 
 AM_CFLAGS = $(CWARNINGS)
 
 AM_CPPFLAGS = $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
 
-noinst_LTLIBRARIES = libstreamplayer_dbus.la liburlfifo.la
+noinst_LTLIBRARIES = \
+    libstreamplayer_dbus.la liburlfifo.la libgvariantwrapper.la
 
 streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) $(noinst_LTLIBRARIES)
 
-liburlfifo_la_SOURCES = urlfifo.cc urlfifo.hh
+liburlfifo_la_SOURCES = playitem.cc playitem.hh streamdata.hh urlfifo.hh
+
+libgvariantwrapper_la_SOURCES = gvariantwrapper.hh gvariantwrapper.cc
 
 nodist_libstreamplayer_dbus_la_SOURCES = \
     streamplayer_dbus.c streamplayer_dbus.h \
