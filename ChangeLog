@@ -1,3 +1,12 @@
+2018-02-20  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 3.7 released.
+
+	* Performance: Stuttering audio in conjunction with big cover art data
+	  has been fixed.
+
+	* Performance: Improve seek performance by reducing accuracy.
+
 2017-08-31  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 3.6 released.
@@ -227,4 +236,4 @@
 	* First release for testing.
 
 
-Copyright 2015, 2016, 2017 T+A elektroakustik GmbH & Co. KG
+Copyright 2015, 2016, 2017, 2018 T+A elektroakustik GmbH & Co. KG
