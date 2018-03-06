@@ -1,4 +1,4 @@
-dnl Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+dnl Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
 dnl
 dnl This file is part of T+A Streamplayer.
 dnl
@@ -109,6 +109,7 @@ AC_SUBST([DH_SHLIBDEPS_ARGS])
 
 AM_CONDITIONAL([WITH_CUTTER], [test "x$ac_cv_use_cutter" = "xyes"])
 AM_CONDITIONAL([WITH_VALGRIND], [test "x$enable_valgrind" = "xyes"])
+AM_CONDITIONAL([WITH_MARKDOWN], [test "x$ac_cv_prog_MARKDOWN" != "x"])
 AM_CONDITIONAL([CAN_BUILD_DEBIAN_PACKAGE], [test "x$ac_cv_prog_DPKG_BUILDPACKAGE" != x && test "x$DEBIAN_ARCHITECTURE_NAME" != x])
 
 AC_CONFIG_FILES([Makefile tests/Makefile dist/Makefile Doxyfile])
