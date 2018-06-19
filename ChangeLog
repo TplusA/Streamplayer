@@ -1,3 +1,10 @@
+2018-06-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 4.5 released.
+
+	* Audio sources: Adapted to changed D-Bus interfaces required for
+	  Roon certification.
+
 2018-03-06  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 4.4 released.
