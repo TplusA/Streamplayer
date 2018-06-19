@@ -213,7 +213,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 }
 
 static gboolean audiopath_player_activate(tdbusaupathPlayer *object,
-                                          GDBusMethodInvocation *invocation)
+                                          GDBusMethodInvocation *invocation,
+                                          GVariant *request_data)
 {
     enter_audiopath_player_handler(invocation);
 
@@ -224,7 +225,8 @@ static gboolean audiopath_player_activate(tdbusaupathPlayer *object,
 }
 
 static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
-                                            GDBusMethodInvocation *invocation)
+                                            GDBusMethodInvocation *invocation,
+                                            GVariant *request_data)
 {
     enter_audiopath_player_handler(invocation);
 
