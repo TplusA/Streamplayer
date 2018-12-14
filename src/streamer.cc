@@ -32,58 +32,58 @@
 #include "dbus_iface_deep.hh"
 #include "messages.h"
 
-enum stopped_reason
+enum class StoppedReason
 {
     /*! Reason not known. Should be used very rarely, if ever. */
-    STOPPED_REASON_UNKNOWN,
+    UNKNOWN,
 
     /*! Cannot play because URL FIFO is empty. */
-    STOPPED_REASON_QUEUE_EMPTY,
+    QUEUE_EMPTY,
 
     /*! Cannot stop because the player is already stopped. */
-    STOPPED_REASON_ALREADY_STOPPED,
+    ALREADY_STOPPED,
 
     /*! I/O error on physical medium (e.g., read error on some USB drive). */
-    STOPPED_REASON_PHYSICAL_MEDIA_IO,
+    PHYSICAL_MEDIA_IO,
 
     /*! I/O error on the network (e.g., broken network connection). */
-    STOPPED_REASON_NET_IO,
+    NET_IO,
 
     /*! Have no URL. */
-    STOPPED_REASON_URL_MISSING,
+    URL_MISSING,
 
     /*! Network protocol error. */
-    STOPPED_REASON_PROTOCOL,
+    PROTOCOL,
 
     /*! Authentication with some external system has failed. */
-    STOPPED_REASON_AUTHENTICATION,
+    AUTHENTICATION,
 
     /*! Resource does not exist. */
-    STOPPED_REASON_DOES_NOT_EXIST,
+    DOES_NOT_EXIST,
 
     /*! Resource has wrong type. */
-    STOPPED_REASON_WRONG_TYPE,
+    WRONG_TYPE,
 
     /*! Cannot access resource due to restricted permissions. */
-    STOPPED_REASON_PERMISSION_DENIED,
+    PERMISSION_DENIED,
 
     /*! Failed decoding stream because of a missing codec. */
-    STOPPED_REASON_MISSING_CODEC,
+    MISSING_CODEC,
 
     /*! Stream codec is known, but format wrong. */
-    STOPPED_REASON_WRONG_STREAM_FORMAT,
+    WRONG_STREAM_FORMAT,
 
     /*! Decoding failed. */
-    STOPPED_REASON_BROKEN_STREAM,
+    BROKEN_STREAM,
 
     /*! Decryption key missing. */
-    STOPPED_REASON_ENCRYPTED,
+    ENCRYPTED,
 
     /*! Cannot decrypt because this is not implemented/supported. */
-    STOPPED_REASON_DECRYPTION_NOT_SUPPORTED,
+    DECRYPTION_NOT_SUPPORTED,
 
     /*! Stable name for the highest-valued code. */
-    STOPPED_REASON_LAST_VALUE = STOPPED_REASON_DECRYPTION_NOT_SUPPORTED,
+    LAST_VALUE = DECRYPTION_NOT_SUPPORTED,
 };
 
 struct time_data
@@ -94,31 +94,31 @@ struct time_data
 
 struct FailureData
 {
-    enum stopped_reason reason;
+    StoppedReason reason;
     bool clear_fifo_on_error;
     bool report_on_stream_stop;
 
     explicit FailureData():
-        reason(STOPPED_REASON_UNKNOWN),
+        reason(StoppedReason::UNKNOWN),
         clear_fifo_on_error(false),
         report_on_stream_stop(false)
     {}
 
-    explicit FailureData(enum stopped_reason sreason):
+    explicit FailureData(StoppedReason sreason):
         reason(sreason),
         clear_fifo_on_error(false),
         report_on_stream_stop(false)
     {}
 
     explicit FailureData(bool report_on_stop):
-        reason(STOPPED_REASON_UNKNOWN),
+        reason(StoppedReason::UNKNOWN),
         clear_fifo_on_error(false),
         report_on_stream_stop(report_on_stop)
     {}
 
     void reset()
     {
-        reason = STOPPED_REASON_UNKNOWN;
+        reason = StoppedReason::UNKNOWN;
         clear_fifo_on_error = false;
         report_on_stream_stop = false;
     }
@@ -162,7 +162,7 @@ class StreamerData
 
     bool stream_has_just_started;
 
-    enum PlayStatus supposed_play_status;
+    Streamer::PlayStatus supposed_play_status;
 
   public:
     StreamerData(const StreamerData &) = delete;
@@ -183,7 +183,7 @@ class StreamerData
         is_tag_update_scheduled(false),
         next_allowed_tag_update_time(0),
         stream_has_just_started(false),
-        supposed_play_status(PLAY_STATUS_STOPPED)
+        supposed_play_status(Streamer::PlayStatus::STOPPED)
     {}
 
     std::unique_lock<std::recursive_mutex> lock() const
@@ -252,7 +252,7 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
 static void emit_stopped(tdbussplayPlayback *playback_iface,
                          StreamerData &data)
 {
-    data.supposed_play_status = PLAY_STATUS_STOPPED;
+    data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
     if(playback_iface != nullptr)
         tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
@@ -262,9 +262,9 @@ static void emit_stopped(tdbussplayPlayback *playback_iface,
 static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
                                     StreamerData &data,
                                     const PlayQueue::Queue<PlayQueue::Item> &url_fifo,
-                                    enum stopped_reason reason)
+                                    StoppedReason reason)
 {
-    data.supposed_play_status = PLAY_STATUS_STOPPED;
+    data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
     if(playback_iface == nullptr)
         return;
@@ -273,7 +273,7 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
      * String IDs that can be used as a reason as to why the stream was
      * stopped.
      *
-     * Must be sorted according to values in #stopped_reason enumeration.
+     * Must be sorted according to values in #StoppedReason enumeration.
      */
     static const char *reasons[] =
     {
@@ -295,13 +295,13 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
         "data.nodecrypter",
     };
 
-    static_assert(G_N_ELEMENTS(reasons) == STOPPED_REASON_LAST_VALUE + 1U,
+    static_assert(G_N_ELEMENTS(reasons) == size_t(StoppedReason::LAST_VALUE) + 1U,
                   "Array size mismatch");
 
     if(data.current_stream == nullptr)
         tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
                                                      url_fifo.size() == 0,
-                                                     reasons[reason]);
+                                                     reasons[size_t(reason)]);
     else
     {
         const auto *const failed_stream = data.current_stream.get();
@@ -310,7 +310,7 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
                                                      failed_stream->stream_id_,
                                                      failed_stream->url_.c_str(),
                                                      url_fifo.size() == 0,
-                                                     reasons[reason]);
+                                                     reasons[size_t(reason)]);
     }
 }
 
@@ -392,7 +392,7 @@ static void do_stop_pipeline_and_recover_from_error(StreamerData &data,
      */
     rebuild_playbin(data, data_lock, context);
 
-    msg_info("Stop reason is %d", data.fail.reason);
+    msg_info("Stop reason is %d", int(data.fail.reason));
 
     if(data.fail.clear_fifo_on_error)
         url_fifo.clear(0);
@@ -421,8 +421,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-static void schedule_error_recovery(StreamerData &data,
-                                    enum stopped_reason reason)
+static void schedule_error_recovery(StreamerData &data, StoppedReason reason)
 {
     data.is_failing = true;
     data.fail.reason = reason;
@@ -538,13 +537,13 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
             return nullptr;
 
         msg_info("[%s] Cannot dequeue, URL FIFO is empty", context);
-        fdata.reason = STOPPED_REASON_QUEUE_EMPTY;
+        fdata.reason = StoppedReason::QUEUE_EMPTY;
     }
     else if(next->url_.empty())
     {
         msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
                   "[%s] Cannot dequeue, URL in item is empty", context);
-        fdata.reason = STOPPED_REASON_URL_MISSING;
+        fdata.reason = StoppedReason::URL_MISSING;
     }
     else
     {
@@ -1041,14 +1040,14 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
                                           url_fifo.full(), meta_data);
 }
 
-static enum stopped_reason core_error_to_stopped_reason(GstCoreError code,
-                                                        bool is_local_error)
+static StoppedReason core_error_to_stopped_reason(GstCoreError code,
+                                                  bool is_local_error)
 {
     switch(code)
     {
       case GST_CORE_ERROR_MISSING_PLUGIN:
       case GST_CORE_ERROR_DISABLED:
-        return STOPPED_REASON_MISSING_CODEC;
+        return StoppedReason::MISSING_CODEC;
 
       case GST_CORE_ERROR_FAILED:
       case GST_CORE_ERROR_TOO_LAZY:
@@ -1068,35 +1067,35 @@ static enum stopped_reason core_error_to_stopped_reason(GstCoreError code,
 
     BUG("Failed to convert GstCoreError code %d to reason code", code);
 
-    return STOPPED_REASON_UNKNOWN;
+    return StoppedReason::UNKNOWN;
 }
 
-static enum stopped_reason library_error_to_stopped_reason(GstLibraryError code,
-                                                           bool is_local_error)
+static StoppedReason library_error_to_stopped_reason(GstLibraryError code,
+                                                     bool is_local_error)
 {
     BUG("Failed to convert GstLibraryError code %d to reason code", code);
-    return STOPPED_REASON_UNKNOWN;
+    return StoppedReason::UNKNOWN;
 }
 
-static enum stopped_reason resource_error_to_stopped_reason(GstResourceError code,
-                                                            bool is_local_error)
+static StoppedReason resource_error_to_stopped_reason(GstResourceError code,
+                                                      bool is_local_error)
 {
     switch(code)
     {
       case GST_RESOURCE_ERROR_NOT_FOUND:
-        return STOPPED_REASON_DOES_NOT_EXIST;
+        return StoppedReason::DOES_NOT_EXIST;
 
       case GST_RESOURCE_ERROR_OPEN_READ:
         return is_local_error
-            ? STOPPED_REASON_PHYSICAL_MEDIA_IO
-            : STOPPED_REASON_NET_IO;
+            ? StoppedReason::PHYSICAL_MEDIA_IO
+            : StoppedReason::NET_IO;
 
       case GST_RESOURCE_ERROR_READ:
       case GST_RESOURCE_ERROR_SEEK:
-        return STOPPED_REASON_PROTOCOL;
+        return StoppedReason::PROTOCOL;
 
       case GST_RESOURCE_ERROR_NOT_AUTHORIZED:
-        return STOPPED_REASON_PERMISSION_DENIED;
+        return StoppedReason::PERMISSION_DENIED;
 
       case GST_RESOURCE_ERROR_FAILED:
       case GST_RESOURCE_ERROR_TOO_LAZY:
@@ -1114,34 +1113,34 @@ static enum stopped_reason resource_error_to_stopped_reason(GstResourceError cod
 
     BUG("Failed to convert GstResourceError code %d to reason code", code);
 
-    return STOPPED_REASON_UNKNOWN;
+    return StoppedReason::UNKNOWN;
 }
 
-static enum stopped_reason stream_error_to_stopped_reason(GstStreamError code,
-                                                          bool is_local_error)
+static StoppedReason stream_error_to_stopped_reason(GstStreamError code,
+                                                    bool is_local_error)
 {
     switch(code)
     {
       case GST_STREAM_ERROR_FAILED:
       case GST_STREAM_ERROR_TYPE_NOT_FOUND:
       case GST_STREAM_ERROR_WRONG_TYPE:
-        return STOPPED_REASON_WRONG_TYPE;
+        return StoppedReason::WRONG_TYPE;
 
       case GST_STREAM_ERROR_CODEC_NOT_FOUND:
-        return STOPPED_REASON_MISSING_CODEC;
+        return StoppedReason::MISSING_CODEC;
 
       case GST_STREAM_ERROR_DECODE:
       case GST_STREAM_ERROR_DEMUX:
-        return STOPPED_REASON_BROKEN_STREAM;
+        return StoppedReason::BROKEN_STREAM;
 
       case GST_STREAM_ERROR_FORMAT:
-        return STOPPED_REASON_WRONG_STREAM_FORMAT;
+        return StoppedReason::WRONG_STREAM_FORMAT;
 
       case GST_STREAM_ERROR_DECRYPT:
-        return STOPPED_REASON_DECRYPTION_NOT_SUPPORTED;
+        return StoppedReason::DECRYPTION_NOT_SUPPORTED;
 
       case GST_STREAM_ERROR_DECRYPT_NOKEY:
-        return STOPPED_REASON_ENCRYPTED;
+        return StoppedReason::ENCRYPTED;
 
       case GST_STREAM_ERROR_TOO_LAZY:
       case GST_STREAM_ERROR_NOT_IMPLEMENTED:
@@ -1153,11 +1152,10 @@ static enum stopped_reason stream_error_to_stopped_reason(GstStreamError code,
 
     BUG("Failed to convert GstStreamError code %d to reason code", code);
 
-    return STOPPED_REASON_UNKNOWN;
+    return StoppedReason::UNKNOWN;
 }
 
-static enum stopped_reason gerror_to_stopped_reason(GError *error,
-                                                    bool is_local_error)
+static StoppedReason gerror_to_stopped_reason(GError *error, bool is_local_error)
 {
     if(error->domain == GST_CORE_ERROR)
         return core_error_to_stopped_reason((GstCoreError)error->code,
@@ -1178,7 +1176,7 @@ static enum stopped_reason gerror_to_stopped_reason(GError *error,
     BUG("Unknown error domain %u for error code %d",
         error->domain, error->code);
 
-    return STOPPED_REASON_UNKNOWN;
+    return StoppedReason::UNKNOWN;
 }
 
 static bool determine_is_local_error_by_url(const PlayQueue::Item &item)
@@ -1264,7 +1262,8 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
         msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
         msg_error(0, LOG_ERR, "ERROR debug: %s", debug);
         msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
-                  fdata.reason, fdata.report_on_stream_stop ? "on stop" : "now");
+                  int(fdata.reason),
+                  fdata.report_on_stream_stop ? "on stop" : "now");
 
         if(failed_stream->fail())
             recover_from_error_now_or_later(data, fdata);
@@ -1812,7 +1811,7 @@ static bool do_stop(StreamerData &data, const char *context,
 {
     log_assert(data.pipeline != nullptr);
 
-    data.supposed_play_status = PLAY_STATUS_STOPPED;
+    data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
     const GstState state = (pending == GST_STATE_VOID_PENDING)
         ? GST_STATE(data.pipeline)
@@ -1904,8 +1903,8 @@ static bool do_set_speed(StreamerData &data, double factor)
 
 static StreamerData streamer_data;
 
-int streamer_setup(GMainLoop *loop, guint soup_http_block_size,
-                   PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
+                    PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
 
@@ -1928,7 +1927,7 @@ int streamer_setup(GMainLoop *loop, guint soup_http_block_size,
     return 0;
 }
 
-void streamer_shutdown(GMainLoop *loop)
+void Streamer::shutdown(GMainLoop *loop)
 {
     if(loop == nullptr)
         return;
@@ -1945,7 +1944,7 @@ void streamer_shutdown(GMainLoop *loop)
     streamer_data.current_stream.reset();
 }
 
-void streamer_activate()
+void Streamer::activate()
 {
     auto data_lock(streamer_data.lock());
 
@@ -1958,7 +1957,7 @@ void streamer_activate()
     }
 }
 
-void streamer_deactivate()
+void Streamer::deactivate()
 {
     static const char context[] = "deactivate";
 
@@ -1979,7 +1978,7 @@ void streamer_deactivate()
     }
 }
 
-bool streamer_start()
+bool Streamer::start()
 {
     auto data_lock(streamer_data.lock());
 
@@ -1993,7 +1992,7 @@ bool streamer_start()
 
     log_assert(streamer_data.pipeline != nullptr);
 
-    streamer_data.supposed_play_status = PLAY_STATUS_PLAYING;
+    streamer_data.supposed_play_status = Streamer::PlayStatus::PLAYING;
 
     GstState state = GST_STATE(streamer_data.pipeline);
     const GstState pending_state = GST_STATE_PENDING(streamer_data.pipeline);
@@ -2044,7 +2043,7 @@ bool streamer_start()
     return true;
 }
 
-bool streamer_stop()
+bool Streamer::stop()
 {
     auto data_lock(streamer_data.lock());
 
@@ -2071,7 +2070,7 @@ bool streamer_stop()
         auto fifo_lock(streamer_data.url_fifo_LOCK_ME->lock());
         emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
                                 *streamer_data.url_fifo_LOCK_ME,
-                                STOPPED_REASON_ALREADY_STOPPED);
+                                StoppedReason::ALREADY_STOPPED);
     }
 
     return retval;
@@ -2085,7 +2084,7 @@ bool streamer_stop()
  *     but playbin won't tell us. It is therefore not easy to determine if we
  *     should reconnect or really take the next URL when asked to.
  */
-bool streamer_pause()
+bool Streamer::pause()
 {
     auto data_lock(streamer_data.lock());
 
@@ -2100,7 +2099,7 @@ bool streamer_pause()
     msg_info("Pausing as requested");
     log_assert(streamer_data.pipeline != nullptr);
 
-    streamer_data.supposed_play_status = PLAY_STATUS_PAUSED;
+    streamer_data.supposed_play_status = Streamer::PlayStatus::PAUSED;
 
     const GstState state = GST_STATE(streamer_data.pipeline);
 
@@ -2153,7 +2152,7 @@ static int64_t compute_position_from_percentage(const int64_t percentage,
     return -1;
 }
 
-bool streamer_seek(int64_t position, const char *units)
+bool Streamer::seek(int64_t position, const char *units)
 {
     if(position < 0)
     {
@@ -2233,7 +2232,7 @@ bool streamer_seek(int64_t position, const char *units)
     return true;
 }
 
-bool streamer_fast_winding(double factor)
+bool Streamer::fast_winding(double factor)
 {
     msg_info("Setting playback speed to %f", factor);
 
@@ -2242,7 +2241,7 @@ bool streamer_fast_winding(double factor)
     return do_set_speed(streamer_data, factor);
 }
 
-bool streamer_fast_winding_stop()
+bool Streamer::fast_winding_stop()
 {
     msg_info("Playing at regular speed");
 
@@ -2251,15 +2250,15 @@ bool streamer_fast_winding_stop()
     return do_set_speed(streamer_data, 1.0);
 }
 
-enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
-                              uint32_t *out_skipped_id, uint32_t *out_next_id)
+Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
+                                    uint32_t &out_skipped_id, uint32_t &out_next_id)
 {
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
     {
         BUG("Next request while inactive");
-        return PLAY_STATUS_STOPPED;
+        return Streamer::PlayStatus::STOPPED;
     }
 
     static const char context[] = "skip to next";
@@ -2271,7 +2270,8 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
         streamer_data.current_stream.reset();
 
     const bool is_dequeuing_permitted =
-        (streamer_data.supposed_play_status != PLAY_STATUS_STOPPED || !skip_only_if_not_stopped);
+        (streamer_data.supposed_play_status != Streamer::PlayStatus::STOPPED ||
+         !skip_only_if_not_stopped);
     uint32_t skipped_id = streamer_data.current_stream != nullptr
         ? streamer_data.current_stream->stream_id_
         : UINT32_MAX;
@@ -2324,7 +2324,7 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
     }
 
     if(next_stream == nullptr)
-        streamer_data.supposed_play_status = PLAY_STATUS_STOPPED;
+        streamer_data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     else
     {
         GstState next_state = GST_STATE_READY;
@@ -2333,14 +2333,14 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
         {
             switch(streamer_data.supposed_play_status)
             {
-              case PLAY_STATUS_STOPPED:
+              case Streamer::PlayStatus::STOPPED:
                 break;
 
-              case PLAY_STATUS_PLAYING:
+              case Streamer::PlayStatus::PLAYING:
                 next_state = GST_STATE_PLAYING;
                 break;
 
-              case PLAY_STATUS_PAUSED:
+              case Streamer::PlayStatus::PAUSED:
                 next_state = GST_STATE_PAUSED;
                 break;
             }
@@ -2353,37 +2353,34 @@ enum PlayStatus streamer_next(bool skip_only_if_not_stopped,
         }
     }
 
-    if(out_skipped_id != nullptr)
-        *out_skipped_id = skipped_id;
-
-    if(out_next_id != nullptr)
-        *out_next_id = next_id;
+    out_skipped_id = skipped_id;
+    out_next_id = next_id;
 
     return streamer_data.supposed_play_status;
 }
 
-bool streamer_is_playing()
+bool Streamer::is_playing()
 {
     auto data_lock(streamer_data.lock());
     return GST_STATE(streamer_data.pipeline) == GST_STATE_PLAYING;
 }
 
-bool streamer_get_current_stream_id(stream_id_t *id)
+bool Streamer::get_current_stream_id(stream_id_t &id)
 {
     auto data_lock(streamer_data.lock());
 
     if(streamer_data.current_stream != nullptr &&
        !streamer_data.current_stream->url_.empty())
     {
-        *id = streamer_data.current_stream->stream_id_;
+        id = streamer_data.current_stream->stream_id_;
         return true;
     }
 
     return false;
 }
 
-bool streamer_push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-                        const char *stream_url, size_t keep_items)
+bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
+                         const char *stream_url, size_t keep_items)
 {
     auto data_lock(streamer_data.lock());
     bool is_active = streamer_data.is_player_activated;

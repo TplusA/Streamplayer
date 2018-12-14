@@ -211,12 +211,12 @@ int main(int argc, char *argv[])
 
     static PlayQueue::Queue<PlayQueue::Item> queue;
 
-    if(streamer_setup(globals.loop, soup_http_block_size, queue) < 0)
+    if(Streamer::setup(globals.loop, soup_http_block_size, queue) < 0)
         return EXIT_FAILURE;
 
     if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus, queue) < 0)
     {
-        streamer_shutdown(globals.loop);
+        Streamer::shutdown(globals.loop);
         return EXIT_FAILURE;
     }
 
@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Shutting down");
 
     dbus_shutdown(globals.loop);
-    streamer_shutdown(globals.loop);
+    Streamer::shutdown(globals.loop);
 
     g_main_loop_unref(globals.loop);
 

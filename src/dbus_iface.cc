@@ -67,7 +67,7 @@ static gboolean playback_start(tdbussplayPlayback *object,
     enter_playback_handler(invocation);
 
     tdbus_splay_playback_complete_start(object, invocation);
-    streamer_start();
+    Streamer::start();
 
     return TRUE;
 }
@@ -78,7 +78,7 @@ static gboolean playback_stop(tdbussplayPlayback *object,
     enter_playback_handler(invocation);
 
     tdbus_splay_playback_complete_stop(object, invocation);
-    streamer_stop();
+    Streamer::stop();
 
     return TRUE;
 }
@@ -89,7 +89,7 @@ static gboolean playback_pause(tdbussplayPlayback *object,
     enter_playback_handler(invocation);
 
     tdbus_splay_playback_complete_pause(object, invocation);
-    streamer_pause();
+    Streamer::pause();
 
     return TRUE;
 }
@@ -100,7 +100,7 @@ static gboolean playback_seek(tdbussplayPlayback *object,
 {
     enter_playback_handler(invocation);
 
-    if(streamer_seek(position, position_units))
+    if(Streamer::seek(position, position_units))
         tdbus_splay_playback_complete_seek(object, invocation);
     else
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
@@ -119,8 +119,8 @@ static gboolean playback_set_speed(tdbussplayPlayback *object,
     const bool success =
         (speed_factor < 0.0 ||
          (speed_factor > 0.0 && (speed_factor < 1.0 || speed_factor > 1.0)))
-        ? streamer_fast_winding(speed_factor)
-        : streamer_fast_winding_stop();
+        ? Streamer::fast_winding(speed_factor)
+        : Streamer::fast_winding_stop();
 
     if(success)
         tdbus_splay_playback_complete_set_speed(object, invocation);
@@ -143,7 +143,7 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
 
     stream_id_t temp;
     const uint32_t current_id =
-        streamer_get_current_stream_id(&temp) ? temp : UINT32_MAX;
+        Streamer::get_current_stream_id(temp) ? temp : UINT32_MAX;
 
     const auto items_removed = keep_first_n_entries >= 0
         ? url_fifo->clear(keep_first_n_entries)
@@ -189,7 +189,7 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
 
     uint32_t skipped_id;
     uint32_t next_id;
-    const enum PlayStatus play_status = streamer_next(false, &skipped_id, &next_id);
+    const auto play_status = Streamer::next(false, skipped_id, next_id);
 
     tdbus_splay_urlfifo_complete_next(object, invocation,
                                       skipped_id, next_id, (uint8_t)play_status);
@@ -218,12 +218,14 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
     const bool failed =
-        !streamer_push_item(stream_id, std::move(GVariantWrapper(stream_key)),
+        !Streamer::push_item(stream_id, std::move(GVariantWrapper(stream_key)),
                             stream_url, keep);
 
+    uint32_t dummy_skipped;
+    uint32_t dummy_next;
     const gboolean is_playing = (keep_first_n_entries == -2)
-        ? streamer_next(true, NULL, NULL) == PLAY_STATUS_PLAYING
-        : streamer_is_playing();
+        ? Streamer::next(true, dummy_skipped, dummy_next) == Streamer::PlayStatus::PLAYING
+        : Streamer::is_playing();
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
 
@@ -239,7 +241,7 @@ static gboolean audiopath_player_activate(tdbusaupathPlayer *object,
 {
     enter_audiopath_player_handler(invocation);
 
-    streamer_activate();
+    Streamer::activate();
     tdbus_aupath_player_complete_activate(object, invocation);
 
     return TRUE;
@@ -251,7 +253,7 @@ static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
 {
     enter_audiopath_player_handler(invocation);
 
-    streamer_deactivate();
+    Streamer::deactivate();
     tdbus_aupath_player_complete_deactivate(object, invocation);
 
     return TRUE;
