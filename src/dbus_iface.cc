@@ -80,7 +80,7 @@ static gboolean playback_stop(tdbussplayPlayback *object,
     enter_playback_handler(invocation);
 
     tdbus_splay_playback_complete_stop(object, invocation);
-    Streamer::stop();
+    Streamer::stop(reason);
 
     return TRUE;
 }
