@@ -75,7 +75,7 @@ static gboolean playback_start(tdbussplayPlayback *object,
 
 static gboolean playback_stop(tdbussplayPlayback *object,
                               GDBusMethodInvocation *invocation,
-                              gpointer user_data)
+                              const char *reason, gpointer user_data)
 {
     enter_playback_handler(invocation);
 
