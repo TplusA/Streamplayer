@@ -62,7 +62,8 @@ static void enter_audiopath_player_handler(GDBusMethodInvocation *invocation)
 }
 
 static gboolean playback_start(tdbussplayPlayback *object,
-                               GDBusMethodInvocation *invocation)
+                               GDBusMethodInvocation *invocation,
+                               gpointer user_data)
 {
     enter_playback_handler(invocation);
 
@@ -73,7 +74,8 @@ static gboolean playback_start(tdbussplayPlayback *object,
 }
 
 static gboolean playback_stop(tdbussplayPlayback *object,
-                              GDBusMethodInvocation *invocation)
+                              GDBusMethodInvocation *invocation,
+                              gpointer user_data)
 {
     enter_playback_handler(invocation);
 
@@ -84,7 +86,8 @@ static gboolean playback_stop(tdbussplayPlayback *object,
 }
 
 static gboolean playback_pause(tdbussplayPlayback *object,
-                               GDBusMethodInvocation *invocation)
+                               GDBusMethodInvocation *invocation,
+                               gpointer user_data)
 {
     enter_playback_handler(invocation);
 
@@ -96,7 +99,8 @@ static gboolean playback_pause(tdbussplayPlayback *object,
 
 static gboolean playback_seek(tdbussplayPlayback *object,
                               GDBusMethodInvocation *invocation,
-                              gint64 position, const gchar *position_units)
+                              gint64 position, const gchar *position_units,
+                              gpointer user_data)
 {
     enter_playback_handler(invocation);
 
@@ -112,7 +116,8 @@ static gboolean playback_seek(tdbussplayPlayback *object,
 
 static gboolean playback_set_speed(tdbussplayPlayback *object,
                                    GDBusMethodInvocation *invocation,
-                                   double speed_factor)
+                                   double speed_factor,
+                                   gpointer user_data)
 {
     enter_playback_handler(invocation);
 
@@ -237,7 +242,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 
 static gboolean audiopath_player_activate(tdbusaupathPlayer *object,
                                           GDBusMethodInvocation *invocation,
-                                          GVariant *request_data)
+                                          GVariant *request_data,
+                                          gpointer user_data)
 {
     enter_audiopath_player_handler(invocation);
 
@@ -249,7 +255,8 @@ static gboolean audiopath_player_activate(tdbusaupathPlayer *object,
 
 static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
                                             GDBusMethodInvocation *invocation,
-                                            GVariant *request_data)
+                                            GVariant *request_data,
+                                            gpointer user_data)
 {
     enter_audiopath_player_handler(invocation);
 
