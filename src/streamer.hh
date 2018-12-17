@@ -39,7 +39,7 @@ void shutdown(GMainLoop *loop);
 void activate();
 void deactivate();
 bool start();
-bool stop();
+bool stop(const char *reason);
 bool pause();
 bool seek(int64_t position, const char *units);
 bool fast_winding(double factor);

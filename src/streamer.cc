@@ -2043,19 +2043,19 @@ bool Streamer::start()
     return true;
 }
 
-bool Streamer::stop()
+bool Streamer::stop(const char *reason)
 {
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Stop request while inactive");
+        BUG("Stop request while inactive (%s)", reason);
         return false;
     }
 
     static const char context[] = "stop playing";
 
-    msg_info("Stopping as requested");
+    msg_info("Stopping as requested (%s)", reason);
 
     const GstState pending = GST_STATE_PENDING(streamer_data.pipeline);
     bool retval;
