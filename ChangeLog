@@ -1,3 +1,14 @@
+2018-12-17  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 4.6 released.
+
+	* Logging: Show the reason for stop commands to ease debugging of
+	  problems related to unexpected playback stops.
+
+	* Misc: Started porting to C++ to avoid killing velocity. There are
+	  some problematic parts ahead, and they are going to be easier to
+	  manage in C++.
+
 2018-06-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 4.5 released.
