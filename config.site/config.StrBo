@@ -1,8 +1,14 @@
 # vi:syntax=sh
 CFLAGS="-std=c11 -fstrict-aliasing $CFLAGS"
+CXXFLAGS="-std=c++11 -fstrict-aliasing $CXXFLAGS"
 
-CWARNINGS="-Wall -Waggregate-return -Wclobbered -Wsign-compare -Wuninitialized -Wunused-but-set-parameter -Wunused-function -Wundef -Wshadow -Winline -Wpointer-arith -Wfloat-equal -Wwrite-strings -Wstrict-aliasing -Wbad-function-cast -Wnested-externs -Wmissing-prototypes -Wstrict-prototypes -Wdouble-promotion"
-CRELAXEDWARNINGS="${CWARNINGS} -Wno-write-strings -Wno-unused-local-typedefs -Wno-bad-function-cast"
+COMMON_WARNINGS="-Wall -Wclobbered -Wsign-compare -Wuninitialized -Wunused-but-set-parameter -Wunused-function -Wundef -Wshadow -Wpointer-arith -Wfloat-equal -Wwrite-strings -Wstrict-aliasing -Wdouble-promotion"
+CWARNINGS="$COMMON_WARNINGS -Wbad-function-cast -Wnested-externs -Wmissing-prototypes -Wstrict-prototypes"
+CXXWARNINGS="$COMMON_WARNINGS -Wnon-virtual-dtor -Wstrict-null-sentinel -Woverloaded-virtual"
+CRELAXEDWARNINGS="$CWARNINGS -Wno-cast-qual -Wno-write-strings -Wno-unused-local-typedefs -Wno-bad-function-cast"
+CXXRELAXEDWARNINGS="$CXXWARNINGS -Wno-cast-qual"
+
+export CWARNINGS CXXWARNINGS CRELAXEDWARNINGS CXXRELAXEDWARNINGS
 
 if test "x$OECORE_TARGET_SYSROOT" != x
 then

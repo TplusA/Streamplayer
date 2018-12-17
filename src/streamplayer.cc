@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -30,9 +30,9 @@
 #include <glib-unix.h>
 #include <gst/gst.h>
 
-#include "streamer.h"
-#include "dbus_iface.h"
-#include "dbus_iface_deep.h"
+#include "streamer.hh"
+#include "dbus_iface.hh"
+#include "dbus_iface_deep.hh"
 #include "messages.h"
 #include "messages_glib.h"
 #include "versioninfo.h"
@@ -173,7 +173,7 @@ static int process_command_line(int argc, char *argv[],
 
 static gboolean signal_handler(gpointer user_data)
 {
-    g_main_loop_quit(user_data);
+    g_main_loop_quit(static_cast<GMainLoop *>(user_data));
     return G_SOURCE_REMOVE;
 }
 
@@ -209,12 +209,14 @@ int main(int argc, char *argv[])
 
     static const guint soup_http_block_size = 32U * 1024U;
 
-    if(streamer_setup(globals.loop, soup_http_block_size) < 0)
+    static PlayQueue::Queue<PlayQueue::Item> queue;
+
+    if(Streamer::setup(globals.loop, soup_http_block_size, queue) < 0)
         return EXIT_FAILURE;
 
-    if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)
+    if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus, queue) < 0)
     {
-        streamer_shutdown(globals.loop);
+        Streamer::shutdown(globals.loop);
         return EXIT_FAILURE;
     }
 
@@ -232,7 +234,7 @@ int main(int argc, char *argv[])
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Shutting down");
 
     dbus_shutdown(globals.loop);
-    streamer_shutdown(globals.loop);
+    Streamer::shutdown(globals.loop);
 
     g_main_loop_unref(globals.loop);
 

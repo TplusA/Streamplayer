@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2015, 2018  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -27,20 +27,34 @@ AM_TESTS_ENVIRONMENT = CUTTER="$(CUTTER)" XSLTPROC="$(XSLTPROC)" VALGRIND="$(VAL
 
 AM_LDFLAGS = -module -rpath $(libdir) -avoid-version -no-undefined
 
-AM_CPPFLAGS = $(CUTTER_CFLAGS)
-AM_CPPFLAGS += -I$(top_srcdir)
+AM_CPPFLAGS = $(CPPCUTTER_CFLAGS)
+AM_CPPFLAGS += -I$(top_srcdir)/src -I$(top_builddir)/src
+AM_CPPFLAGS += -I$(top_srcdir)/dbus_interfaces
 
 AM_CFLAGS = $(CWARNINGS)
 
-LIBS += $(CUTTER_LIBS)
+AM_CXXFLAGS = $(CXXWARNINGS)
 
-check_LTLIBRARIES = test_urlfifo.la
+LIBS += $(CPPCUTTER_LIBS)
 
-test_urlfifo_la_SOURCES = test_urlfifo.c
+check_LTLIBRARIES = test_urlfifo.la test_playitem.la
 
-test_urlfifo_la_LIBADD = ../liburlfifo.la
-
+test_urlfifo_la_SOURCES = test_urlfifo.cc
+test_urlfifo_la_LIBADD = $(top_builddir)/src/liburlfifo.la
 test_urlfifo_la_CFLAGS = $(AM_CFLAGS)
+test_urlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
+
+test_playitem_la_SOURCES = \
+    test_playitem.cc \
+    mock_messages.hh mock_messages.cc \
+    mock_expectation.hh
+test_playitem_la_LIBADD = \
+    $(top_builddir)/src/liburlfifo.la \
+    $(top_builddir)/src/libgvariantwrapper.la \
+    $(STREAMPLAYER_DEPENDENCIES_LIBS)
+test_playitem_la_CPPFLAGS = $(AM_CPPFLAGS) $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
+test_playitem_la_CFLAGS = $(AM_CFLAGS)
+test_playitem_la_CXXFLAGS = $(AM_CXXFLAGS)
 
 CLEANFILES = test_report.xml test_report_junit.xml valgrind.xml
 

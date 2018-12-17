@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2017, 2018  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -16,13 +16,28 @@
  * along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DBUS_IFACE_H
-#define DBUS_IFACE_H
+#ifndef DBUS_IFACE_DEEP_HH
+#define DBUS_IFACE_DEEP_HH
 
-#include <stdbool.h>
-#include <glib.h>
+#include "streamplayer_dbus.h"
+#include "artcache_dbus.h"
+#include "audiopath_dbus.h"
 
-int dbus_setup(GMainLoop *loop, bool connect_to_session_bus);
-void dbus_shutdown(GMainLoop *loop);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#endif /* !DBUS_IFACE_H */
+tdbussplayURLFIFO *dbus_get_urlfifo_iface(void);
+tdbussplayPlayback *dbus_get_playback_iface(void);
+
+tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
+
+tdbusaupathManager *dbus_audiopath_get_manager_iface(void);
+
+bool dbus_handle_error(GError **error);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* !DBUS_IFACE_DEEP_HH */
