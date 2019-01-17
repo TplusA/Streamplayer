@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2019  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -1664,7 +1664,6 @@ static void setup_source_element(GstElement *playbin,
                                  GstElement *source, gpointer user_data)
 {
     const auto &data = *static_cast<const StreamerData *>(user_data);
-    auto data_lock(data.lock());
 
     if(data.is_failing)
         return;
