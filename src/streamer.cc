@@ -190,6 +190,13 @@ class StreamerData
     {
         return std::unique_lock<std::recursive_mutex>(lock_);
     }
+
+    template <typename F>
+    auto locked(F &&code) -> decltype(code(*this))
+    {
+        std::lock_guard<std::recursive_mutex> lk(lock_);
+        return code(*this);
+    }
 };
 
 typedef enum
@@ -414,9 +421,13 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
 
     auto &data = *static_cast<StreamerData *>(user_data);
     auto data_lock(data.lock());
-    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
-    do_stop_pipeline_and_recover_from_error(data, data_lock, *data.url_fifo_LOCK_ME);
+    data.url_fifo_LOCK_ME->locked_rw(
+        [&data, &data_lock]
+        (PlayQueue::Queue<PlayQueue::Item> &fifo)
+        {
+            do_stop_pipeline_and_recover_from_error(data, data_lock, fifo);
+        });
 
     return G_SOURCE_REMOVE;
 }
@@ -454,7 +465,7 @@ static PlayQueue::Item *pick_next_item(StreamerData &data,
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
           case PlayQueue::ItemState::ACTIVE:
           case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
-          case  PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
+          case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
             break;
         }
     }
@@ -639,16 +650,24 @@ static bool play_next_stream(StreamerData &data,
     return retval;
 }
 
-static inline void queue_stream_from_url_fifo__unlocked(GstElement *elem,
-                                                        StreamerData &data,
-                                                        PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+/*
+ * GLib signal callback.
+ */
+static void queue_stream_from_url_fifo(GstElement *elem, StreamerData &data)
 {
+    auto data_lock(data.lock());
+
+    if(data.is_failing)
+        return;
+
+    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
     static const char context[] = "need next stream";
 
     bool is_next_current;
     bool is_just_queued;
     auto *const next_stream =
-        try_take_next(data, url_fifo, false, is_next_current, is_just_queued, context);
+        try_take_next(data, *data.url_fifo_LOCK_ME, false,
+                      is_next_current, is_just_queued, context);
 
     if(data.current_stream == nullptr && next_stream == nullptr)
     {
@@ -666,21 +685,6 @@ static inline void queue_stream_from_url_fifo__unlocked(GstElement *elem,
 
     play_next_stream(data, is_next_current ? nullptr : data.current_stream.get(),
                      *next_stream, GST_STATE_NULL, false, true, context);
-}
-
-/*
- * GLib signal callback.
- */
-static void queue_stream_from_url_fifo(GstElement *elem, StreamerData &data)
-{
-    auto data_lock(data.lock());
-
-    if(!data.is_failing)
-    {
-        auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-        queue_stream_from_url_fifo__unlocked(elem, data,
-                                             *data.url_fifo_LOCK_ME);
-    }
 }
 
 static void handle_end_of_stream(GstMessage *message, StreamerData &data)
@@ -1241,9 +1245,13 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
     gst_message_parse_error(message, &error, &debug);
 
     auto data_lock(data.lock());
-    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
-    PlayQueue::Item *const failed_stream = get_failed_item(data, *data.url_fifo_LOCK_ME);
+    PlayQueue::Item *const failed_stream =
+        data.url_fifo_LOCK_ME->locked_rw(
+            [&data] (PlayQueue::Queue<PlayQueue::Item> &fifo)
+            {
+                return get_failed_item(data, fifo);
+            });
 
     if(failed_stream == nullptr)
         BUG("Supposed to handle error, but have no item");
@@ -1484,12 +1492,12 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         if(data.current_stream != nullptr)
             emit_stopped(dbus_playback_iface, data);
 
-        {
-            auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-
-            if(!data.url_fifo_LOCK_ME->pop(data.current_stream))
-                data.current_stream.reset();
-        }
+        data.url_fifo_LOCK_ME->locked_rw(
+            [&data] (PlayQueue::Queue<PlayQueue::Item> &fifo)
+            {
+                if(!fifo.pop(data.current_stream))
+                    data.current_stream.reset();
+            });
 
         data.stream_has_just_started = false;
 
@@ -1518,8 +1526,12 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         if(activate_stream(data, state) && dbus_playback_iface != nullptr &&
            !data.stream_has_just_started)
         {
-            auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-            emit_now_playing(dbus_playback_iface, data, *data.url_fifo_LOCK_ME);
+            data.url_fifo_LOCK_ME->locked_ro(
+                [&dbus_playback_iface, &data]
+                (const PlayQueue::Queue<PlayQueue::Item> &fifo)
+                {
+                    emit_now_playing(dbus_playback_iface, data, fifo);
+                });
         }
 
         data.stream_has_just_started = false;
@@ -1624,10 +1636,11 @@ static void handle_stream_duration(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
-    auto data_lock(data.lock());
-
-    query_seconds(gst_element_query_duration, data.pipeline,
-                  data.current_time.duration_s);
+    data.locked([] (StreamerData &d)
+    {
+        query_seconds(gst_element_query_duration, d.pipeline,
+                      d.current_time.duration_s);
+    });
 }
 
 static void handle_stream_duration_async(GstMessage *message, StreamerData &data)
@@ -1827,8 +1840,8 @@ static bool do_stop(StreamerData &data, const char *context,
         {
             is_stream_state_unchanged = false;
 
-            auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-            data.url_fifo_LOCK_ME->clear(0);
+            data.url_fifo_LOCK_ME->locked_rw(
+                [] (PlayQueue::Queue<PlayQueue::Item> &fifo) { fifo.clear(0); });
         }
         else
             data.fail.clear_fifo_on_error = true;
@@ -1837,11 +1850,8 @@ static bool do_stop(StreamerData &data, const char *context,
 
       case GST_STATE_READY:
       case GST_STATE_NULL:
-        {
-            auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-            data.url_fifo_LOCK_ME->clear(0);
-        }
-
+        data.url_fifo_LOCK_ME->locked_rw(
+            [] (PlayQueue::Queue<PlayQueue::Item> &fifo) { fifo.clear(0); });
         break;
 
       case GST_STATE_VOID_PENDING:
@@ -2018,13 +2028,12 @@ bool Streamer::start()
 
           case GST_STATE_READY:
           case GST_STATE_NULL:
-            {
-                auto fifo_lock(streamer_data.url_fifo_LOCK_ME->lock());
-                try_play_next_stream(streamer_data,
-                                     *streamer_data.url_fifo_LOCK_ME,
-                                     GST_STATE_PLAYING, context);
-            }
-
+            streamer_data.url_fifo_LOCK_ME->locked_rw(
+                [] (PlayQueue::Queue<PlayQueue::Item> &fifo)
+                {
+                    try_play_next_stream(streamer_data, fifo,
+                                         GST_STATE_PLAYING, context);
+                });
             break;
 
           case GST_STATE_PAUSED:
@@ -2066,10 +2075,13 @@ bool Streamer::stop(const char *reason)
         GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
        pending == GST_STATE_VOID_PENDING)
     {
-        auto fifo_lock(streamer_data.url_fifo_LOCK_ME->lock());
-        emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
-                                *streamer_data.url_fifo_LOCK_ME,
-                                StoppedReason::ALREADY_STOPPED);
+        streamer_data.url_fifo_LOCK_ME->locked_ro(
+            []
+            (const PlayQueue::Queue<PlayQueue::Item> &fifo)
+            {
+                emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
+                                        fifo, StoppedReason::ALREADY_STOPPED);
+            });
     }
 
     return retval;
@@ -2108,12 +2120,12 @@ bool Streamer::pause()
         break;
 
       case GST_STATE_NULL:
-        {
-            auto fifo_lock(streamer_data.url_fifo_LOCK_ME->lock());
-            try_play_next_stream(streamer_data,
-                                 *streamer_data.url_fifo_LOCK_ME,
-                                 GST_STATE_PAUSED, context);
-        }
+        streamer_data.url_fifo_LOCK_ME->locked_rw(
+            [] (PlayQueue::Queue<PlayQueue::Item> &fifo)
+            {
+                try_play_next_stream(streamer_data, fifo,
+                                     GST_STATE_PAUSED, context);
+            });
 
         break;
 
@@ -2130,7 +2142,6 @@ bool Streamer::pause()
     }
 
     return true;
-
 }
 
 /*!
@@ -2234,19 +2245,15 @@ bool Streamer::seek(int64_t position, const char *units)
 bool Streamer::fast_winding(double factor)
 {
     msg_info("Setting playback speed to %f", factor);
-
-    auto data_lock(streamer_data.lock());
-
-    return do_set_speed(streamer_data, factor);
+    return streamer_data.locked(
+                [&factor] (StreamerData &d) { return do_set_speed(d, factor); });
 }
 
 bool Streamer::fast_winding_stop()
 {
     msg_info("Playing at regular speed");
-
-    auto data_lock(streamer_data.lock());
-
-    return do_set_speed(streamer_data, 1.0);
+    return streamer_data.locked(
+                [] (StreamerData &d) { return do_set_speed(d, 1.0); });
 }
 
 Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
@@ -2279,14 +2286,16 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     PlayQueue::Item *next_stream = nullptr;
 
     if(is_dequeuing_permitted)
-    {
-        bool dummy;
-        auto fifo_lock(streamer_data.url_fifo_LOCK_ME->lock());
-        next_stream = try_take_next(streamer_data,
-                                    *streamer_data.url_fifo_LOCK_ME,
-                                    true, is_next_current, dummy,
-                                    context);
-    }
+        next_stream =
+            streamer_data.url_fifo_LOCK_ME->locked_rw(
+                [&is_next_current]
+                (PlayQueue::Queue<PlayQueue::Item> &fifo)
+                {
+                    bool dummy;
+                    return try_take_next(streamer_data, fifo,
+                                         true, is_next_current, dummy,
+                                         context);
+                });
 
     uint32_t next_id = UINT32_MAX;
 
@@ -2360,8 +2369,8 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
 
 bool Streamer::is_playing()
 {
-    auto data_lock(streamer_data.lock());
-    return GST_STATE(streamer_data.pipeline) == GST_STATE_PLAYING;
+    return streamer_data.locked(
+                [] (StreamerData &d) { return GST_STATE(d.pipeline) == GST_STATE_PLAYING; });
 }
 
 bool Streamer::get_current_stream_id(stream_id_t &id)
@@ -2401,6 +2410,10 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
         return false;
     }
 
-    auto fifo_lock(streamer_data.url_fifo_LOCK_ME->lock());
-    return streamer_data.url_fifo_LOCK_ME->push(std::move(item), keep_items) != 0;
+    return streamer_data.url_fifo_LOCK_ME->locked_rw(
+                [&item, &keep_items]
+                (PlayQueue::Queue<PlayQueue::Item> &fifo)
+                {
+                    return fifo.push(std::move(item), keep_items) != 0;
+                });
 }
