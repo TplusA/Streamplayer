@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2019  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -64,7 +64,7 @@ class Queue
     const size_t max_number_of_items_;
 
     std::deque<std::unique_ptr<T>> queue_;
-    std::recursive_mutex lock_;
+    mutable std::recursive_mutex lock_;
 
   public:
     Queue(const Queue &) = delete;
@@ -80,6 +80,20 @@ class Queue
     std::unique_lock<std::recursive_mutex> lock()
     {
         return std::unique_lock<std::recursive_mutex>(lock_);
+    }
+
+    template <typename F>
+    auto locked_rw(F &&code) -> decltype(code(*this))
+    {
+        std::lock_guard<std::recursive_mutex> lk(lock_);
+        return code(*this);
+    }
+
+    template <typename F>
+    auto locked_ro(F &&code) -> decltype(code(*this)) const
+    {
+        std::lock_guard<std::recursive_mutex> lk(lock_);
+        return code(*this);
     }
 
     typename std::deque<std::unique_ptr<T>>::const_iterator begin() const { return queue_.begin(); }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2016, 2017, 2018  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2019  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -144,11 +144,11 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
 {
     enter_urlfifo_handler(invocation);
 
-    auto fifo_lock(url_fifo->lock());
-
     stream_id_t temp;
     const uint32_t current_id =
         Streamer::get_current_stream_id(temp) ? temp : UINT32_MAX;
+
+    auto fifo_lock(url_fifo->lock());
 
     const auto items_removed = keep_first_n_entries >= 0
         ? url_fifo->clear(keep_first_n_entries)
@@ -234,8 +234,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
 
-    auto fifo_lock(url_fifo->lock());
-    msg_vinfo(MESSAGE_LEVEL_DEBUG, "Have %zu FIFO entries", url_fifo->size());
+    msg_vinfo(MESSAGE_LEVEL_DEBUG, "Have %zu FIFO entries",
+              url_fifo->locked_ro([] (const FifoType &fifo) { return fifo.size(); }));
 
     return TRUE;
 }
