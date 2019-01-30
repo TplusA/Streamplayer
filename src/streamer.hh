@@ -49,6 +49,7 @@ bool is_playing();
 bool get_current_stream_id(stream_id_t &id);
 bool push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                const char *stream_url, size_t keep_items);
+bool remove_items_for_root_path(const char* root_path);
 
 }
 

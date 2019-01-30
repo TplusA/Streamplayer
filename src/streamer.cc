@@ -22,9 +22,12 @@
 
 #include <sstream>
 #include <cinttypes>
+#include <limits.h>
 
 #include <gst/gst.h>
 #include <gst/tag/tag.h>
+#include <glib.h>
+#include <glib/gi18n.h>
 
 #include "streamer.hh"
 #include "urlfifo.hh"
@@ -2416,4 +2419,63 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                 {
                     return fifo.push(std::move(item), keep_items) != 0;
                 });
+}
+
+#if ! __cplusplus >= 201103L
+  #error This file needs at least a C++11 compliant compiler.
+#endif
+
+bool Streamer::remove_items_for_root_path(const char* root_path)
+{
+    const std::string PREFIX = "file://";
+
+    auto filename_from_uri = [](const std::string& url) -> std::string {
+        GError *gerror = NULL;
+        char* filename = g_filename_from_uri(url.c_str(), NULL, &gerror);
+        if(!filename) {
+            msg_error(0, LOG_EMERG, "Error while extracting file name from uri: '%s'" ,
+                      (gerror && gerror->message) ? gerror->message : "N/A");
+            g_clear_error(&gerror);
+            return std::string();
+        }
+        std::string s(filename);
+        g_free(filename);
+        return s;
+    };
+
+    auto realpath_cxx = [](const std::string& file_path) -> std::string {
+        std::string buf;
+        buf.resize(PATH_MAX);
+        if(realpath(file_path.c_str(), &buf[0])==nullptr) {
+            msg_error(0, LOG_EMERG, "Error while realpath(%s) : '%s'" ,
+                      file_path.c_str(), strerror(errno));
+        }
+        return buf;
+    };
+
+    auto starts_with = [](const std::string& s, const std::string& prefix) -> bool {
+        return s.size()>prefix.size() && s.compare(0, prefix.size(), prefix)==0;
+    };
+
+    std::unique_lock<std::recursive_mutex> data_lock(streamer_data.lock());
+
+    if(streamer_data.is_player_activated) {
+        const std::string url = streamer_data.current_stream->url();
+        if(starts_with(url, "file://"))
+        {
+            const std::string filename = filename_from_uri(url);
+            if(filename.empty())
+                return false;
+
+            const std::string file_path_real = realpath_cxx(filename);
+            if(starts_with(file_path_real, root_path)) {
+                msg_info("Will stop streamer because current stream '%s' is on '%s' being removed",
+                         url.c_str(),
+                         root_path);
+                stop("Device removal");
+            }
+        }
+    }
+
+    return true;
 }

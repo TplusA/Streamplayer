@@ -26,6 +26,7 @@
 #include "dbus_iface.hh"
 #include "dbus_iface_deep.hh"
 #include "streamplayer_dbus.h"
+#include "mounta_dbus.h"
 #include "artcache_dbus.h"
 #include "streamer.hh"
 #include "urlfifo.hh"
@@ -266,6 +267,17 @@ static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
     return TRUE;
 }
 
+static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
+                                              guint16 id,
+                                              const gchar* root_path)
+{
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
+              "Received device removal notification: path='%s', id=%i",
+              root_path, id);
+
+    return Streamer::remove_items_for_root_path(root_path);
+}
+
 bool dbus_handle_error(GError **error)
 {
     if(*error == nullptr)
@@ -298,6 +310,8 @@ struct DBusData
 
     tdbusdebugLogging *debug_logging_iface;
     tdbusdebugLoggingConfig *debug_logging_config_proxy;
+
+    tdbusMounTA *mounta_proxy;
 };
 
 static void try_export_iface(GDBusConnection *connection,
@@ -319,6 +333,15 @@ static void bus_acquired(GDBusConnection *connection,
     data->urlfifo_iface = tdbus_splay_urlfifo_skeleton_new();
     data->audiopath_player_iface = tdbus_aupath_player_skeleton_new();
     data->debug_logging_iface = tdbus_debug_logging_skeleton_new();
+
+    GError *error = NULL;
+    data->mounta_proxy = tdbus_moun_ta_proxy_new_sync(connection,
+                                                      G_DBUS_PROXY_FLAGS_NONE,
+                                                      "de.tahifi.MounTA",
+                                                      "/de/tahifi/MounTA",
+                                                      NULL,
+                                                      &error);
+    dbus_handle_error(&error);
 
     g_signal_connect(data->playback_iface, "handle-start",
                      G_CALLBACK(playback_start), nullptr);
@@ -351,6 +374,11 @@ static void bus_acquired(GDBusConnection *connection,
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->urlfifo_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->audiopath_player_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->debug_logging_iface));
+
+    g_signal_connect(data->mounta_proxy,
+                     "device-will-be-removed",
+                     G_CALLBACK(mounta_device_will_be_removed), NULL);
+
 }
 
 static void created_config_proxy(GObject *source_object, GAsyncResult *res,

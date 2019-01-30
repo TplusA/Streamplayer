@@ -31,6 +31,7 @@ CLEANFILES = README.html
 EXTRA_DIST += \
     dbus_interfaces/extract_documentation.py \
     dbus_interfaces/de_tahifi_streamplayer.xml \
+    dbus_interfaces/de_tahifi_mounta.xml \
     dbus_interfaces/de_tahifi_artcache.xml \
     dbus_interfaces/de_tahifi_audiopath.xml \
     dbus_interfaces/de_tahifi_debug.xml
