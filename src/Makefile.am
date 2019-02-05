@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2018  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2018, 2019  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -50,6 +50,7 @@ nodist_libstreamplayer_dbus_la_SOURCES = \
     streamplayer_dbus.c streamplayer_dbus.h \
     artcache_dbus.c artcache_dbus.h \
     audiopath_dbus.c audiopath_dbus.h \
+    mounta_dbus.c mounta_dbus.h \
     debug_dbus.c debug_dbus.h
 
 libstreamplayer_dbus_la_CFLAGS = $(CRELAXEDWARNINGS)
@@ -59,6 +60,9 @@ BUILT_SOURCES = \
     de_tahifi_streamplayer.h \
     de_tahifi_streamplayer.md \
     streamplayer_dbus.stamp \
+    de_tahifi_mounta.h \
+    de_tahifi_mounta.md \
+    mounta_dbus.stamp \
     de_tahifi_artcache.h \
     de_tahifi_artcache.md \
     artcache_dbus.stamp \
@@ -78,6 +82,15 @@ streamplayer_dbus.h: streamplayer_dbus.stamp
 streamplayer_dbus.stamp: $(DBUS_IFACES)/de_tahifi_streamplayer.xml
 	$(GDBUS_CODEGEN) --generate-c-code=streamplayer_dbus --c-namespace tdbus_splay --interface-prefix de.tahifi.Streamplayer. $<
 	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_streamplayer.md -H de_tahifi_streamplayer.h -c tdbus_splay -s de.tahifi.Streamplayer. -n "$(PACKAGE_NAME)"
+	touch $@
+
+de_tahifi_mounta.h: mounta_dbus.stamp
+de_tahifi_mounta.md: mounta_dbus.stamp
+mounta_dbus.c: mounta_dbus.stamp
+mounta_dbus.h: mounta_dbus.stamp
+mounta_dbus.stamp: $(DBUS_IFACES)/de_tahifi_mounta.xml
+	$(GDBUS_CODEGEN) --generate-c-code=mounta_dbus --c-namespace tdbus --interface-prefix de.tahifi. $<
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_mounta.md -H de_tahifi_mounta.h -c tdbus -s de.tahifi. -n "mounta"
 	touch $@
 
 de_tahifi_artcache.h: artcache_dbus.stamp

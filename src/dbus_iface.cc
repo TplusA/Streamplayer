@@ -26,6 +26,7 @@
 #include "dbus_iface.hh"
 #include "dbus_iface_deep.hh"
 #include "streamplayer_dbus.h"
+#include "mounta_dbus.h"
 #include "artcache_dbus.h"
 #include "streamer.hh"
 #include "urlfifo.hh"
@@ -266,6 +267,17 @@ static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
     return TRUE;
 }
 
+static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
+                                              guint16 id,
+                                              const gchar *root_path)
+{
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
+              "Received device removal notification: path='%s', id=%u",
+              root_path, id);
+
+    return Streamer::remove_items_for_root_path(root_path) ? TRUE : FALSE;
+}
+
 bool dbus_handle_error(GError **error)
 {
     if(*error == nullptr)
@@ -298,6 +310,8 @@ struct DBusData
 
     tdbusdebugLogging *debug_logging_iface;
     tdbusdebugLoggingConfig *debug_logging_config_proxy;
+
+    tdbusMounTA *mounta_proxy;
 };
 
 static void try_export_iface(GDBusConnection *connection,
@@ -394,6 +408,16 @@ static void name_acquired(GDBusConnection *connection,
                                             nullptr, &error);
     dbus_handle_error(&error);
 
+    data->mounta_proxy =
+        tdbus_moun_ta_proxy_new_sync(connection,
+                                     G_DBUS_PROXY_FLAGS_NONE,
+                                     "de.tahifi.MounTA", "/de/tahifi/MounTA",
+                                     nullptr, &error);
+    if(dbus_handle_error(&error))
+        g_signal_connect(data->mounta_proxy,
+                         "device-will-be-removed",
+                         G_CALLBACK(mounta_device_will_be_removed), nullptr);
+
     data->debug_logging_config_proxy = nullptr;
     tdbus_debug_logging_config_proxy_new(connection,
                                          G_DBUS_PROXY_FLAGS_NONE,
@@ -451,6 +475,7 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
     log_assert(dbus_data.artcache_write_iface != nullptr);
     log_assert(dbus_data.audiopath_player_iface != nullptr);
     log_assert(dbus_data.audiopath_manager_proxy != nullptr);
+    log_assert(dbus_data.mounta_proxy != nullptr);
     log_assert(dbus_data.debug_logging_iface != nullptr);
 
     g_main_loop_ref(loop);
@@ -471,6 +496,7 @@ void dbus_shutdown(GMainLoop *loop)
     g_object_unref(dbus_data.artcache_write_iface);
     g_object_unref(dbus_data.audiopath_manager_proxy);
     g_object_unref(dbus_data.audiopath_player_iface);
+    g_object_unref(dbus_data.mounta_proxy);
     g_object_unref(dbus_data.debug_logging_iface);
 
     if(dbus_data.debug_logging_config_proxy != nullptr)
