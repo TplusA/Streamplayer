@@ -334,15 +334,6 @@ static void bus_acquired(GDBusConnection *connection,
     data->audiopath_player_iface = tdbus_aupath_player_skeleton_new();
     data->debug_logging_iface = tdbus_debug_logging_skeleton_new();
 
-    GError *error = NULL;
-    data->mounta_proxy = tdbus_moun_ta_proxy_new_sync(connection,
-                                                      G_DBUS_PROXY_FLAGS_NONE,
-                                                      "de.tahifi.MounTA",
-                                                      "/de/tahifi/MounTA",
-                                                      NULL,
-                                                      &error);
-    dbus_handle_error(&error);
-
     g_signal_connect(data->playback_iface, "handle-start",
                      G_CALLBACK(playback_start), nullptr);
     g_signal_connect(data->playback_iface, "handle-stop",
@@ -374,11 +365,6 @@ static void bus_acquired(GDBusConnection *connection,
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->urlfifo_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->audiopath_player_iface));
     try_export_iface(connection, G_DBUS_INTERFACE_SKELETON(data->debug_logging_iface));
-
-    g_signal_connect(data->mounta_proxy,
-                     "device-will-be-removed",
-                     G_CALLBACK(mounta_device_will_be_removed), NULL);
-
 }
 
 static void created_config_proxy(GObject *source_object, GAsyncResult *res,
@@ -421,6 +407,16 @@ static void name_acquired(GDBusConnection *connection,
                                             "/de/tahifi/TAPSwitch",
                                             nullptr, &error);
     dbus_handle_error(&error);
+
+    data->mounta_proxy =
+        tdbus_moun_ta_proxy_new_sync(connection,
+                                     G_DBUS_PROXY_FLAGS_NONE,
+                                     "de.tahifi.MounTA", "/de/tahifi/MounTA",
+                                     nullptr, &error);
+    if(dbus_handle_error(&error))
+        g_signal_connect(data->mounta_proxy,
+                         "device-will-be-removed",
+                         G_CALLBACK(mounta_device_will_be_removed), nullptr);
 
     data->debug_logging_config_proxy = nullptr;
     tdbus_debug_logging_config_proxy_new(connection,
@@ -479,6 +475,7 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
     log_assert(dbus_data.artcache_write_iface != nullptr);
     log_assert(dbus_data.audiopath_player_iface != nullptr);
     log_assert(dbus_data.audiopath_manager_proxy != nullptr);
+    log_assert(dbus_data.mounta_proxy != nullptr);
     log_assert(dbus_data.debug_logging_iface != nullptr);
 
     g_main_loop_ref(loop);
@@ -499,6 +496,7 @@ void dbus_shutdown(GMainLoop *loop)
     g_object_unref(dbus_data.artcache_write_iface);
     g_object_unref(dbus_data.audiopath_manager_proxy);
     g_object_unref(dbus_data.audiopath_player_iface);
+    g_object_unref(dbus_data.mounta_proxy);
     g_object_unref(dbus_data.debug_logging_iface);
 
     if(dbus_data.debug_logging_config_proxy != nullptr)
