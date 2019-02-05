@@ -2468,7 +2468,7 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
     if(streamer_data.is_player_activated)
     {
-        const std::string url = streamer_data.current_stream->url();
+        const std::string url = streamer_data.current_stream->url_;
         if(starts_with(url, "file://"))
         {
             const std::string filename = filename_from_uri(url);

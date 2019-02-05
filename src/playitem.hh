@@ -108,8 +108,6 @@ class Item
 
     const StreamData &get_stream_data() const { return stream_data_; }
     StreamData &get_stream_data() { return stream_data_; }
-
-    const std::string& url() { return url_; }
 };
 
 /*!
