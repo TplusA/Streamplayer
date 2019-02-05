@@ -2421,10 +2421,6 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                 });
 }
 
-#if ! __cplusplus >= 201103L
-  #error This file needs at least a C++11 compliant compiler.
-#endif
-
 bool Streamer::remove_items_for_root_path(const char *root_path)
 {
     const std::string PREFIX = "file://";
