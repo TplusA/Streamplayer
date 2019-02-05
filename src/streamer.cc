@@ -2468,14 +2468,14 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
     if(streamer_data.is_player_activated)
     {
-        const std::string url = streamer_data.current_stream->url_;
+        const auto &url = streamer_data.current_stream->url_;
         if(starts_with(url, "file://"))
         {
-            const std::string filename = filename_from_uri(url);
+            const auto &filename = filename_from_uri(url);
             if(filename.empty())
                 return false;
 
-            const std::string file_path_real = realpath_cxx(filename);
+            const auto &file_path_real = realpath_cxx(filename);
             if(starts_with(file_path_real, root_path))
             {
                 msg_info("Will stop streamer because current stream '%s' is on '%s' being removed",
