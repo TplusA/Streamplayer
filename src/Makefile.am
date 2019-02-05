@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2018  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2018, 2019  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -89,9 +89,9 @@ de_tahifi_mounta.md: mounta_dbus.stamp
 mounta_dbus.c: mounta_dbus.stamp
 mounta_dbus.h: mounta_dbus.stamp
 mounta_dbus.stamp: $(DBUS_IFACES)/de_tahifi_mounta.xml
-	 $(GDBUS_CODEGEN) --generate-c-code=mounta_dbus --c-namespace tdbus --interface-prefix de.tahifi. $<
-	  $(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_mounta.md -H de_tahifi_mounta.h -c tdbus -s de.tahifi. -n "mounta"
-	 touch $@
+	$(GDBUS_CODEGEN) --generate-c-code=mounta_dbus --c-namespace tdbus --interface-prefix de.tahifi. $<
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_mounta.md -H de_tahifi_mounta.h -c tdbus -s de.tahifi. -n "mounta"
+	touch $@
 
 de_tahifi_artcache.h: artcache_dbus.stamp
 de_tahifi_artcache.md: artcache_dbus.stamp
