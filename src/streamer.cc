@@ -22,12 +22,10 @@
 
 #include <sstream>
 #include <cinttypes>
-#include <limits.h>
+#include <cstring>
 
 #include <gst/gst.h>
 #include <gst/tag/tag.h>
-#include <glib.h>
-#include <glib/gi18n.h>
 
 #include "streamer.hh"
 #include "urlfifo.hh"
