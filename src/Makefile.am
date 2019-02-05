@@ -25,7 +25,6 @@ streamplayer_SOURCES = \
     messages_dbus.c messages_dbus.h \
     dbus_iface.cc dbus_iface.hh dbus_iface_deep.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh \
-    mounta_dbus.c mounta_dbus.h \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     os.c os.h
 
@@ -51,6 +50,7 @@ nodist_libstreamplayer_dbus_la_SOURCES = \
     streamplayer_dbus.c streamplayer_dbus.h \
     artcache_dbus.c artcache_dbus.h \
     audiopath_dbus.c audiopath_dbus.h \
+    mounta_dbus.c mounta_dbus.h \
     debug_dbus.c debug_dbus.h
 
 libstreamplayer_dbus_la_CFLAGS = $(CRELAXEDWARNINGS)
