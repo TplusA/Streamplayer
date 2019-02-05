@@ -272,7 +272,7 @@ static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
                                               const gchar* root_path)
 {
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
-              "Received device removal notification: path='%s', id=%i",
+              "Received device removal notification: path='%s', id=%u",
               root_path, id);
 
     return Streamer::remove_items_for_root_path(root_path);
