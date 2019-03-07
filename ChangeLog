@@ -1,3 +1,10 @@
+2019-03-07  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 4.9 released.
+
+	* Logging: Show buffer underrun conditions and filtered view on buffer
+	  level while recovering from an underrun condition.
+
 2019-02-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 4.8 released.
