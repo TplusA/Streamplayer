@@ -125,6 +125,52 @@ struct FailureData
     }
 };
 
+class BufferUnderrunFilter
+{
+  public:
+    enum UpdateResult
+    {
+        EVERYTHING_IS_GOING_ACCORDING_TO_PLAN,
+        UNDERRUN_DETECTED,
+        FILLING_UP,
+        RECOVERED,
+    };
+
+  private:
+    static constexpr unsigned int RECOVERY_COUNT = 5;
+    unsigned int recovered_count_;
+
+  public:
+    BufferUnderrunFilter(const BufferUnderrunFilter &) = delete;
+    BufferUnderrunFilter(BufferUnderrunFilter &&) = default;
+    BufferUnderrunFilter &operator=(const BufferUnderrunFilter &) = delete;
+    BufferUnderrunFilter &operator=(BufferUnderrunFilter &&) = default;
+
+    explicit BufferUnderrunFilter():
+        recovered_count_(0)
+    {}
+
+    void reset() { recovered_count_ = 0; }
+
+    UpdateResult update(uint8_t percent)
+    {
+        if(percent > 0)
+        {
+            if(recovered_count_ == 0)
+                return EVERYTHING_IS_GOING_ACCORDING_TO_PLAN;
+
+            --recovered_count_;
+
+            return recovered_count_ == 0 ? RECOVERED : FILLING_UP;
+        }
+        else
+        {
+            recovered_count_ = RECOVERY_COUNT;
+            return UNDERRUN_DETECTED;
+        }
+    }
+};
+
 class StreamerData
 {
   private:
@@ -162,6 +208,7 @@ class StreamerData
     GstClockTime next_allowed_tag_update_time;
 
     bool stream_has_just_started;
+    BufferUnderrunFilter stream_buffer_underrun_filter;
 
     Streamer::PlayStatus supposed_play_status;
 
@@ -410,6 +457,7 @@ static void do_stop_pipeline_and_recover_from_error(StreamerData &data,
                             data.fail.reason);
 
     data.stream_has_just_started = false;
+    data.stream_buffer_underrun_filter.reset();
     data.is_failing = false;
 
     data.current_stream.reset();
@@ -1471,6 +1519,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
            pending == GST_STATE_PLAYING)
         {
             data.stream_has_just_started = true;
+            data.stream_buffer_underrun_filter.reset();
         }
 
         break;
@@ -1626,10 +1675,31 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     gint percent = -1;
     gst_message_parse_buffering(message, &percent);
 
-    if(percent >= 0 && percent <= 100)
-        msg_vinfo(MESSAGE_LEVEL_DIAG, "Buffer level: %d%%", percent);
-    else
+    if(percent < 0 || percent > 100)
+    {
         msg_error(ERANGE, LOG_NOTICE, "Buffering percentage is %d", percent);
+        return;
+    }
+
+    msg_vinfo(MESSAGE_LEVEL_DIAG, "Buffer level: %d%%", percent);
+
+    switch(data.stream_buffer_underrun_filter.update(percent))
+    {
+      case BufferUnderrunFilter::EVERYTHING_IS_GOING_ACCORDING_TO_PLAN:
+        break;
+
+      case BufferUnderrunFilter::UNDERRUN_DETECTED:
+        msg_error(0, LOG_WARNING, "Buffer underrun detected");
+        break;
+
+      case BufferUnderrunFilter::FILLING_UP:
+        msg_info("Buffer filling up (%d%%)", percent);
+        break;
+
+      case BufferUnderrunFilter::RECOVERED:
+        msg_info("Buffer recovered (%d%%)", percent);
+        break;
+    }
 }
 
 static void handle_stream_duration(GstMessage *message, StreamerData &data)
