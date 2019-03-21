@@ -269,7 +269,8 @@ static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
 
 static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
                                               guint16 id,
-                                              const gchar *root_path)
+                                              const gchar *root_path,
+                                              gpointer user_data)
 {
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
               "Received device removal notification: path='%s', id=%u",
