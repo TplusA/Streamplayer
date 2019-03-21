@@ -1,3 +1,11 @@
+2019-03-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 4.10 released.
+
+	* Playback: Avoid null pointer dereferencing in MounTA signal handler.
+	  It was possible to crash the player by just plugging in and pulling
+	  out a USB pendrive.
+
 2019-03-07  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 4.9 released.
