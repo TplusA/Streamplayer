@@ -2536,7 +2536,7 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
     std::unique_lock<std::recursive_mutex> data_lock(streamer_data.lock());
 
-    if(streamer_data.is_player_activated)
+    if(streamer_data.is_player_activated && streamer_data.current_stream != nullptr)
     {
         const auto &url = streamer_data.current_stream->url_;
         if(starts_with(url, "file://"))
