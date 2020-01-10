@@ -22,9 +22,9 @@
 #ifndef DBUS_IFACE_DEEP_HH
 #define DBUS_IFACE_DEEP_HH
 
-#include "streamplayer_dbus.h"
-#include "artcache_dbus.h"
-#include "audiopath_dbus.h"
+#include "de_tahifi_streamplayer.h"
+#include "de_tahifi_artcache.h"
+#include "de_tahifi_audiopath.h"
 
 #ifdef __cplusplus
 extern "C" {

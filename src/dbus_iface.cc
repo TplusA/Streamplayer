@@ -28,9 +28,9 @@
 
 #include "dbus_iface.hh"
 #include "dbus_iface_deep.hh"
-#include "streamplayer_dbus.h"
-#include "mounta_dbus.h"
-#include "artcache_dbus.h"
+#include "de_tahifi_streamplayer.h"
+#include "de_tahifi_mounta.h"
+#include "de_tahifi_artcache.h"
 #include "streamer.hh"
 #include "urlfifo.hh"
 #include "messages.h"
