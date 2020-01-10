@@ -1,8 +1,0 @@
-#! /usr/bin/make -f
-include /usr/share/dpkg/architecture.mk
-
-override_dh_shlibdeps:
-	dh_shlibdeps $(DH_SHLIBDEPS_ARGS)
-
-%:
-	dh $@
