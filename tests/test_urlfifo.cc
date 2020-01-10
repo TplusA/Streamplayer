@@ -98,8 +98,7 @@ static unsigned int push(PlayQueue::Queue<TestItem> &q, unsigned int value,
                          size_t keep_first_n = SIZE_MAX)
 {
     const size_t result =
-        q.push(std::unique_ptr<TestItem>(new TestItem(value, name)),
-               keep_first_n);
+        q.push(std::make_unique<TestItem>(value, name), keep_first_n);
 
     CHECK(result == expected_result);
 
@@ -424,8 +423,7 @@ TEST_CASE_FIXTURE(Fixture, "Push one item and keep first in queue on empty queue
     for(unsigned int id = 20; id < 20 + max_insertions; ++id)
     {
         const size_t result =
-            queue->push(std::unique_ptr<TestItem>(new TestItem(id, default_url)),
-                        SIZE_MAX);
+            queue->push(std::make_unique<TestItem>(id, default_url), SIZE_MAX);
 
         if(result == 0)
             break;
