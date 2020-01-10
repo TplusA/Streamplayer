@@ -2,17 +2,20 @@ dnl Copyright (C) 2015--2019  T+A elektroakustik GmbH & Co. KG
 dnl
 dnl This file is part of T+A Streamplayer.
 dnl
-dnl T+A Streamplayer is free software: you can redistribute it and/or modify
-dnl it under the terms of the GNU General Public License, version 3 as
-dnl published by the Free Software Foundation.
+dnl This program is free software; you can redistribute it and/or
+dnl modify it under the terms of the GNU General Public License
+dnl as published by the Free Software Foundation; either version 2
+dnl of the License, or (at your option) any later version.
 dnl
-dnl T+A Streamplayer is distributed in the hope that it will be useful,
+dnl This program is distributed in the hope that it will be useful,
 dnl but WITHOUT ANY WARRANTY; without even the implied warranty of
 dnl MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 dnl GNU General Public License for more details.
 dnl
 dnl You should have received a copy of the GNU General Public License
-dnl along with T+A Streamplayer.  If not, see <http://www.gnu.org/licenses/>.
+dnl along with this program; if not, write to the Free Software
+dnl Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+dnl MA  02110-1301, USA.
 
 AC_PREREQ([2.69])
 AC_INIT([Streamplayer], [4.10], [r.tiemann@ta-hifi.com])
