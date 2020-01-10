@@ -1,0 +1,1 @@
+../strbo_common/tests_new/run_tests.sh

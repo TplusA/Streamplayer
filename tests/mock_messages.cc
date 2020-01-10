@@ -1,1 +1,1 @@
-../strbo_common/tests/mock_messages.cc
+../strbo_common/tests_new/mock_messages.cc

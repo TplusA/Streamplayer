@@ -56,15 +56,7 @@ AC_CHECK_PROGS([GDBUS_CODEGEN], [gdbus-codegen])
 AC_CHECK_PROGS([XSLTPROC], [xsltproc])
 AC_CHECK_PROGS([VALGRIND], [valgrind])
 AC_CHECK_PROGS([AUTOREVISION], [autorevision])
-
-m4_ifdef([AC_CHECK_CUTTER],
-[
-AC_CHECK_CUTTER
-AC_CHECK_CPPCUTTER
-AC_CHECK_GCUTTER
 AC_CHECK_COVERAGE
-],
-[ac_cv_use_cutter=no])
 
 # Checks for libraries.
 PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0 gthread-2.0 gstreamer-tag-1.0 gstreamer-plugins-base-1.0])
@@ -72,20 +64,9 @@ PKG_CHECK_MODULES([STREAMPLAYER_DEPENDENCIES], [gmodule-2.0 gio-2.0 gio-unix-2.0
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h inttypes.h limits.h stdlib.h string.h sys/ioctl.h sys/time.h syslog.h unistd.h])
 
-m4_ifdef([AC_CHECK_CUTTER],
-[
-save_CPPFLAGS="$CPPFLAGS"
-CPPFLAGS="$pkg_cv_CUTTER_CFLAGS"
-AC_CHECK_HEADER([cutter.h], [], [ac_cv_use_cutter=no])
-CPPFLAGS="$save_CPPFLAGS"
-
 AC_LANG_PUSH([C++])
-save_CPPFLAGS="$CPPFLAGS"
-CPPFLAGS="$pkg_cv_CPPCUTTER_CFLAGS"
-AC_CHECK_HEADER([cppcutter.h], [], [ac_cv_use_cutter=no])
-CPPFLAGS="$save_CPPFLAGS"
+AC_CHECK_HEADER([doctest.h])
 AC_LANG_POP([C++])
-])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AX_CXX_COMPILE_STDCXX_14([noext])
@@ -107,12 +88,10 @@ AC_FUNC_MALLOC
 AC_FUNC_MMAP
 AC_CHECK_FUNCS([clock_gettime memset mkdir munmap realpath rmdir strdup strerror])
 
-AM_CONDITIONAL([WITH_CUTTER], [test "x$ac_cv_use_cutter" = "xyes"])
+AM_CONDITIONAL([WITH_DOCTEST], [test "x$ac_cv_header_doctest_h" = "xyes"])
 AM_CONDITIONAL([WITH_VALGRIND], [test "x$enable_valgrind" = "xyes"])
 AM_CONDITIONAL([WITH_MARKDOWN], [test "x$ac_cv_prog_MARKDOWN" != "x"])
 
 AC_CONFIG_FILES([Makefile src/Makefile tests/Makefile dist/Makefile Doxyfile])
 AC_CONFIG_FILES([versioninfo.cache])
-AC_CONFIG_FILES([tests/run_test.sh], [chmod +x tests/run_test.sh])
-AC_CONFIG_FILES([tests/valgrind.sh], [chmod +x tests/valgrind.sh])
 AC_OUTPUT
