@@ -1,6 +1,6 @@
 # vi:syntax=sh
 CFLAGS="-std=c11 -fstrict-aliasing $CFLAGS"
-CXXFLAGS="-std=c++11 -fstrict-aliasing $CXXFLAGS"
+CXXFLAGS="-fstrict-aliasing $CXXFLAGS"
 
 COMMON_WARNINGS="-Wall -Wclobbered -Wsign-compare -Wuninitialized -Wunused-but-set-parameter -Wunused-function -Wundef -Wshadow -Wpointer-arith -Wfloat-equal -Wwrite-strings -Wstrict-aliasing -Wdouble-promotion"
 CWARNINGS="$COMMON_WARNINGS -Wbad-function-cast -Wnested-externs -Wmissing-prototypes -Wstrict-prototypes"
