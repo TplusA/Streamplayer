@@ -32,6 +32,9 @@
 
 #include "urlfifo.hh"
 
+#include "mock_messages.hh"
+#include "mock_backtrace.hh"
+
 /*!
  * \addtogroup urlfifo_tests Unit tests
  * \ingroup urlfifo
@@ -63,12 +66,37 @@ class Fixture
     static constexpr size_t MAX_QUEUE_LENGTH = 8;
 
   protected:
+    std::unique_ptr<MockMessages::Mock> mock_messages;
+    std::unique_ptr<MockBacktrace::Mock> mock_backtrace;
     std::unique_ptr<PlayQueue::Queue<TestItem>> queue;
 
   public:
     explicit Fixture():
+        mock_messages(std::make_unique<MockMessages::Mock>()),
+        mock_backtrace(std::make_unique<MockBacktrace::Mock>()),
         queue(std::make_unique<PlayQueue::Queue<TestItem>>(MAX_QUEUE_LENGTH))
-    {}
+    {
+        MockMessages::singleton = mock_messages.get();
+        MockBacktrace::singleton = mock_backtrace.get();
+    }
+
+    ~Fixture()
+    {
+        CHECK(queue->get_removed().empty());
+
+        try
+        {
+            mock_messages->done();
+            mock_backtrace->done();
+        }
+        catch(...)
+        {
+            /* no throwing from dtors */
+        }
+
+        MockMessages::singleton = nullptr;
+        MockBacktrace::singleton = nullptr;
+    }
 };
 
 constexpr size_t Fixture::MAX_QUEUE_LENGTH;
@@ -89,7 +117,8 @@ TEST_CASE_FIXTURE(Fixture, "Queue is empty on startup")
  */
 TEST_CASE_FIXTURE(Fixture, "Clear an empty queue")
 {
-    CHECK(queue->clear(0).empty());
+    CHECK(queue->clear(0) == 0);
+    CHECK(queue->get_removed().empty());
 }
 
 template <typename StringType>
@@ -123,7 +152,9 @@ TEST_CASE_FIXTURE(Fixture, "Clear non-empty queue")
     CHECK(queue->size() == 2);
     CHECK(std::distance(queue->begin(), queue->end()) == 2);
 
-    CHECK(queue->clear(0).size() == 2);
+    CHECK(queue->clear(0) == 2);
+    CHECK(queue->get_removed().size() == 2);
+    CHECK(queue->get_removed().empty());
 
     CHECK(queue->empty());
     CHECK(queue->size() == 0);
@@ -140,7 +171,8 @@ TEST_CASE_FIXTURE(Fixture, "Clear partial non-empty queue")
     push(*queue, 23, "first",  1);
     push(*queue, 32, "second", 2);
 
-    auto removed(queue->clear(1));
+    CHECK(queue->clear(1) == 1);
+    const auto removed(queue->get_removed());
     REQUIRE(removed.size() == 1);
 
     CHECK(removed[0]->value_ == 32);
@@ -200,11 +232,11 @@ TEST_CASE_FIXTURE(Fixture, "Partial clear after pop from queue with multi items"
 
     CHECK(queue->size() == 8);
 
-    size_t remaining;
-    auto item = queue->pop(remaining);
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     REQUIRE(item != nullptr);
-    CHECK(remaining == 7);
+    CHECK(queue->size() == 7);
     CHECK_FALSE(queue->empty());
     CHECK_FALSE(queue->full());
     CHECK(item->value_ == 23);
@@ -214,24 +246,26 @@ TEST_CASE_FIXTURE(Fixture, "Partial clear after pop from queue with multi items"
     CHECK_FALSE(queue->empty());
     CHECK(queue->full());
 
-    auto removed = queue->clear(1);
-    CHECK(removed.size() == 7);
+    CHECK(queue->clear(1) == 7);
+    const auto removed(std::move(queue->get_removed()));
+    REQUIRE(removed.size() == 7);
 
     CHECK_FALSE(queue->empty());
     CHECK_FALSE(queue->full());
     CHECK(queue->size() == 1);
-    CHECK(removed[0]->value_ == 42);
-    CHECK(removed[1]->value_ == 332);
-    CHECK(removed[2]->value_ == 323);
+    CHECK(removed[6]->value_ == 42);
+    CHECK(removed[5]->value_ == 332);
+    CHECK(removed[4]->value_ == 323);
     CHECK(removed[3]->value_ == 232);
-    CHECK(removed[4]->value_ == 223);
-    CHECK(removed[5]->value_ == 132);
-    CHECK(removed[6]->value_ == 123);
+    CHECK(removed[2]->value_ == 223);
+    CHECK(removed[1]->value_ == 132);
+    CHECK(removed[0]->value_ == 123);
 
-    item = queue->pop(remaining);
+    CHECK(queue->pop(item));
 
     REQUIRE(item != nullptr);
-    CHECK(remaining == 0);
+    CHECK(queue->size() == 0);
+    CHECK(queue->get_removed().empty());
 
     CHECK(queue->empty());
     CHECK_FALSE(queue->full());
@@ -251,10 +285,11 @@ TEST_CASE_FIXTURE(Fixture,
     push(*queue, 32, "second", 2);
     CHECK(queue->size() == 2);
 
-    CHECK(queue->clear(3).empty());
-    CHECK(queue->clear(SIZE_MAX).empty());
-    CHECK(queue->clear(2).empty());
+    CHECK(queue->clear(3) == 0);
+    CHECK(queue->clear(SIZE_MAX) == 0);
+    CHECK(queue->clear(2) == 0);
 
+    CHECK(queue->get_removed().empty());
     CHECK(queue->size() == 2);
 
     const TestItem *item = queue->peek();
@@ -359,11 +394,16 @@ TEST_CASE_FIXTURE(Fixture, "Push one item to replace all others")
 
     CHECK(queue->size() == 1);
 
-    size_t remaining = 987;
-    auto item = queue->pop(remaining);
+    const auto removed(queue->get_removed());
+    REQUIRE(removed.size() == 2);
+    CHECK(removed[0]->value_ == 42);
+    CHECK(removed[1]->value_ == 43);
+
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     CHECK(queue->empty());
-    CHECK(remaining == 0);
+    CHECK(queue->get_removed().empty());
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 45);
 }
@@ -381,18 +421,25 @@ TEST_CASE_FIXTURE(Fixture, "Push one item and keep first in queue")
 
     CHECK(queue->size() == 2);
 
-    size_t remaining = 987;
-    auto item = queue->pop(remaining);
+    const auto removed(queue->get_removed());
+    REQUIRE(removed.size() == 1);
+    CHECK(removed[0]->value_ == 43);
 
-    CHECK(remaining == 1);
-    REQUIRE(item != nullptr);
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
+
+    CHECK(queue->get_removed().empty());
     CHECK(queue->size() == 1);
+    CHECK(!queue->empty());
+    REQUIRE(item != nullptr);
     CHECK(item->value_ == 42);
 
-    item = queue->pop();
+    CHECK(queue->pop(item));
 
+    CHECK(queue->get_removed().empty());
     CHECK(queue->size() == 0);
     CHECK(queue->empty());
+    REQUIRE(item != nullptr);
     CHECK(item->value_ == 45);
 }
 
@@ -425,6 +472,8 @@ TEST_CASE_FIXTURE(Fixture, "Push one item and keep first in queue on empty queue
         const size_t result =
             queue->push(std::make_unique<TestItem>(id, default_url), SIZE_MAX);
 
+        CHECK(queue->get_removed().empty());
+
         if(result == 0)
             break;
     }
@@ -434,7 +483,13 @@ TEST_CASE_FIXTURE(Fixture, "Push one item and keep first in queue on empty queue
     push(*queue, 90, default_url, 1, 0);
     CHECK(queue->size() == 1);
 
-    auto item = queue->pop();
+    const auto removed(queue->get_removed());
+    REQUIRE(removed.size() == MAX_QUEUE_LENGTH);
+    CHECK(removed[0]->value_ == 20);
+    CHECK(removed[MAX_QUEUE_LENGTH - 1]->value_ == 20 + MAX_QUEUE_LENGTH - 1);
+
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     CHECK(queue->empty());
     REQUIRE(item != nullptr);
@@ -471,7 +526,8 @@ TEST_CASE_FIXTURE(Fixture, "Peek returns same head element on each call")
     push(*queue, 17, default_url, 2);
 
     CHECK(queue->peek() == item);
-    CHECK(queue->clear(0).size() == 2);
+    CHECK(queue->clear(0) == 2);
+    CHECK(queue->get_removed().size() == 2);
 }
 
 /*!\test
@@ -483,7 +539,9 @@ TEST_CASE_FIXTURE(Fixture, "Pop from empty queue detects underflow")
     std::unique_ptr<TestItem> dummy;
     CHECK_FALSE(queue->pop(dummy));
     CHECK(dummy == nullptr);
-    CHECK(queue->pop() == nullptr);
+    std::unique_ptr<TestItem> popped;
+    CHECK_FALSE(queue->pop(popped));
+    CHECK(popped == nullptr);
 }
 
 /*!\test
@@ -495,11 +553,11 @@ TEST_CASE_FIXTURE(Fixture, "Pop from queue with single item moves the item to ca
 
     CHECK(queue->size() == 1);
 
-    size_t remaining = 123;
-    auto item = queue->pop(remaining);
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     CHECK(queue->empty());
-    CHECK(remaining == 0);
+    CHECK(queue->size() == 0);
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 42);
     CHECK(item->name_ == default_url);
@@ -515,14 +573,15 @@ TEST_CASE_FIXTURE(Fixture, "Pop multiple items from queue")
 
     CHECK(queue->size() == 2);
 
-    auto item = queue->pop();
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     CHECK(queue->size() == 1);
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 23);
     CHECK(item->name_ == "first");
 
-    item = queue->pop();
+    CHECK(queue->pop(item));
 
     CHECK(queue->empty());
     REQUIRE(item != nullptr);
@@ -545,20 +604,82 @@ TEST_CASE_FIXTURE(Fixture, "Push/pop chase stress test")
         push(*queue, i + id_base + 1, default_url, 2);
         CHECK(queue->size() == 2);
 
-        auto item = queue->pop();
+        std::unique_ptr<TestItem> item;
+        CHECK(queue->pop(item));
 
         CHECK(queue->size() == 1);
         REQUIRE(item != nullptr);
         CHECK(item->value_ == i + id_base);
     }
 
-    size_t remaining = 5;
-    auto item = queue->pop(remaining);
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     CHECK(queue->empty());
+    CHECK(queue->size() == 0);
     REQUIRE(item != nullptr);
-    CHECK(remaining == 0);
     CHECK(item->value_ == num_of_iterations + id_base + 0);
+}
+
+/*!\test
+ * No items are silently lost by dropping them.
+ */
+TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
+{
+    push(*queue, 75, "A", 1);
+    push(*queue, 76, "B", 2);
+    push(*queue, 77, "C", 3);
+    push(*queue, 78, "D", 4);
+    CHECK(queue->size() == 4);
+
+    CHECK(queue->pop_drop());
+    CHECK(queue->pop_drop());
+    CHECK(queue->size() == 2);
+
+    auto removed(queue->get_removed());
+    REQUIRE(removed.size() == 2);
+    CHECK(removed[0]->value_ == 75);
+    CHECK(removed[1]->value_ == 76);
+}
+
+/*!\test
+ * Bug message is emitted when popping item while there are pending removed
+ * items.
+ */
+TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
+{
+    push(*queue, 75, "A", 1);
+    push(*queue, 76, "B", 2);
+    push(*queue, 77, "C", 3);
+    push(*queue, 78, "D", 4);
+    CHECK(queue->size() == 4);
+
+    CHECK(queue->pop_drop());
+    CHECK(queue->size() == 3);
+
+    std::unique_ptr<TestItem> item;
+    expect<MockMessages::MsgError>(mock_messages, 0, LOG_CRIT,
+                                   "BUG: Pop item before retrieving removed", false);
+    expect<MockBacktrace::Log>(mock_backtrace);
+    CHECK(queue->pop(item));
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 76);
+    expect<MockMessages::MsgError>(mock_messages, 0, LOG_CRIT,
+                                   "BUG: Pop item before retrieving removed", false);
+    expect<MockBacktrace::Log>(mock_backtrace);
+    CHECK(queue->pop(item));
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 77);
+    mock_messages->done();
+    CHECK(queue->size() == 1);
+
+    CHECK(queue->pop_drop());
+    CHECK(queue->empty());
+
+    auto removed(queue->get_removed());
+    REQUIRE(removed.size() == 2);
+    CHECK(removed[0]->value_ == 75);
+    CHECK(removed[1]->value_ == 78);
 }
 
 /*!\test
@@ -609,7 +730,8 @@ TEST_CASE_FIXTURE(Fixture, "Properties of full() function member")
 
     CHECK(queue->full());
 
-    queue->pop();
+    std::unique_ptr<TestItem> item;
+    CHECK(queue->pop(item));
 
     CHECK_FALSE(queue->full());
 }

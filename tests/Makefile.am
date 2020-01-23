@@ -43,7 +43,12 @@ noinst_LTLIBRARIES = libtestrunner.la
 
 libtestrunner_la_SOURCES = testrunner.cc
 
-test_urlfifo_SOURCES = test_urlfifo.cc
+test_urlfifo_SOURCES = \
+    test_urlfifo.cc \
+    mock_os.hh mock_os.cc \
+    mock_messages.hh mock_messages.cc \
+    mock_backtrace.hh mock_backtrace.cc \
+    mock_expectation.hh
 test_urlfifo_LDADD = \
     libtestrunner.la \
     $(top_builddir)/src/liburlfifo.la

@@ -32,7 +32,7 @@ testrunner_lib = static_library('testrunner', 'testrunner.cc',
 
 test('Play item queue',
     executable('test_urlfifo',
-        'test_urlfifo.cc',
+        ['test_urlfifo.cc', 'mock_os.cc', 'mock_messages.cc', 'mock_backtrace.cc'],
         include_directories: '../src',
         link_with: [testrunner_lib, urlfifo_lib],
         build_by_default: false),

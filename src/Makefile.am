@@ -26,6 +26,7 @@ bin_PROGRAMS = streamplayer
 streamplayer_SOURCES = \
     streamplayer.cc messages.c messages.h messages_glib.c messages_glib.h \
     messages_dbus.c messages_dbus.h \
+    backtrace.c backtrace.h \
     dbus_iface.cc dbus_iface.hh dbus_iface_deep.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
