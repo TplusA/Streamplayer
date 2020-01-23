@@ -1814,6 +1814,10 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
       case GST_MESSAGE_RESET_TIME:
+      case GST_MESSAGE_ELEMENT:
+      case GST_MESSAGE_LATENCY:
+      case GST_MESSAGE_NEED_CONTEXT:
+      case GST_MESSAGE_HAVE_CONTEXT:
         /* these messages are not handled, and they are explicitly ignored */
         break;
 
@@ -1824,18 +1828,14 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_CLOCK_PROVIDE:
       case GST_MESSAGE_STRUCTURE_CHANGE:
       case GST_MESSAGE_APPLICATION:
-      case GST_MESSAGE_ELEMENT:
       case GST_MESSAGE_SEGMENT_START:
       case GST_MESSAGE_SEGMENT_DONE:
-      case GST_MESSAGE_LATENCY:
       case GST_MESSAGE_ASYNC_START:
       case GST_MESSAGE_REQUEST_STATE:
       case GST_MESSAGE_STEP_START:
       case GST_MESSAGE_QOS:
       case GST_MESSAGE_PROGRESS:
       case GST_MESSAGE_TOC:
-      case GST_MESSAGE_NEED_CONTEXT:
-      case GST_MESSAGE_HAVE_CONTEXT:
       case GST_MESSAGE_ANY:
 #if GST_CHECK_VERSION(1, 5, 1)
       case GST_MESSAGE_EXTENDED:
