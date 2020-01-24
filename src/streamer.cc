@@ -1848,6 +1848,12 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_STREAMS_SELECTED:
       case GST_MESSAGE_REDIRECT:
 #endif /* v1.10 */
+#if GST_CHECK_VERSION(1, 16, 0)
+      case GST_MESSAGE_DEVICE_CHANGED:
+#endif /* v1.16 */
+#if GST_CHECK_VERSION(1, 18, 0)
+      case GST_MESSAGE_INSTANT_RATE_REQUEST:
+#endif /* v1.16 */
         BUG("UNHANDLED MESSAGE TYPE %s from %s",
             GST_MESSAGE_TYPE_NAME(message), GST_MESSAGE_SRC_NAME(message));
         break;
