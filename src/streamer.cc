@@ -26,6 +26,7 @@
 #include <sstream>
 #include <cinttypes>
 #include <cstring>
+#include <unordered_set>
 
 #include <gst/gst.h>
 #include <gst/tag/tag.h>
@@ -759,6 +760,44 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
                                               const gchar *tag,
                                               gpointer user_data)
 {
+    static const std::unordered_set<std::string> filtered_out =
+    {
+        GST_TAG_IMAGE,
+        GST_TAG_PREVIEW_IMAGE,
+        GST_TAG_COMMENT,
+        GST_TAG_EXTENDED_COMMENT,
+        GST_TAG_COMPOSER,
+        GST_TAG_DATE,
+        GST_TAG_DATE_TIME,
+        GST_TAG_COPYRIGHT,
+        GST_TAG_COPYRIGHT_URI,
+        GST_TAG_ENCODER,
+        GST_TAG_ENCODER_VERSION,
+        GST_TAG_ENCODED_BY,
+        GST_TAG_ISRC,
+        GST_TAG_ORGANIZATION,
+        GST_TAG_LOCATION,
+        GST_TAG_HOMEPAGE,
+        GST_TAG_CONTACT,
+        GST_TAG_LICENSE,
+        GST_TAG_LICENSE_URI,
+        GST_TAG_SERIAL,
+        GST_TAG_KEYWORDS,
+        GST_TAG_LYRICS,
+        GST_TAG_ATTACHMENT,
+        GST_TAG_APPLICATION_DATA,
+        GST_TAG_TRACK_GAIN,
+        GST_TAG_TRACK_PEAK,
+        GST_TAG_ALBUM_GAIN,
+        GST_TAG_ALBUM_PEAK,
+        GST_TAG_REFERENCE_LEVEL,
+        "private-id3v2-frame",          /* from Deezer */
+        "private-qt-tag",               /* from certain m4a files */
+    };
+
+    if(filtered_out.count(tag) != 0)
+        return;
+
     auto *builder = static_cast<GVariantBuilder *>(user_data);
     const GValue *value = gst_tag_list_get_value_index(list, tag, 0);
 
@@ -810,49 +849,6 @@ static GVariant *tag_list_to_g_variant(const GstTagList *list)
         gst_tag_list_foreach(list, add_tuple_to_tags_variant_builder, &builder);
 
     return g_variant_builder_end(&builder);
-}
-
-static void update_tags_for_item(PlayQueue::Item &item, GstTagList *tags)
-{
-    static const std::array<const char *const, 31> filtered_out =
-    {
-        GST_TAG_IMAGE,
-        GST_TAG_PREVIEW_IMAGE,
-        GST_TAG_COMMENT,
-        GST_TAG_EXTENDED_COMMENT,
-        GST_TAG_COMPOSER,
-        GST_TAG_DATE,
-        GST_TAG_DATE_TIME,
-        GST_TAG_COPYRIGHT,
-        GST_TAG_COPYRIGHT_URI,
-        GST_TAG_ENCODER,
-        GST_TAG_ENCODER_VERSION,
-        GST_TAG_ENCODED_BY,
-        GST_TAG_ISRC,
-        GST_TAG_ORGANIZATION,
-        GST_TAG_LOCATION,
-        GST_TAG_HOMEPAGE,
-        GST_TAG_CONTACT,
-        GST_TAG_LICENSE,
-        GST_TAG_LICENSE_URI,
-        GST_TAG_SERIAL,
-        GST_TAG_KEYWORDS,
-        GST_TAG_LYRICS,
-        GST_TAG_ATTACHMENT,
-        GST_TAG_APPLICATION_DATA,
-        GST_TAG_TRACK_GAIN,
-        GST_TAG_TRACK_PEAK,
-        GST_TAG_ALBUM_GAIN,
-        GST_TAG_ALBUM_PEAK,
-        GST_TAG_REFERENCE_LEVEL,
-        "private-id3v2-frame",          /* from Deezer */
-        "private-qt-tag",               /* from certain m4a files */
-    };
-
-    for(const auto &tag_name : filtered_out)
-        gst_tag_list_remove_tag(tags, tag_name);
-
-    item.get_stream_data().merge_tag_list(tags);
 }
 
 enum ImageTagType
@@ -1060,7 +1056,7 @@ static void handle_tag(GstMessage *message, StreamerData &data)
     gst_message_parse_tag(message, &tags);
 
     update_picture_for_item(*data.current_stream, tags);
-    update_tags_for_item(*data.current_stream, tags);
+    data.current_stream->get_stream_data().merge_tag_list(tags);
 
     gst_tag_list_unref(tags);
 
