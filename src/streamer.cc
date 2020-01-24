@@ -226,10 +226,10 @@ class StreamerData
         progress_watcher(0),
         soup_http_block_size(0),
         signal_handler_ids{0, 0},
-        url_fifo_LOCK_ME(new PlayQueue::Queue<PlayQueue::Item>()),
+        url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
         is_failing(false),
-        previous_time{0},
-        current_time{0},
+        previous_time{},
+        current_time{},
         system_clock(nullptr),
         is_tag_update_scheduled(false),
         next_allowed_tag_update_time(0),
@@ -1848,6 +1848,12 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_STREAMS_SELECTED:
       case GST_MESSAGE_REDIRECT:
 #endif /* v1.10 */
+#if GST_CHECK_VERSION(1, 16, 0)
+      case GST_MESSAGE_DEVICE_CHANGED:
+#endif /* v1.16 */
+#if GST_CHECK_VERSION(1, 18, 0)
+      case GST_MESSAGE_INSTANT_RATE_REQUEST:
+#endif /* v1.16 */
         BUG("UNHANDLED MESSAGE TYPE %s from %s",
             GST_MESSAGE_TYPE_NAME(message), GST_MESSAGE_SRC_NAME(message));
         break;
@@ -2294,7 +2300,7 @@ bool Streamer::seek(int64_t position, const char *units)
 
     if(position < 0)
     {
-        if(position == INT64_MAX)
+        if(position == INT64_MIN)
             msg_error(EINVAL, LOG_ERR, "Seek unit %s not supported", units);
 
         return false;
@@ -2479,7 +2485,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
         return false;
     }
 
-    std::unique_ptr<PlayQueue::Item> item(new PlayQueue::Item(
+    auto item(std::make_unique<PlayQueue::Item>(
             stream_id, std::move(stream_key), stream_url,
             std::chrono::time_point<std::chrono::nanoseconds>::min(),
             std::chrono::time_point<std::chrono::nanoseconds>::max()));

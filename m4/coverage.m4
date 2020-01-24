@@ -1,0 +1,1 @@
+../strbo_common/m4/coverage.m4

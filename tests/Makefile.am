@@ -19,54 +19,63 @@
 # MA  02110-1301, USA.
 #
 
-if WITH_CUTTER
-TESTS = run_test.sh
+if WITH_DOCTEST
+check_PROGRAMS = test_urlfifo test_playitem
+
+TESTS = run_tests.sh
 
 if WITH_VALGRIND
+AM_TESTS_ENVIRONMENT =  VALGRIND="$(VALGRIND)"
+AM_TESTS_ENVIRONMENT += VALGRIND_OPTIONS="--suppressions=$(srcdir)/valgrind.suppressions"
 TESTS += valgrind.sh
 endif
 
-AM_TESTS_ENVIRONMENT = CUTTER="$(CUTTER)" XSLTPROC="$(XSLTPROC)" VALGRIND="$(VALGRIND)"
+EXTRA_DIST = run_tests.sh valgrind.sh
+CLEANFILES = *.junit.xml *.valgrind.xml
 
-AM_LDFLAGS = -module -rpath $(libdir) -avoid-version -no-undefined
-
-AM_CPPFLAGS = $(CPPCUTTER_CFLAGS)
+AM_CPPFLAGS = -DDOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING
 AM_CPPFLAGS += -I$(top_srcdir)/src -I$(top_builddir)/src
 AM_CPPFLAGS += -I$(top_srcdir)/dbus_interfaces
-
 AM_CFLAGS = $(CWARNINGS)
-
 AM_CXXFLAGS = $(CXXWARNINGS)
 
-LIBS += $(CPPCUTTER_LIBS)
+noinst_LTLIBRARIES = libtestrunner.la
 
-check_LTLIBRARIES = test_urlfifo.la test_playitem.la
+libtestrunner_la_SOURCES = testrunner.cc
 
-test_urlfifo_la_SOURCES = test_urlfifo.cc
-test_urlfifo_la_LIBADD = $(top_builddir)/src/liburlfifo.la
-test_urlfifo_la_CFLAGS = $(AM_CFLAGS)
-test_urlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
+test_urlfifo_SOURCES = test_urlfifo.cc
+test_urlfifo_LDADD = \
+    libtestrunner.la \
+    $(top_builddir)/src/liburlfifo.la
+test_urlfifo_CPPFLAGS = $(AM_CPPFLAGS)
+test_urlfifo_CFLAGS = $(AM_CFLAGS)
+test_urlfifo_CXXFLAGS = $(AM_CXXFLAGS)
 
-test_playitem_la_SOURCES = \
+test_playitem_SOURCES = \
     test_playitem.cc \
+    mock_os.hh mock_os.cc \
     mock_messages.hh mock_messages.cc \
     mock_expectation.hh
-test_playitem_la_LIBADD = \
+test_playitem_LDADD = \
+    libtestrunner.la \
     $(top_builddir)/src/liburlfifo.la \
     $(top_builddir)/src/libgvariantwrapper.la \
     $(STREAMPLAYER_DEPENDENCIES_LIBS)
-test_playitem_la_CPPFLAGS = $(AM_CPPFLAGS) $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
-test_playitem_la_CFLAGS = $(AM_CFLAGS)
-test_playitem_la_CXXFLAGS = $(AM_CXXFLAGS)
+test_playitem_CPPFLAGS = $(AM_CPPFLAGS) $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
+test_playitem_CFLAGS = $(AM_CFLAGS)
+test_playitem_CXXFLAGS = $(AM_CXXFLAGS)
 
-CLEANFILES = test_report.xml test_report_junit.xml valgrind.xml
+doctest: $(check_PROGRAMS)
+	for p in $(check_PROGRAMS); do \
+	    if ./$$p $(DOCTEST_EXTRA_OPTIONS); then :; \
+	    else \
+	        echo "*****"; \
+	        echo "***** Running $$p again in gdb due to failures"; \
+	        echo "*****"; \
+	        gdb -ex run --args ./$$p $(DOCTEST_EXTRA_OPTIONS); \
+	    fi; \
+	done
 
-EXTRA_DIST = cutter2junit.xslt
-EXTRA_DIST += cutter-1_2_4.supp
-
-check-local: check-TESTS
-	@if $(GREP) -w cutter $(TEST_LOGS); then \
-	    echo "Unit tests failed (check log)"; \
-	    exit 1; \
-	fi
+doctest-valgrind: $(check_PROGRAMS)
+	for p in $(check_PROGRAMS); do $(VALGRIND) --leak-check=full --show-reachable=yes --error-limit=no ./$$p $(DOCTEST_EXTRA_OPTIONS); done
 endif

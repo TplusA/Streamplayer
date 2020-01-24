@@ -23,9 +23,11 @@
 #include <config.h>
 #endif /* HAVE_CONFIG_H */
 
-#include <cppcutter.h>
+#include <doctest.h>
+
 #include <memory>
 #include <string>
+#include <sstream>
 #include <algorithm>
 
 #include "urlfifo.hh"
@@ -38,8 +40,7 @@
  */
 /*!@{*/
 
-namespace urlfifo_tests
-{
+TEST_SUITE_BEGIN("Play queue");
 
 class TestItem
 {
@@ -56,38 +57,39 @@ class TestItem
     {}
 };
 
-static constexpr size_t MAX_QUEUE_LENGTH = 8;
-PlayQueue::Queue<TestItem> *queue;
-
-void cut_setup()
+class Fixture
 {
-    queue = new PlayQueue::Queue<TestItem>(MAX_QUEUE_LENGTH);
-}
+  public:
+    static constexpr size_t MAX_QUEUE_LENGTH = 8;
 
-void cut_teardown()
-{
-    delete queue;
-    queue = nullptr;
-}
+  protected:
+    std::unique_ptr<PlayQueue::Queue<TestItem>> queue;
+
+  public:
+    explicit Fixture():
+        queue(std::make_unique<PlayQueue::Queue<TestItem>>(MAX_QUEUE_LENGTH))
+    {}
+};
+
+constexpr size_t Fixture::MAX_QUEUE_LENGTH;
 
 /*!\test
  * After initialization, the URL FIFO shall be empty.
  */
-void test_fifo_is_empty_on_startup()
+TEST_CASE_FIXTURE(Fixture, "Queue is empty on startup")
 {
-    cut_assert_equal_size(0, queue->size());
-    cut_assert_true(queue->empty());
-    cut_assert_false(queue->full());
-    cppcut_assert_equal(size_t(0),
-                        size_t(std::distance(queue->begin(), queue->end())));
+    CHECK(queue->size() == 0);
+    CHECK(queue->empty());
+    CHECK_FALSE(queue->full());
+    CHECK(std::distance(queue->begin(), queue->end()) == 0);
 }
 
 /*!\test
  * Clearing the whole FIFO works as expected with an empty FIFO.
  */
-void test_clear_all_on_empty_fifo()
+TEST_CASE_FIXTURE(Fixture, "Clear an empty queue")
 {
-    cut_assert_true(queue->clear(0).empty());
+    CHECK(queue->clear(0).empty());
 }
 
 template <typename StringType>
@@ -96,10 +98,9 @@ static unsigned int push(PlayQueue::Queue<TestItem> &q, unsigned int value,
                          size_t keep_first_n = SIZE_MAX)
 {
     const size_t result =
-        q.push(std::unique_ptr<TestItem>(new TestItem(value, name)),
-               keep_first_n);
+        q.push(std::make_unique<TestItem>(value, name), keep_first_n);
 
-    cppcut_assert_equal(expected_result, result);
+    CHECK(result == expected_result);
 
     return result;
 }
@@ -107,28 +108,26 @@ static unsigned int push(PlayQueue::Queue<TestItem> &q, unsigned int value,
 /*!\test
  * Clearing the whole FIFO results in an empty FIFO.
  */
-void test_clear_non_empty_fifo()
+TEST_CASE_FIXTURE(Fixture, "Clear non-empty queue")
 {
-    cut_assert_true(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 23, "first", 1);
 
-    cut_assert_false(queue->empty());
+    CHECK_FALSE(queue->empty());
 
     push(*queue, 32, "second", 2);
 
-    cut_assert_false(queue->empty());
-    cppcut_assert_equal(size_t(2), queue->size());
-    cppcut_assert_equal(size_t(2),
-                        size_t(std::distance(queue->begin(), queue->end())));
+    CHECK_FALSE(queue->empty());
+    CHECK(queue->size() == 2);
+    CHECK(std::distance(queue->begin(), queue->end()) == 2);
 
-    cppcut_assert_equal(size_t(2), queue->clear(0).size());
+    CHECK(queue->clear(0).size() == 2);
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_equal(size_t(0), queue->size());
-    cppcut_assert_equal(size_t(0),
-                        size_t(std::distance(queue->begin(), queue->end())));
+    CHECK(queue->empty());
+    CHECK(queue->size() == 0);
+    CHECK(std::distance(queue->begin(), queue->end()) == 0);
 }
 
 /*!\test
@@ -136,106 +135,108 @@ void test_clear_non_empty_fifo()
  * many entries as have been specified in the argument to
  * #PlayQueue::Queue::clear().
  */
-void test_clear_partial_non_empty_fifo()
+TEST_CASE_FIXTURE(Fixture, "Clear partial non-empty queue")
 {
     push(*queue, 23, "first",  1);
     push(*queue, 32, "second", 2);
 
     auto removed(queue->clear(1));
-    cppcut_assert_equal(size_t(1), removed.size());
+    REQUIRE(removed.size() == 1);
 
-    cppcut_assert_equal(32U,      removed[0]->value_);
-    cppcut_assert_equal("second", removed[0]->name_.c_str());
+    CHECK(removed[0]->value_ == 32);
+    CHECK(removed[0]->name_ == "second");
 
-    cppcut_assert_equal(size_t(1), queue->size());
+    CHECK(queue->size() == 1);
 
     const TestItem *item = queue->peek();
-    cppcut_assert_not_null(item);
-    cppcut_assert_equal(23U,     item->value_);
-    cppcut_assert_equal("first", item->name_.c_str());
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 23);
+    CHECK(item->name_ == "first");
 }
 
 /*!\test
- * Like #test_clear_partial_non_empty_fifo(), but pop items beforehand.
+ * Clearing the last few items in a non-empty FIFO after popping some items
+ * results in a FIFO with as many entries as have been specified in the
+ * argument to #PlayQueue::Queue::clear().
  *
  * Because we are operating on a ring buffer.
  */
-void test_partial_clear_after_pop_item_from_multi_item_fifo()
+TEST_CASE_FIXTURE(Fixture, "Partial clear after pop from queue with multi items")
 {
-    cut_assert_true(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 23, "first", 1);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 32, "second", 2);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 123, "third", 3);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 132, "fourth", 4);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 223, "fifth", 5);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 232, "sixth", 6);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 323, "seventh", 7);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
 
     push(*queue, 332, "eighth", 8);
-    cut_assert_false(queue->empty());
-    cut_assert_true(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK(queue->full());
 
-    cppcut_assert_equal(size_t(8), queue->size());
+    CHECK(queue->size() == 8);
 
     size_t remaining;
     auto item = queue->pop(remaining);
 
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(size_t(7), remaining);
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
-    cppcut_assert_equal(23U,     item->value_);
-    cppcut_assert_equal("first", item->name_.c_str());
+    REQUIRE(item != nullptr);
+    CHECK(remaining == 7);
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
+    CHECK(item->value_ == 23);
+    CHECK(item->name_ == "first");
 
     push(*queue, 42, "ninth", 8);
-    cut_assert_false(queue->empty());
-    cut_assert_true(queue->full());
+    CHECK_FALSE(queue->empty());
+    CHECK(queue->full());
 
     auto removed = queue->clear(1);
-    cppcut_assert_equal(size_t(7), removed.size());
+    CHECK(removed.size() == 7);
 
-    cut_assert_false(queue->empty());
-    cut_assert_false(queue->full());
-    cppcut_assert_equal(size_t(1), queue->size());
-    cppcut_assert_equal(42U,  removed[0]->value_);
-    cppcut_assert_equal(332U, removed[1]->value_);
-    cppcut_assert_equal(323U, removed[2]->value_);
-    cppcut_assert_equal(232U, removed[3]->value_);
-    cppcut_assert_equal(223U, removed[4]->value_);
-    cppcut_assert_equal(132U, removed[5]->value_);
-    cppcut_assert_equal(123U, removed[6]->value_);
+    CHECK_FALSE(queue->empty());
+    CHECK_FALSE(queue->full());
+    CHECK(queue->size() == 1);
+    CHECK(removed[0]->value_ == 42);
+    CHECK(removed[1]->value_ == 332);
+    CHECK(removed[2]->value_ == 323);
+    CHECK(removed[3]->value_ == 232);
+    CHECK(removed[4]->value_ == 223);
+    CHECK(removed[5]->value_ == 132);
+    CHECK(removed[6]->value_ == 123);
 
     item = queue->pop(remaining);
 
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(size_t(0), remaining);
+    REQUIRE(item != nullptr);
+    CHECK(remaining == 0);
 
-    cut_assert_true(queue->empty());
-    cut_assert_false(queue->full());
-    cppcut_assert_equal(32U,      item->value_);
-    cppcut_assert_equal("second", item->name_.c_str());
+    CHECK(queue->empty());
+    CHECK_FALSE(queue->full());
+    CHECK(item->value_ == 32);
+    CHECK(item->name_ == "second");
 }
 
 /*!\test
@@ -243,25 +244,26 @@ void test_partial_clear_after_pop_item_from_multi_item_fifo()
  * to #PlayQueue::Queue::clear() results in unchanged FIFO content. No items
  * are removed in this case.
  */
-void test_clear_partial_with_fewer_items_than_to_be_kept_does_nothing()
+TEST_CASE_FIXTURE(Fixture,
+                  "Partial clear with fewer items than available keeps queue unchanged")
 {
     push(*queue, 23, "first", 1);
     push(*queue, 32, "second", 2);
-    cut_assert_equal_size(2, queue->size());
+    CHECK(queue->size() == 2);
 
-    cut_assert_true(queue->clear(3).empty());
-    cut_assert_true(queue->clear(SIZE_MAX).empty());
-    cut_assert_true(queue->clear(2).empty());
+    CHECK(queue->clear(3).empty());
+    CHECK(queue->clear(SIZE_MAX).empty());
+    CHECK(queue->clear(2).empty());
 
-    cppcut_assert_equal(size_t(2), queue->size());
+    CHECK(queue->size() == 2);
 
     const TestItem *item = queue->peek();
-    cppcut_assert_not_null(item);
-    cppcut_assert_equal("first", item->name_.c_str());
+    REQUIRE(item != nullptr);
+    CHECK(item->name_ == "first");
 
     item = queue->peek(1);
-    cppcut_assert_not_null(item);
-    cppcut_assert_equal("second", item->name_.c_str());
+    REQUIRE(item != nullptr);
+    CHECK(item->name_ == "second");
 }
 
 static const std::string default_url("http://ta-hifi.de/");
@@ -269,21 +271,21 @@ static const std::string default_url("http://ta-hifi.de/");
 /*!\test
  * Add a single item to an empty FIFO.
  */
-void test_push_single_item()
+TEST_CASE_FIXTURE(Fixture, "Push single item")
 {
     push(*queue, 42, default_url, 1);
-    cppcut_assert_equal(size_t(1), queue->size());
+    CHECK(queue->size() == 1);
 
     const TestItem *item = queue->peek();
-    cppcut_assert_not_null(item);
-    cppcut_assert_equal(42U, item->value_);
-    cppcut_assert_equal(default_url, item->name_);
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 42);
+    CHECK(item->name_ == default_url);
 }
 
 /*!\test
  * Add more than a single item to an empty FIFO.
  */
-void test_push_multiple_items()
+TEST_CASE_FIXTURE(Fixture, "Push multiple items")
 {
     static constexpr size_t count = 2;
 
@@ -291,10 +293,10 @@ void test_push_multiple_items()
     {
         std::ostringstream temp;
         temp << default_url << ' ' << i;
-        cppcut_assert_equal(i + 1, push(*queue, 23 + i, temp.str(), i + 1));
+        CHECK(push(*queue, 23 + i, temp.str(), i + 1) == i + 1);
     }
 
-    cppcut_assert_equal(count, queue->size());
+    CHECK(queue->size() == count);
 
     /* check if we can read back what we've written */
     for(unsigned int i = 0; i < count; ++i)
@@ -304,9 +306,9 @@ void test_push_multiple_items()
         std::ostringstream temp;
         temp <<  default_url << ' ' << i;
 
-        cppcut_assert_not_null(item);
-        cppcut_assert_equal(23 + i, item->value_);
-        cppcut_assert_equal(temp.str(), item->name_);
+        REQUIRE(item != nullptr);
+        CHECK(item->value_ == 23 + i);
+        CHECK(item->name_ == temp.str());
     }
 }
 
@@ -315,7 +317,7 @@ void test_push_multiple_items()
  * returned by #PlayQueue::Queue::push(). The FIFO is expected to remain
  * changed after such an overflow.
  */
-void test_push_many_items_does_not_trash_fifo()
+TEST_CASE_FIXTURE(Fixture, "Items pushed into full queue get ignored")
 {
     for(unsigned int i = 0; i < MAX_QUEUE_LENGTH; ++i)
     {
@@ -324,12 +326,12 @@ void test_push_many_items_does_not_trash_fifo()
         push(*queue, 123 + i, temp.str(), i + 1);
     }
 
-    cppcut_assert_equal(MAX_QUEUE_LENGTH, queue->size());
+    CHECK(queue->size() == MAX_QUEUE_LENGTH);
 
     /* next push should fail */
     push(*queue, 0, default_url, 0);
 
-    cppcut_assert_equal(MAX_QUEUE_LENGTH, queue->size());
+    CHECK(queue->size() == MAX_QUEUE_LENGTH);
 
     /* check that FIFO still has the expected content */
     for(unsigned int i = 0; i < MAX_QUEUE_LENGTH; ++i)
@@ -339,9 +341,9 @@ void test_push_many_items_does_not_trash_fifo()
         std::ostringstream temp;
         temp <<  default_url << ' ' << i + 50;
 
-        cppcut_assert_not_null(item);
-        cppcut_assert_equal(123 + i, item->value_);
-        cppcut_assert_equal(temp.str(), item->name_);
+        REQUIRE(item != nullptr);
+        CHECK(item->value_ == 123 + i);
+        CHECK(item->name_ == temp.str());
     }
 }
 
@@ -349,21 +351,21 @@ void test_push_many_items_does_not_trash_fifo()
  * It is possible to replace the items in a non-empty URL FIFO by a single item
  * by pushing the new item and specifying the number of items to keep as 0.
  */
-void test_push_one_replace_all()
+TEST_CASE_FIXTURE(Fixture, "Push one item to replace all others")
 {
     push(*queue, 42, default_url, 1);
     push(*queue, 43, default_url, 2);
     push(*queue, 45, default_url, 1, 0);
 
-    cppcut_assert_equal(size_t(1), queue->size());
+    CHECK(queue->size() == 1);
 
     size_t remaining = 987;
     auto item = queue->pop(remaining);
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_equal(size_t(0), remaining);
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(45U, item->value_);
+    CHECK(queue->empty());
+    CHECK(remaining == 0);
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 45);
 }
 
 /*!\test
@@ -371,169 +373,167 @@ void test_push_one_replace_all()
  * single item by pushing the new item and specifying the number of items to
  * keep as 1 (or greater).
  */
-void test_push_one_keep_first()
+TEST_CASE_FIXTURE(Fixture, "Push one item and keep first in queue")
 {
     push(*queue, 42, default_url, 1);
     push(*queue, 43, default_url, 2);
     push(*queue, 45, default_url, 2, 1);
 
-    cppcut_assert_equal(size_t(2), queue->size());
+    CHECK(queue->size() == 2);
 
     size_t remaining = 987;
     auto item = queue->pop(remaining);
 
-    cppcut_assert_equal(size_t(1), remaining);
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(size_t(1), queue->size());
-    cppcut_assert_equal(42U, item->value_);
+    CHECK(remaining == 1);
+    REQUIRE(item != nullptr);
+    CHECK(queue->size() == 1);
+    CHECK(item->value_ == 42);
 
     item = queue->pop();
 
-    cppcut_assert_equal(size_t(0), queue->size());
-    cut_assert_true(queue->empty());
-    cppcut_assert_equal(45U, item->value_);
+    CHECK(queue->size() == 0);
+    CHECK(queue->empty());
+    CHECK(item->value_ == 45);
 }
 
 /*!\test
  * Replacing the contents of an empty URL FIFO with a new item is possible.
  */
-void test_push_one_replace_all_works_on_empty_fifo()
+TEST_CASE_FIXTURE(Fixture, "Push one item to replace all others on empty queue")
 {
     push(*queue, 80, default_url, 1, 0);
-    cppcut_assert_equal(size_t(1), queue->size());
+    CHECK(queue->size() == 1);
 
     std::unique_ptr<TestItem> item;
-    cut_assert_true(queue->pop(item));
+    CHECK(queue->pop(item));
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(80U, item->value_);
-    cppcut_assert_equal(default_url, item->name_);
+    CHECK(queue->empty());
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 80);
+    CHECK(item->name_ == default_url);
 }
 
 /*!\test
  * Replacing the contents of an overflown URL FIFO with a new item is possible.
  */
-void test_push_one_replace_all_works_on_full_fifo()
+TEST_CASE_FIXTURE(Fixture, "Push one item and keep first in queue on empty queue")
 {
     static constexpr unsigned int max_insertions = 10;
 
     for(unsigned int id = 20; id < 20 + max_insertions; ++id)
     {
         const size_t result =
-            queue->push(std::unique_ptr<TestItem>(new TestItem(id, default_url)),
-                        SIZE_MAX);
+            queue->push(std::make_unique<TestItem>(id, default_url), SIZE_MAX);
 
         if(result == 0)
             break;
     }
 
-    cppcut_assert_operator(size_t(max_insertions), >, queue->size());
+    CHECK(queue->size() < max_insertions);
 
     push(*queue, 90, default_url, 1, 0);
-    cppcut_assert_equal(size_t(1), queue->size());
+    CHECK(queue->size() == 1);
 
     auto item = queue->pop();
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(90U, item->value_);
-    cppcut_assert_equal(default_url, item->name_);
+    CHECK(queue->empty());
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 90);
+    CHECK(item->name_ == default_url);
 }
 
 /*!\test
  * Empty URL FIFO is handled correctly.
  */
-void test_peek_empty_fifo_returns_null()
+TEST_CASE_FIXTURE(Fixture, "Peek empty queue returns nullptr")
 {
-    cppcut_assert_null(queue->peek());
-    cppcut_assert_null(queue->peek(0));
-    cppcut_assert_null(queue->peek(1));
-    cppcut_assert_null(queue->peek(2));
+    CHECK(queue->peek() == nullptr);
+    CHECK(queue->peek(0) == nullptr);
+    CHECK(queue->peek(1) == nullptr);
+    CHECK(queue->peek(2) == nullptr);
 }
 
 /*!\test
  * Head element can be inspected, also several times.
  */
-void test_peek_fifo_returns_head_element()
+TEST_CASE_FIXTURE(Fixture, "Peek returns same head element on each call")
 {
     push(*queue, 16, default_url, 1);
 
     const TestItem *item = queue->peek();
 
-    cppcut_assert_not_null(item);
-    cppcut_assert_equal(16U, item->value_);
-    cppcut_assert_equal(default_url, item->name_);
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 16);
+    CHECK(item->name_ == default_url);
 
-    cppcut_assert_equal(item, queue->peek());
+    CHECK(queue->peek() == item);
 
     push(*queue, 17, default_url, 2);
 
-    cppcut_assert_equal(item, queue->peek());
-
-    cppcut_assert_equal(size_t(2), queue->clear(0).size());
+    CHECK(queue->peek() == item);
+    CHECK(queue->clear(0).size() == 2);
 }
 
 /*!\test
  * Removing a non-existent first item from the URL FIFO results in an error
  * returned by #PlayQueue::Queue::pop().
  */
-void test_pop_empty_fifo_detects_underflow()
+TEST_CASE_FIXTURE(Fixture, "Pop from empty queue detects underflow")
 {
     std::unique_ptr<TestItem> dummy;
-    cut_assert_false(queue->pop(dummy));
-    cppcut_assert_null(dummy.get());
-
-    cppcut_assert_null(queue->pop().get());
+    CHECK_FALSE(queue->pop(dummy));
+    CHECK(dummy == nullptr);
+    CHECK(queue->pop() == nullptr);
 }
 
 /*!\test
  * Remove first item from the URL FIFO which contains a single item.
  */
-void test_pop_item_from_single_item_fifo()
+TEST_CASE_FIXTURE(Fixture, "Pop from queue with single item moves the item to caller")
 {
     push(*queue, 42, default_url, 1);
 
-    cppcut_assert_equal(size_t(1), queue->size());
+    CHECK(queue->size() == 1);
 
     size_t remaining = 123;
     auto item = queue->pop(remaining);
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_equal(size_t(0), remaining);
-    cppcut_assert_equal(42U, item->value_);
-    cppcut_assert_equal(default_url, item->name_);
+    CHECK(queue->empty());
+    CHECK(remaining == 0);
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 42);
+    CHECK(item->name_ == default_url);
 }
 
 /*!\test
  * Remove first item from the URL FIFO which contains more that one item.
  */
-void test_pop_item_from_multi_item_fifo()
+TEST_CASE_FIXTURE(Fixture, "Pop multiple items from queue")
 {
     push(*queue, 23, "first", 1);
     push(*queue, 32, "second", 2);
 
-    cppcut_assert_equal(size_t(2), queue->size());
+    CHECK(queue->size() == 2);
 
     auto item = queue->pop();
 
-    cppcut_assert_equal(size_t(1), queue->size());
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(23U, item->value_);
-    cppcut_assert_equal("first", item->name_.c_str());
+    CHECK(queue->size() == 1);
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 23);
+    CHECK(item->name_ == "first");
 
     item = queue->pop();
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(32U, item->value_);
-    cppcut_assert_equal("second", item->name_.c_str());
+    CHECK(queue->empty());
+    REQUIRE(item != nullptr);
+    CHECK(item->value_ == 32);
+    CHECK(item->name_ == "second");
 }
 
 /*!\test
  * Stress test push and pop to trigger internal wraparound handling code.
  */
-void test_push_pop_chase()
+TEST_CASE_FIXTURE(Fixture, "Push/pop chase stress test")
 {
     static constexpr unsigned int id_base = 100;
     static constexpr unsigned int num_of_iterations = 10;
@@ -543,49 +543,48 @@ void test_push_pop_chase()
     for(unsigned int i = 0; i < num_of_iterations; ++i)
     {
         push(*queue, i + id_base + 1, default_url, 2);
-        cppcut_assert_equal(size_t(2), queue->size());
+        CHECK(queue->size() == 2);
 
         auto item = queue->pop();
 
-        cppcut_assert_equal(size_t(1), queue->size());
-        cppcut_assert_not_null(item.get());
-        cppcut_assert_equal(i + id_base, item->value_);
+        CHECK(queue->size() == 1);
+        REQUIRE(item != nullptr);
+        CHECK(item->value_ == i + id_base);
     }
 
     size_t remaining = 5;
     auto item = queue->pop(remaining);
 
-    cut_assert_true(queue->empty());
-    cppcut_assert_not_null(item.get());
-    cppcut_assert_equal(size_t(0), remaining);
-    cppcut_assert_equal(num_of_iterations + id_base + 0, item->value_);
+    CHECK(queue->empty());
+    REQUIRE(item != nullptr);
+    CHECK(remaining == 0);
+    CHECK(item->value_ == num_of_iterations + id_base + 0);
 }
 
 /*!\test
  * No items to iterate in empty URL FIFO.
  */
-void test_get_queued_ids_count_for_empty_fifo()
+TEST_CASE_FIXTURE(Fixture, "Number of queued stream IDs in empty queue is 0")
 {
-    cut_assert_true(queue->begin() == queue->end());
-    cppcut_assert_equal(ssize_t(0), std::distance(queue->begin(), queue->end()));
+    CHECK(queue->begin() == queue->end());
+    CHECK(std::distance(queue->begin(), queue->end()) == 0);
 }
 
 /*!\test
  * Queued IDs are returned.
  */
-void test_get_queued_ids_for_filled_fifo()
+TEST_CASE_FIXTURE(Fixture, "Queued stream IDs can be read out from filled queue")
 {
     for(size_t i = 0; i < MAX_QUEUE_LENGTH; ++i)
         push(*queue, 100 + i, "item", i + 1);
 
-    cppcut_assert_equal(ssize_t(MAX_QUEUE_LENGTH),
-                        std::distance(queue->begin(), queue->end()));
+    CHECK(std::distance(queue->begin(), queue->end()) == MAX_QUEUE_LENGTH);
 
     unsigned int expected_id = 100;
     for(const auto &it : *queue)
     {
-        cppcut_assert_equal(expected_id, it->value_);
-        cppcut_assert_equal("item", it->name_.c_str());
+        CHECK(it->value_ == expected_id);
+        CHECK(it->name_ == "item");
         ++expected_id;
     }
 }
@@ -593,9 +592,9 @@ void test_get_queued_ids_for_filled_fifo()
 /*!\test
  * Basic tests for #PlayQueue::Queue::full().
  */
-void test_urlfifo_is_full_interface()
+TEST_CASE_FIXTURE(Fixture, "Properties of full() function member")
 {
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->full());
 
     for(size_t i = 0; i < 10; ++i)
     {
@@ -608,13 +607,13 @@ void test_urlfifo_is_full_interface()
         push(*queue, 0, default_url, i + 1);
     }
 
-    cut_assert_true(queue->full());
+    CHECK(queue->full());
 
     queue->pop();
 
-    cut_assert_false(queue->full());
+    CHECK_FALSE(queue->full());
 }
 
-}
+TEST_SUITE_END();
 
 /*!@}*/

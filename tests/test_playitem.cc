@@ -23,7 +23,7 @@
 #include <config.h>
 #endif /* HAVE_CONFIG_H */
 
-#include <cppcutter.h>
+#include <doctest.h>
 
 #include "playitem.hh"
 
@@ -37,26 +37,34 @@
  */
 /*!@{*/
 
-namespace play_item_tests
-{
+TEST_SUITE_BEGIN("Play queue item");
 
-static MockMessages *mock_messages;
-
-void cut_setup()
+class Fixture
 {
-    mock_messages = new MockMessages;
-    cppcut_assert_not_null(mock_messages);
-    mock_messages->init();
-    mock_messages_singleton = mock_messages;
-}
+  protected:
+    std::unique_ptr<MockMessages::Mock> mock_messages;
 
-void cut_teardown()
-{
-    mock_messages->check();
-    mock_messages_singleton = nullptr;
-    delete mock_messages;
-    mock_messages = nullptr;
-}
+  public:
+    explicit Fixture():
+        mock_messages(std::make_unique<MockMessages::Mock>())
+    {
+        MockMessages::singleton = mock_messages.get();
+    }
+
+    ~Fixture()
+    {
+        try
+        {
+            mock_messages->done();
+        }
+        catch(...)
+        {
+            /* no throwing from dtors */
+        }
+
+        MockMessages::singleton = nullptr;
+    }
+};
 
 static GVariantWrapper default_key()
 {
@@ -71,13 +79,13 @@ static std::string default_url()
 /*!\test
  * The various states can be set freely.
  */
-void test_set_state_does_not_consider_current_state()
+TEST_CASE_FIXTURE(Fixture, "Set state does not consider current state")
 {
     PlayQueue::Item it(25, default_key(), default_url(),
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
-    cppcut_assert_equal(int(PlayQueue::ItemState::IN_QUEUE), int(it.get_state()));
+    CHECK(it.get_state() == PlayQueue::ItemState::IN_QUEUE);
 
     static const std::array<PlayQueue::ItemState, 4> states
     {
@@ -95,7 +103,7 @@ void test_set_state_does_not_consider_current_state()
         for(const auto &s : states)
         {
             it.set_state(s);
-            cppcut_assert_equal(int(s), int(it.get_state()));
+            CHECK(it.get_state() == s);
         }
     }
 }
@@ -103,7 +111,7 @@ void test_set_state_does_not_consider_current_state()
 /*!\test
  * Stream data in item can be retrieved.
  */
-void test_retrieve_stream_data()
+TEST_CASE_FIXTURE(Fixture, "Retrieve stream data")
 {
     PlayQueue::Item it(123, default_key(), default_url(),
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
@@ -111,41 +119,41 @@ void test_retrieve_stream_data()
 
     PlayQueue::StreamData &data(it.get_stream_data());
 
-    cppcut_assert_null(data.get_tag_list());
-    cppcut_assert_not_equal(static_cast<void *>(&data.get_image_sent_data(false)),
-                            static_cast<void *>(&data.get_image_sent_data(true)));
+    CHECK(data.get_tag_list() == nullptr);
+    CHECK(static_cast<void *>(&data.get_image_sent_data(false)) != static_cast<void *>(&data.get_image_sent_data(true)));
 }
 
 /*!\test
  * If defined, the URL FIFO item data fail operation is used when failing an
  * item.
  */
-void test_item_can_be_set_to_failed_state()
+TEST_CASE_FIXTURE(Fixture, "Item can be set to failed state")
 {
     PlayQueue::Item it(50, default_key(), default_url(),
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
-    cut_assert_true(it.fail());
+    CHECK(it.fail());
 }
 
 /*!\test
  * Multiple errors for the same stream are blocked.
  */
-void test_cannot_enter_failed_state_twice()
+TEST_CASE_FIXTURE(Fixture, "Cannot enter failed state twice")
 {
     PlayQueue::Item it(40, default_key(), default_url(),
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
-    cut_assert_true(it.fail());
+    CHECK(it.fail());
 
-    mock_messages->expect_msg_error_formatted(0, LOG_NOTICE,
-        "Detected multiple failures for stream ID 40, reporting only the first one");
+    expect<MockMessages::MsgError>(mock_messages, 0, LOG_NOTICE,
+        "Detected multiple failures for stream ID 40, reporting only the first one",
+        false);
 
-    cut_assert_false(it.fail());
+    CHECK_FALSE(it.fail());
 }
 
-}
+TEST_SUITE_END();
 
 /*!@}*/

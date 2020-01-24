@@ -778,7 +778,7 @@ INPUT_ENCODING         = UTF-8
 # *.md, *.mm, *.dox, *.py, *.f90, *.f, *.for, *.tcl, *.vhd, *.vhdl, *.ucf,
 # *.qsf, *.as and *.js.
 
-FILE_PATTERNS          =
+FILE_PATTERNS          = *.cc *.c *.hh *.h *.md
 
 # The RECURSIVE tag can be used to specify whether or not subdirectories should
 # be searched for input files as well.
@@ -794,13 +794,12 @@ RECURSIVE              = YES
 # run.
 
 EXCLUDE                = \
-    @abs_builddir@/src/streamplayer_dbus.c \
-    @abs_builddir@/src/artcache_dbus.c \
-    @abs_builddir@/src/audiopath_dbus.c \
-    @abs_builddir@/src/mounta_dbus.c \
-    @abs_builddir@/src/debug_dbus.c \
-    @abs_srcdir@/dbus_interfaces/de_tahifi_lists_errors.hh \
-    @abs_srcdir@/dbus_interfaces/*.xml
+    @abs_builddir@/src/de_tahifi_streamplayer.c \
+    @abs_builddir@/src/de_tahifi_artcache.c \
+    @abs_builddir@/src/de_tahifi_audiopath.c \
+    @abs_builddir@/src/de_tahifi_mounta.c \
+    @abs_builddir@/src/de_tahifi_debug.c \
+    @abs_srcdir@/dbus_interfaces/de_tahifi_lists_errors.hh
 
 # The EXCLUDE_SYMLINKS tag can be used to select whether or not files or
 # directories that are symbolic links (a Unix file system feature) are excluded
@@ -1969,7 +1968,7 @@ SEARCH_INCLUDES        = YES
 # preprocessor.
 # This tag requires that the tag SEARCH_INCLUDES is set to YES.
 
-INCLUDE_PATH           = @abs_srcdir@ @abs_builddir@ @abs_builddir@/src
+INCLUDE_PATH           = @abs_srcdir@ @abs_builddir@
 
 # You can use the INCLUDE_FILE_PATTERNS tag to specify one or more wildcard
 # patterns (like *.h and *.hpp) to filter out the header-files in the
@@ -1987,12 +1986,13 @@ INCLUDE_FILE_PATTERNS  =
 # recursively expanded use the := operator instead of the = operator.
 # This tag requires that the tag ENABLE_PREPROCESSING is set to YES.
 
-PREDEFINED             = DE_TAHIFI_LISTS_ERRORS_ENUM_NAME:=Code \
-                         DE_TAHIFI_LISTS_ERRORS_ENUM_VALUE(V):=V \
-                         DE_TAHIFI_ARTCACHE_READ_ERRORS_ENUM_NAME:=Code \
-                         DE_TAHIFI_ARTCACHE_READ_ERRORS_ENUM_VALUE(V):=V \
-                         DE_TAHIFI_ARTCACHE_MONITOR_ERRORS_ENUM_NAME:=Code \
-                         DE_TAHIFI_ARTCACHE_MONITOR_ERRORS_ENUM_VALUE(V):=V
+PREDEFINED             = \
+    DE_TAHIFI_LISTS_ERRORS_ENUM_NAME:=ListError::Code \
+    DE_TAHIFI_LISTS_ERRORS_ENUM_VALUE(V):=V \
+    DE_TAHIFI_ARTCACHE_READ_ERRORS_ENUM_NAME:=ArtCache::ReadError::Code \
+    DE_TAHIFI_ARTCACHE_READ_ERRORS_ENUM_VALUE(V):=V \
+    DE_TAHIFI_ARTCACHE_MONITOR_ERRORS_ENUM_NAME:=ArtCache::MonitorError::Code \
+    DE_TAHIFI_ARTCACHE_MONITOR_ERRORS_ENUM_VALUE(V):=V
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then this
 # tag can be used to specify a list of macro names that should be expanded. The
@@ -2059,12 +2059,6 @@ EXTERNAL_GROUPS        = YES
 
 EXTERNAL_PAGES         = YES
 
-# The PERL_PATH should be the absolute path and name of the perl script
-# interpreter (i.e. the result of 'which perl').
-# The default file (with absolute path) is: /usr/bin/perl.
-
-PERL_PATH              = /usr/bin/perl
-
 #---------------------------------------------------------------------------
 # Configuration options related to the dot tool
 #---------------------------------------------------------------------------
@@ -2077,15 +2071,6 @@ PERL_PATH              = /usr/bin/perl
 # The default value is: YES.
 
 CLASS_DIAGRAMS         = YES
-
-# You can define message sequence charts within doxygen comments using the \msc
-# command. Doxygen will then run the mscgen tool (see:
-# http://www.mcternan.me.uk/mscgen/)) to produce the chart and insert it in the
-# documentation. The MSCGEN_PATH tag allows you to specify the directory where
-# the mscgen tool resides. If left empty the tool is assumed to be found in the
-# default search path.
-
-MSCGEN_PATH            =
 
 # You can include diagrams made with dia in doxygen documentation. Doxygen will
 # then run dia to produce the diagram and insert it in the documentation. The

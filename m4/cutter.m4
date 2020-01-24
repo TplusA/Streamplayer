@@ -1,1 +1,0 @@
-../strbo_common/m4/cutter.m4

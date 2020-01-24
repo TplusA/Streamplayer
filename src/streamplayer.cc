@@ -83,10 +83,9 @@ static int setup(const struct parameters *parameters)
     msg_set_verbose_level(parameters->verbose_level);
 
     if(!parameters->run_in_foreground)
+    {
         openlog("streamplayer", LOG_PID, LOG_DAEMON);
 
-    if(!parameters->run_in_foreground)
-    {
         if(daemon(0, 0) < 0)
         {
             msg_error(errno, LOG_EMERG, "Failed to run as daemon");
@@ -106,31 +105,31 @@ static int process_command_line(int argc, char *argv[],
     parameters->run_in_foreground = false;
     parameters->connect_to_system_dbus = false;
 
-    bool show_version = false;
-    char *verbose_level_name = NULL;
-    bool verbose_quiet = false;
+    static bool show_version = false;
+    static char *verbose_level_name;
+    static bool verbose_quiet = false;
 
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
     GOptionEntry entries[] =
     {
         { "version", 'V', 0, G_OPTION_ARG_NONE, &show_version,
-          "Print version information to stdout.", NULL },
+          "Print version information to stdout.", nullptr },
         { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
-          "Run in foreground, don't run as daemon.", NULL },
+          "Run in foreground, don't run as daemon.", nullptr },
         { "verbose", 'v', 0, G_OPTION_ARG_STRING, &verbose_level_name,
-          "Set verbosity level to given level.", NULL },
+          "Set verbosity level to given level.", nullptr },
         { "quiet", 'q', 0, G_OPTION_ARG_NONE, &verbose_quiet,
-          "Short for \"--verbose quite\".", NULL},
+          "Short for \"--verbose quite\".", nullptr},
         { "system-dbus", 's', 0, G_OPTION_ARG_NONE,
           &parameters->connect_to_system_dbus,
-          "Connect to system D-Bus instead of session D-Bus.", NULL },
-        { NULL }
+          "Connect to system D-Bus instead of session D-Bus.", nullptr },
+        {}
     };
 
-    g_option_context_add_main_entries(ctx, entries, NULL);
+    g_option_context_add_main_entries(ctx, entries, nullptr);
     g_option_context_add_group(ctx, gst_init_get_option_group());
 
-    GError *err = NULL;
+    GError *err = nullptr;
 
     if(!g_option_context_parse(ctx, &argc, &argv, &err))
     {
@@ -145,7 +144,7 @@ static int process_command_line(int argc, char *argv[],
     if(show_version)
         return 1;
 
-    if(verbose_level_name != NULL)
+    if(verbose_level_name != nullptr)
     {
         parameters->verbose_level =
             msg_verbose_level_name_to_level(verbose_level_name);
@@ -158,7 +157,7 @@ static int process_command_line(int argc, char *argv[],
 
             const char *const *names = msg_get_verbose_level_names();
 
-            for(const char *name = *names; name != NULL; name = *++names)
+            for(const char *name = *names; name != nullptr; name = *++names)
                 fprintf(stderr, "    %s\n", name);
         }
 
@@ -203,8 +202,8 @@ int main(int argc, char *argv[])
     if(setup(&parameters) < 0)
         return EXIT_FAILURE;
 
-    globals.loop = g_main_loop_new(NULL, FALSE);
-    if(globals.loop == NULL)
+    globals.loop = g_main_loop_new(nullptr, FALSE);
+    if(globals.loop == nullptr)
     {
         msg_error(ENOMEM, LOG_EMERG, "Failed creating GLib main loop");
         return -1;
@@ -227,7 +226,7 @@ int main(int argc, char *argv[])
                                               "strbo",
                                               "T+A Streaming Board streamplayer",
                                               "/de/tahifi/Streamplayer",
-                                              NULL, NULL, NULL);
+                                              nullptr, nullptr, nullptr);
 
     g_unix_signal_add(SIGINT, signal_handler, globals.loop);
     g_unix_signal_add(SIGTERM, signal_handler, globals.loop);

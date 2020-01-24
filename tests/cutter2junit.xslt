@@ -1,1 +1,0 @@
-../strbo_common/tests/cutter2junit.xslt
