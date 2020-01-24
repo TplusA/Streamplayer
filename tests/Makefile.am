@@ -25,7 +25,8 @@ check_PROGRAMS = test_urlfifo test_playitem
 TESTS = run_tests.sh
 
 if WITH_VALGRIND
-AM_TESTS_ENVIRONMENT = VALGRIND="$(VALGRIND)"
+AM_TESTS_ENVIRONMENT =  VALGRIND="$(VALGRIND)"
+AM_TESTS_ENVIRONMENT += VALGRIND_OPTIONS="--suppressions=$(srcdir)/valgrind.suppressions"
 TESTS += valgrind.sh
 endif
 
