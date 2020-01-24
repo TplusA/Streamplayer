@@ -83,10 +83,9 @@ static int setup(const struct parameters *parameters)
     msg_set_verbose_level(parameters->verbose_level);
 
     if(!parameters->run_in_foreground)
+    {
         openlog("streamplayer", LOG_PID, LOG_DAEMON);
 
-    if(!parameters->run_in_foreground)
-    {
         if(daemon(0, 0) < 0)
         {
             msg_error(errno, LOG_EMERG, "Failed to run as daemon");

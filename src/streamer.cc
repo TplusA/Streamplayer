@@ -2300,7 +2300,7 @@ bool Streamer::seek(int64_t position, const char *units)
 
     if(position < 0)
     {
-        if(position == INT64_MAX)
+        if(position == INT64_MIN)
             msg_error(EINVAL, LOG_ERR, "Seek unit %s not supported", units);
 
         return false;
