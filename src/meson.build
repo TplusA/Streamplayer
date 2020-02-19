@@ -107,7 +107,7 @@ dbus_docs += custom_target('de_tahifi_debug_docs',
     ])
 
 urlfifo_lib = static_library('urlfifo',
-    'playitem.cc',
+    ['playitem.cc', 'backtrace.c'],
     dependencies: glib_deps
 )
 

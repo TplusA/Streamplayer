@@ -154,23 +154,13 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
 
     auto fifo_lock(url_fifo->lock());
 
-    const auto items_removed = keep_first_n_entries >= 0
-        ? url_fifo->clear(keep_first_n_entries)
-        : std::vector<std::unique_ptr<PlayQueue::Item>>();
+    if(keep_first_n_entries >= 0)
+        url_fifo->clear(keep_first_n_entries);
 
-    /*
-     * The "+ 1" is added to the array sizes to avoid C++ standard violation
-     * (empty arrays are not allowed).
-     */
-    stream_id_t ids_removed[items_removed.size() + 1];
+    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(*url_fifo));
+
     stream_id_t ids_in_fifo[url_fifo->size() + 1];
-
     size_t ids_count = 0;
-
-    for(const auto &item : items_removed)
-        ids_removed[ids_count++] = item->stream_id_;
-
-    ids_count = 0;
 
     for(const auto &item : *url_fifo)
         ids_in_fifo[ids_count++] = item->stream_id_;
@@ -180,12 +170,10 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
     GVariant *const queued_ids =
         g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_in_fifo,
                                   ids_count, sizeof(ids_in_fifo[0]));
-    GVariant *const removed_ids =
-        g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_removed,
-                                  items_removed.size(), sizeof(ids_removed[0]));
 
     tdbus_splay_urlfifo_complete_clear(object, invocation,
-                                       current_id, queued_ids, removed_ids);
+                                       current_id, queued_ids,
+                                       GVariantWrapper::move(dropped_ids));
 
     return TRUE;
 }
@@ -226,9 +214,10 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
            ? 0
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
+    std::vector<std::unique_ptr<PlayQueue::Item>> removed;
     const bool failed =
         !Streamer::push_item(stream_id, std::move(GVariantWrapper(stream_key)),
-                            stream_url, keep);
+                            stream_url, keep, removed);
 
     uint32_t dummy_skipped;
     uint32_t dummy_next;

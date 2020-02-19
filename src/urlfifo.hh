@@ -22,6 +22,8 @@
 #ifndef URLFIFO_HH
 #define URLFIFO_HH
 
+#include "messages.h"
+
 #include <deque>
 #include <vector>
 #include <mutex>
@@ -67,6 +69,7 @@ class Queue
     const size_t max_number_of_items_;
 
     std::deque<std::unique_ptr<T>> queue_;
+    std::deque<std::unique_ptr<T>> removed_;
     mutable std::recursive_mutex lock_;
 
   public:
@@ -120,8 +123,12 @@ class Queue
     /*!
      * Append new item to URL FIFO.
      *
+     * Items which get removed from the URL FIFO are moved to an internal store
+     * for deferred retrieval or disposal by #PlayQueue::Queue::get_removed().
+     *
      * \param item
      *     The Item to add to the URL FIFO.
+     *
      * \param keep_first_n
      *     The number of items to keep untouched at top of the FIFO. If set to
      *     0, then the whole FIFO will be cleared before adding the new item.
@@ -135,10 +142,7 @@ class Queue
      */
     size_t push(std::unique_ptr<T> item, size_t keep_first_n)
     {
-        while(keep_first_n < size())
-            queue_.pop_back();
-
-        if(full())
+        if(clear(keep_first_n) == 0 && full())
             return 0;
 
         queue_.emplace_back(std::move(item));
@@ -149,51 +153,42 @@ class Queue
     /*!
      * Remove first item from URL FIFO and return it.
      *
-     * \param[out] remaining
-     *     The number of items remaining in the FIFO after removing the head
-     *     element, if any.
+     * \param[out] dest
+     *     The removed head element of the FIFO is returned here. In case the
+     *     FIFO was empty, the object will remain untouched.
+     *
+     * \param what
+     *     String providing context in case of a bug.
      *
      * \returns
-     *     The first item in the FIFO, or \c nullptr in case the URL FIFO was
-     *     empty.
+     *     \c True if an item was moved to \p dest, \c false in case the URL
+     *     FIFO was empty.
      */
-    std::unique_ptr<T> pop(size_t &remaining)
+    bool pop(std::unique_ptr<T> &dest, const char *what = nullptr)
     {
-        if(empty())
-        {
-            remaining = 0;
-            return nullptr;
-        }
+        if(what != nullptr)
+            BUG_IF(!removed_.empty(), "Pop item before retrieving removed (%s)", what);
+        else
+            BUG_IF(!removed_.empty(), "Pop item before retrieving removed");
 
-        auto result = std::move(queue_.front());
-
-        queue_.pop_front();
-        remaining = size();
-
-        return result;
-    }
-
-    /*!
-     * Remove first item from URL FIFO and return it.
-     *
-     * Simplified version for callers not interested in number of remaining
-     * items.
-     */
-    std::unique_ptr<T> pop()
-    {
-        size_t dummy;
-        return pop(dummy);
-    }
-
-    /*!
-     * Remove first item from URL FIFO, assign to destination if not empty.
-     */
-    bool pop(std::unique_ptr<T> &dest)
-    {
         if(empty())
             return false;
 
         dest = std::move(queue_.front());
+        queue_.pop_front();
+
+        return true;
+    }
+
+    /*!
+     * Remove first item from URL FIFO, and discard it.
+     */
+    bool pop_drop()
+    {
+        if(empty())
+            return false;
+
+        removed_.push_back(std::move(queue_.front()));
         queue_.pop_front();
 
         return true;
@@ -210,16 +205,22 @@ class Queue
      *     the whole FIFO will be cleared.
      *
      * \returns
-     *     The items removed from the FIFO.
+     *     The number of items removed from the FIFO.
      */
-    std::vector<std::unique_ptr<T>> clear(size_t keep_first_n)
+    size_t clear(size_t keep_first_n)
     {
-        std::vector<std::unique_ptr<T>> result;
+        const size_t result = keep_first_n < size() ? size() - keep_first_n : 0;
 
-        while(keep_first_n < size())
+        if(result > 0)
         {
-            result.emplace_back(std::move(queue_.back()));
-            queue_.pop_back();
+            removed_.resize(removed_.size() + result);
+            auto it(removed_.rbegin());
+
+            for(size_t i = 0; i < result; ++i)
+            {
+                *it++ = std::move(queue_.back());
+                queue_.pop_back();
+            }
         }
 
         return result;
@@ -262,6 +263,7 @@ class Queue
         return const_cast<Queue<T> *>(this)->peek(pos);
     }
 
+    auto get_removed() { return std::move(removed_); }
 };
 
 }

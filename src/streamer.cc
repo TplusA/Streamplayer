@@ -308,19 +308,47 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
     return false;
 }
 
+GVariantWrapper
+Streamer::mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+{
+    std::deque<std::unique_ptr<PlayQueue::Item>> dropped(url_fifo.get_removed());
+
+    if(dropped.empty())
+        return GVariantWrapper(
+                    g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16,
+                                              nullptr, 0, sizeof(stream_id_t)));
+
+    /*
+     * The "+ 1" is added to the array size to avoid C++ standard violation
+     * (empty arrays are not allowed).
+     */
+    stream_id_t ids[dropped.size() + 1];
+    size_t ids_count = 0;
+
+    for(const auto &item : dropped)
+        ids[ids_count++] = item->stream_id_;
+
+    return GVariantWrapper(
+                g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16,
+                                          ids, ids_count, sizeof(stream_id_t)));
+}
+
 static void emit_stopped(tdbussplayPlayback *playback_iface,
                          StreamerData &data)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
+    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
+
     if(playback_iface != nullptr)
         tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
-                                          data.current_stream->stream_id_);
+                                          data.current_stream->stream_id_,
+                                          GVariantWrapper::move(dropped_ids));
 }
 
 static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
                                     StreamerData &data,
-                                    const PlayQueue::Queue<PlayQueue::Item> &url_fifo,
+                                    PlayQueue::Queue<PlayQueue::Item> &url_fifo,
                                     StoppedReason reason)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
@@ -357,9 +385,12 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     static_assert(G_N_ELEMENTS(reasons) == size_t(StoppedReason::LAST_VALUE) + 1U,
                   "Array size mismatch");
 
+    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(url_fifo));
+
     if(data.current_stream == nullptr)
         tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
                                                      url_fifo.size() == 0,
+                                                     GVariantWrapper::move(dropped_ids),
                                                      reasons[size_t(reason)]);
     else
     {
@@ -369,6 +400,7 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
                                                      failed_stream->stream_id_,
                                                      failed_stream->url_.c_str(),
                                                      url_fifo.size() == 0,
+                                                     GVariantWrapper::move(dropped_ids),
                                                      reasons[size_t(reason)]);
     }
 }
@@ -613,7 +645,8 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
     {
         if(replaced_current_stream)
         {
-            data.current_stream = url_fifo.pop();
+            url_fifo.pop(data.current_stream,
+                         "try_take_next(), replaced current stream");
             next = data.current_stream.get();
         }
 
@@ -642,9 +675,10 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
     if(replaced_current_stream || queued != nullptr)
     {
         if(replaced_current_stream)
-            url_fifo.pop(data.current_stream);
+            url_fifo.pop(data.current_stream,
+                         "try_take_next(), error after replacing current stream");
         else
-            url_fifo.pop();
+            url_fifo.pop_drop();
 
         if(data.current_stream != nullptr && data.current_stream->fail())
             recover_from_error_now_or_later(data, fdata);
@@ -751,7 +785,8 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
 
     if(set_stream_state(data.pipeline, GST_STATE_READY, "EOS"))
     {
-        emit_stopped(dbus_get_playback_iface(), data);
+        data.url_fifo_LOCK_ME->locked_rw(
+            [&data] (auto &) { emit_stopped(dbus_get_playback_iface(), data); });
         data.current_stream.reset();
     }
 }
@@ -1077,7 +1112,7 @@ static void handle_tag(GstMessage *message, StreamerData &data)
 
 static void emit_now_playing(tdbussplayPlayback *playback_iface,
                              const StreamerData &data,
-                             const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+                             PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     if(playback_iface == nullptr || data.current_stream == nullptr)
         return;
@@ -1085,11 +1120,15 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     const auto &sd = data.current_stream->get_stream_data();
     GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list());
 
+    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(url_fifo));
+
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data.current_stream->stream_id_,
                                           GVariantWrapper::get(sd.stream_key_),
                                           data.current_stream->url_.c_str(),
-                                          url_fifo.full(), meta_data);
+                                          url_fifo.full(),
+                                          GVariantWrapper::move(dropped_ids),
+                                          meta_data);
 }
 
 static StoppedReason core_error_to_stopped_reason(GstCoreError code,
@@ -1268,7 +1307,7 @@ static PlayQueue::Item *get_failed_item(StreamerData &data,
     {
       case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
       case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
-        if(!url_fifo.pop(data.current_stream))
+        if(!url_fifo.pop(data.current_stream, "get failed item, replace current"))
             return nullptr;
 
         break;
@@ -1538,17 +1577,18 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        if(data.current_stream != nullptr)
-            emit_stopped(dbus_playback_iface, data);
+        {
+            auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
-        data.url_fifo_LOCK_ME->locked_rw(
-            [&data] (PlayQueue::Queue<PlayQueue::Item> &fifo)
-            {
-                if(!fifo.pop(data.current_stream))
-                    data.current_stream.reset();
-            });
+            if(data.current_stream != nullptr)
+                emit_stopped(dbus_playback_iface, data);
 
-        data.stream_has_just_started = false;
+            if(!data.url_fifo_LOCK_ME->pop(data.current_stream,
+                                           "previous stream stopped"))
+                data.current_stream.reset();
+
+            data.stream_has_just_started = false;
+        }
 
         break;
 
@@ -1575,9 +1615,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         if(activate_stream(data, state) && dbus_playback_iface != nullptr &&
            !data.stream_has_just_started)
         {
-            data.url_fifo_LOCK_ME->locked_ro(
+            data.url_fifo_LOCK_ME->locked_rw(
                 [&dbus_playback_iface, &data]
-                (const PlayQueue::Queue<PlayQueue::Item> &fifo)
+                (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
                     emit_now_playing(dbus_playback_iface, data, fifo);
                 });
@@ -1647,7 +1687,8 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         log_assert(!data.url_fifo_LOCK_ME->empty());
     }
 
-    if(failed && !data.url_fifo_LOCK_ME->pop(data.current_stream))
+    if(failed && !data.url_fifo_LOCK_ME->pop(data.current_stream,
+                                             "replace current due to failure at start of stream"))
         need_activation = false;
 
     if(need_activation)
@@ -2062,8 +2103,8 @@ void Streamer::deactivate()
         streamer_data.is_player_activated = false;
 
         const GstState pending = GST_STATE_PENDING(streamer_data.pipeline);
-        bool dummy;
-        do_stop(streamer_data, context, pending, dummy);
+        bool dummy_failed_hard;
+        do_stop(streamer_data, context, pending, dummy_failed_hard);
 
         msg_info("Deactivated");
     }
@@ -2157,9 +2198,9 @@ bool Streamer::stop(const char *reason)
         GST_STATE(streamer_data.pipeline) == GST_STATE_NULL) &&
        pending == GST_STATE_VOID_PENDING)
     {
-        streamer_data.url_fifo_LOCK_ME->locked_ro(
+        streamer_data.url_fifo_LOCK_ME->locked_rw(
             []
-            (const PlayQueue::Queue<PlayQueue::Item> &fifo)
+            (PlayQueue::Queue<PlayQueue::Item> &fifo)
             {
                 emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
                                         fifo, StoppedReason::ALREADY_STOPPED);
@@ -2470,7 +2511,8 @@ bool Streamer::get_current_stream_id(stream_id_t &id)
 }
 
 bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-                         const char *stream_url, size_t keep_items)
+                         const char *stream_url, size_t keep_items,
+                         std::vector<std::unique_ptr<PlayQueue::Item>> &removed)
 {
     auto data_lock(streamer_data.lock());
     bool is_active = streamer_data.is_player_activated;
@@ -2493,7 +2535,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
     }
 
     return streamer_data.url_fifo_LOCK_ME->locked_rw(
-                [&item, &keep_items]
+                [&item, &keep_items, &removed]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
                     return fifo.push(std::move(item), keep_items) != 0;
