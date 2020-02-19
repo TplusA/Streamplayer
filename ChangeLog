@@ -1,3 +1,21 @@
+2020-02-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.0 released.
+
+	* Streamer: Report dropped stream IDs over D-Bus when the queue is
+	  cleared. This change allows for better synchronization between
+	  streamer player and player controller with much less guesswork
+	  involved.
+
+	* Streamer: Optimized tag handling for speed and improved
+	  introspection.
+
+	* Build system: Support Meson.
+
+	* Licensing: Changed license from GPLv3+ to GPLv2+.
+
+	* Misc: Many cleanups and modernizations.
+
 2019-03-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 4.10 released.
@@ -313,4 +331,4 @@
 	* First release for testing.
 
 
-Copyright 2015, 2016, 2017, 2018, 2019 T+A elektroakustik GmbH & Co. KG
+Copyright 2015--2020 T+A elektroakustik GmbH & Co. KG
