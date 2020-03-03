@@ -535,17 +535,40 @@ static void recover_from_error_now_or_later(StreamerData &data,
         data.fail = fdata;
 }
 
-static PlayQueue::Item *pick_next_item(StreamerData &data,
+/*!
+ * Find out which item is going to be played next.
+ *
+ * In most cases, this function will simply return the pointer stored at the
+ * head of the queue. In case there is a current stream whose state is
+ * #PlayQueue::ItemState::IN_QUEUE (i.e., it is the first stream to play and
+ * has been removed from the queue already, but is not playing yet), the
+ * current stream is returned.
+ *
+ * \param current_stream
+ *     Pointer to the current stream, or \c nullptr if there is no currently
+ *     playing stream.
+ *
+ * \param url_fifo
+ *     The item queue.
+ *
+ * \param[out] next_stream_is_in_fifo
+ *     Tells the caller whether or not the returned stream pointer is stored in
+ *     \p url_fifo.
+ *
+ * \returns
+ *     Pointer to the next stream, or \c nullptr is there is no next stream.
+ */
+static PlayQueue::Item *pick_next_item(PlayQueue::Item *current_stream,
                                        PlayQueue::Queue<PlayQueue::Item> &url_fifo,
                                        bool &next_stream_is_in_fifo)
 {
-    if(data.current_stream != nullptr)
+    if(current_stream != nullptr)
     {
-        switch(data.current_stream->get_state())
+        switch(current_stream->get_state())
         {
           case PlayQueue::ItemState::IN_QUEUE:
             next_stream_is_in_fifo = false;
-            return data.current_stream.get();
+            return current_stream;
 
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
           case PlayQueue::ItemState::ACTIVE:
@@ -623,7 +646,8 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
     FailureData fdata(data.current_stream != nullptr);
 
     auto *const queued = url_fifo.peek();
-    auto *next = pick_next_item(data, url_fifo, replaced_current_stream);
+    auto *next = pick_next_item(data.current_stream.get(),
+                                url_fifo, replaced_current_stream);
 
     current_stream_is_just_in_queue = false;
 
@@ -751,10 +775,9 @@ static void queue_stream_from_url_fifo(GstElement *elem, StreamerData &data)
     static const char context[] = "need next stream";
 
     bool is_next_current;
-    bool is_just_queued;
-    auto *const next_stream =
-        try_take_next(data, *data.url_fifo_LOCK_ME, false,
-                      is_next_current, is_just_queued, context);
+    auto *const next_stream = pick_next_item(data.current_stream.get(),
+                                             *data.url_fifo_LOCK_ME,
+                                             is_next_current);
 
     if(data.current_stream == nullptr && next_stream == nullptr)
     {
@@ -1647,6 +1670,7 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
     bool failed = false;
+    bool need_pop = false;
     bool with_bug = false;
     bool need_activation = true;
 
@@ -1671,7 +1695,21 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
             break;
 
           case PlayQueue::ItemState::ACTIVE:
-            need_activation = false;
+            {
+                const auto *next_stream = data.url_fifo_LOCK_ME->peek();
+
+                if(next_stream == nullptr)
+                    need_activation = false;
+                else if(next_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_ACTIVATE)
+                    need_pop = true;
+                else
+                {
+                    BUG("Next stream %u in unexpected state %d",
+                        next_stream->stream_id_, int(next_stream->get_state()));
+                    need_activation = false;
+                }
+            }
+
             break;
         }
     }
@@ -1687,8 +1725,11 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         log_assert(!data.url_fifo_LOCK_ME->empty());
     }
 
-    if(failed && !data.url_fifo_LOCK_ME->pop(data.current_stream,
-                                             "replace current due to failure at start of stream"))
+    if(need_pop &&
+       !data.url_fifo_LOCK_ME->pop(data.current_stream,
+                                   failed
+                                   ? "replace current due to failure at start of stream"
+                                   : "take next stream from queue"))
         need_activation = false;
 
     if(need_activation)
