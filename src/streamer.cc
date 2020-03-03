@@ -535,17 +535,40 @@ static void recover_from_error_now_or_later(StreamerData &data,
         data.fail = fdata;
 }
 
-static PlayQueue::Item *pick_next_item(StreamerData &data,
+/*!
+ * Find out which item is going to be played next.
+ *
+ * In most cases, this function will simply return the pointer stored at the
+ * head of the queue. In case there is a current stream whose state is
+ * #PlayQueue::ItemState::IN_QUEUE (i.e., it is the first stream to play and
+ * has been removed from the queue already, but is not playing yet), the
+ * current stream is returned.
+ *
+ * \param current_stream
+ *     Pointer to the current stream, or \c nullptr if there is no currently
+ *     playing stream.
+ *
+ * \param url_fifo
+ *     The item queue.
+ *
+ * \param[out] next_stream_is_in_fifo
+ *     Tells the caller whether or not the returned stream pointer is stored in
+ *     \p url_fifo.
+ *
+ * \returns
+ *     Pointer to the next stream, or \c nullptr is there is no next stream.
+ */
+static PlayQueue::Item *pick_next_item(PlayQueue::Item *current_stream,
                                        PlayQueue::Queue<PlayQueue::Item> &url_fifo,
                                        bool &next_stream_is_in_fifo)
 {
-    if(data.current_stream != nullptr)
+    if(current_stream != nullptr)
     {
-        switch(data.current_stream->get_state())
+        switch(current_stream->get_state())
         {
           case PlayQueue::ItemState::IN_QUEUE:
             next_stream_is_in_fifo = false;
-            return data.current_stream.get();
+            return current_stream;
 
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
           case PlayQueue::ItemState::ACTIVE:
@@ -623,7 +646,8 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
     FailureData fdata(data.current_stream != nullptr);
 
     auto *const queued = url_fifo.peek();
-    auto *next = pick_next_item(data, url_fifo, replaced_current_stream);
+    auto *next = pick_next_item(data.current_stream.get(),
+                                url_fifo, replaced_current_stream);
 
     current_stream_is_just_in_queue = false;
 
