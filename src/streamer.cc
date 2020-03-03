@@ -775,10 +775,9 @@ static void queue_stream_from_url_fifo(GstElement *elem, StreamerData &data)
     static const char context[] = "need next stream";
 
     bool is_next_current;
-    bool is_just_queued;
-    auto *const next_stream =
-        try_take_next(data, *data.url_fifo_LOCK_ME, false,
-                      is_next_current, is_just_queued, context);
+    auto *const next_stream = pick_next_item(data.current_stream.get(),
+                                             *data.url_fifo_LOCK_ME,
+                                             is_next_current);
 
     if(data.current_stream == nullptr && next_stream == nullptr)
     {
@@ -1671,6 +1670,7 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
     bool failed = false;
+    bool need_pop = false;
     bool with_bug = false;
     bool need_activation = true;
 
@@ -1695,7 +1695,21 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
             break;
 
           case PlayQueue::ItemState::ACTIVE:
-            need_activation = false;
+            {
+                const auto *next_stream = data.url_fifo_LOCK_ME->peek();
+
+                if(next_stream == nullptr)
+                    need_activation = false;
+                else if(next_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_ACTIVATE)
+                    need_pop = true;
+                else
+                {
+                    BUG("Next stream %u in unexpected state %d",
+                        next_stream->stream_id_, int(next_stream->get_state()));
+                    need_activation = false;
+                }
+            }
+
             break;
         }
     }
@@ -1711,8 +1725,11 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         log_assert(!data.url_fifo_LOCK_ME->empty());
     }
 
-    if(failed && !data.url_fifo_LOCK_ME->pop(data.current_stream,
-                                             "replace current due to failure at start of stream"))
+    if(need_pop &&
+       !data.url_fifo_LOCK_ME->pop(data.current_stream,
+                                   failed
+                                   ? "replace current due to failure at start of stream"
+                                   : "take next stream from queue"))
         need_activation = false;
 
     if(need_activation)
