@@ -1,3 +1,10 @@
+2020-03-03  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.1 released.
+
+	* Streamer: Fix handling of stream queue and meta data between track
+	  changes.
+
 2020-02-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.0 released.
