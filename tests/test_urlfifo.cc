@@ -660,13 +660,11 @@ TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
     std::unique_ptr<TestItem> item;
     expect<MockMessages::MsgError>(mock_messages, 0, LOG_CRIT,
                                    "BUG: Pop item before retrieving removed", false);
-    expect<MockBacktrace::Log>(mock_backtrace);
     CHECK(queue->pop(item));
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 76);
     expect<MockMessages::MsgError>(mock_messages, 0, LOG_CRIT,
                                    "BUG: Pop item before retrieving removed", false);
-    expect<MockBacktrace::Log>(mock_backtrace);
     CHECK(queue->pop(item));
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 77);
