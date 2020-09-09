@@ -23,8 +23,8 @@
 #include <config.h>
 #endif /* HAVE_CONFIG_H */
 
-#include <string.h>
-#include <errno.h>
+#include <cstring>
+#include <cerrno>
 
 #include "dbus_iface.hh"
 #include "dbus_iface_deep.hh"
@@ -157,22 +157,11 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
     if(keep_first_n_entries >= 0)
         url_fifo->clear(keep_first_n_entries);
 
+    auto queued_ids(Streamer::mk_id_array_from_queued_items(*url_fifo));
     auto dropped_ids(Streamer::mk_id_array_from_dropped_items(*url_fifo));
 
-    stream_id_t ids_in_fifo[url_fifo->size() + 1];
-    size_t ids_count = 0;
-
-    for(const auto &item : *url_fifo)
-        ids_in_fifo[ids_count++] = item->stream_id_;
-
-    static_assert(sizeof(stream_id_t) == 2, "Unexpected stream ID size");
-
-    GVariant *const queued_ids =
-        g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids_in_fifo,
-                                  ids_count, sizeof(ids_in_fifo[0]));
-
-    tdbus_splay_urlfifo_complete_clear(object, invocation,
-                                       current_id, queued_ids,
+    tdbus_splay_urlfifo_complete_clear(object, invocation, current_id,
+                                       GVariantWrapper::move(queued_ids),
                                        GVariantWrapper::move(dropped_ids));
 
     return TRUE;

@@ -27,6 +27,7 @@
 #include <cinttypes>
 #include <cstring>
 #include <unordered_set>
+#include <algorithm>
 
 #include <gst/gst.h>
 #include <gst/tag/tag.h>
@@ -308,29 +309,35 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
     return false;
 }
 
-GVariantWrapper
-Streamer::mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+template <typename T>
+static GVariantWrapper mk_id_array(const T &input)
 {
-    std::deque<std::unique_ptr<PlayQueue::Item>> dropped(url_fifo.get_removed());
-
-    if(dropped.empty())
+    if(input.empty())
         return GVariantWrapper(
                     g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16,
                                               nullptr, 0, sizeof(stream_id_t)));
 
-    /*
-     * The "+ 1" is added to the array size to avoid C++ standard violation
-     * (empty arrays are not allowed).
-     */
-    stream_id_t ids[dropped.size() + 1];
-    size_t ids_count = 0;
+    std::vector<stream_id_t> ids;
+    std::transform(input.begin(), input.end(), std::back_inserter(ids),
+                   [] (const auto &item) -> stream_id_t { return item->stream_id_; });
 
-    for(const auto &item : dropped)
-        ids[ids_count++] = item->stream_id_;
+    static_assert(sizeof(stream_id_t) == 2, "Unexpected stream ID size");
 
     return GVariantWrapper(
-                g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16,
-                                          ids, ids_count, sizeof(stream_id_t)));
+                g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16, ids.data(),
+                                          ids.size(), sizeof(ids[0])));
+}
+
+GVariantWrapper
+Streamer::mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+{
+    return mk_id_array(url_fifo);
+}
+
+GVariantWrapper
+Streamer::mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+{
+    return mk_id_array(url_fifo.get_removed());
 }
 
 static void emit_stopped(tdbussplayPlayback *playback_iface,

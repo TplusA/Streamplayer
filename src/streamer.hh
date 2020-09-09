@@ -54,6 +54,7 @@ bool push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                const char *stream_url, size_t keep_items,
                std::vector<std::unique_ptr<PlayQueue::Item>> &removed);
 bool remove_items_for_root_path(const char *root_path);
+GVariantWrapper mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo);
 GVariantWrapper mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo);
 
 }
