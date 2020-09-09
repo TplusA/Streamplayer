@@ -35,9 +35,10 @@ test('Play item queue',
         ['test_urlfifo.cc', 'mock_os.cc', 'mock_messages.cc', 'mock_backtrace.cc'],
         include_directories: '../src',
         link_with: [testrunner_lib, urlfifo_lib],
-        build_by_default: false),
-        workdir: meson.current_build_dir(),
-        args: ['--reporters=strboxml', '--out=test_urlfifo.junit.xml']
+        build_by_default: false
+    ),
+    workdir: meson.current_build_dir(),
+    args: ['--reporters=strboxml', '--out=test_urlfifo.junit.xml']
 )
 
 test('Play items',
@@ -46,7 +47,8 @@ test('Play items',
         include_directories: '../src',
         link_with: [testrunner_lib, urlfifo_lib, gvariantwrapper_lib],
         dependencies: glib_deps,
-        build_by_default: false),
-        workdir: meson.current_build_dir(),
-        args: ['--reporters=strboxml', '--out=test_playitem.junit.xml']
+        build_by_default: false
+    ),
+    workdir: meson.current_build_dir(),
+    args: ['--reporters=strboxml', '--out=test_playitem.junit.xml']
 )
