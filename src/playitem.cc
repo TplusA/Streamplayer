@@ -54,8 +54,11 @@ const char *PlayQueue::item_state_name(PlayQueue::ItemState state)
       case ItemState::ABOUT_TO_ACTIVATE:
         return "ABOUT_TO_ACTIVATE";
 
-      case ItemState::ACTIVE:
-        return "ACTIVE";
+      case ItemState::ACTIVE_HALF_PLAYING:
+        return "ACTIVE_HALF_PLAYING";
+
+      case ItemState::ACTIVE_NOW_PLAYING:
+        return "ACTIVE_NOW_PLAYING";
 
       case ItemState::ABOUT_TO_PHASE_OUT:
         return "ABOUT_TO_PHASE_OUT";

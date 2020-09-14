@@ -87,10 +87,11 @@ TEST_CASE_FIXTURE(Fixture, "Set state does not consider current state")
 
     CHECK(it.get_state() == PlayQueue::ItemState::IN_QUEUE);
 
-    static const std::array<PlayQueue::ItemState, 4> states
+    static const std::array<PlayQueue::ItemState, 5> states
     {
         PlayQueue::ItemState::ABOUT_TO_ACTIVATE,
-        PlayQueue::ItemState::ACTIVE,
+        PlayQueue::ItemState::ACTIVE_HALF_PLAYING,
+        PlayQueue::ItemState::ACTIVE_NOW_PLAYING,
         PlayQueue::ItemState::ABOUT_TO_PHASE_OUT,
         PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED,
     };

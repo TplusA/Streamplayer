@@ -594,7 +594,8 @@ static PlayQueue::Item *pick_next_item(PlayQueue::Item *current_stream,
             return current_stream;
 
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-          case PlayQueue::ItemState::ACTIVE:
+          case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+          case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
           case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
           case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
             break;
@@ -708,7 +709,8 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
               case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
               case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
               case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-              case PlayQueue::ItemState::ACTIVE:
+              case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+              case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
                 break;
             }
         }
@@ -747,7 +749,8 @@ static bool play_next_stream(StreamerData &data,
 {
     switch(next_stream.get_state())
     {
-      case PlayQueue::ItemState::ACTIVE:
+      case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+      case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
       case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
       case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
         BUG("[%s] Unexpected stream state %s",
@@ -1360,7 +1363,8 @@ static PlayQueue::Item *get_failed_item(StreamerData &data,
 
       case PlayQueue::ItemState::IN_QUEUE:
       case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-      case PlayQueue::ItemState::ACTIVE:
+      case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+      case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
         break;
     }
 
@@ -1507,7 +1511,7 @@ static gboolean report_progress(gpointer user_data)
 }
 
 static ActivateStreamResult
-activate_stream(const StreamerData &data, GstState pipeline_state)
+activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
 {
     if(data.current_stream == nullptr)
     {
@@ -1518,8 +1522,35 @@ activate_stream(const StreamerData &data, GstState pipeline_state)
 
     switch(data.current_stream->get_state())
     {
-      case PlayQueue::ItemState::ACTIVE:
-        return ActivateStreamResult::ALREADY_ACTIVE;
+      case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+        switch(phase)
+        {
+          case 0:
+          case 1:
+            return ActivateStreamResult::ALREADY_ACTIVE;
+
+          case 2:
+            data.current_stream->set_state(PlayQueue::ItemState::ACTIVE_NOW_PLAYING);
+            return ActivateStreamResult::ACTIVATED;
+
+          default:
+            break;
+        }
+
+        break;
+
+      case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
+        switch(phase)
+        {
+          case 0:
+          case 2:
+            return ActivateStreamResult::ALREADY_ACTIVE;
+
+          default:
+            break;
+        }
+
+        break;
 
       case PlayQueue::ItemState::IN_QUEUE:
         BUG("Unexpected state %s for stream switched to %s",
@@ -1535,8 +1566,20 @@ activate_stream(const StreamerData &data, GstState pipeline_state)
         break;
 
       case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-        data.current_stream->set_state(PlayQueue::ItemState::ACTIVE);
-        return ActivateStreamResult::ACTIVATED;
+        switch(phase)
+        {
+          case 0:
+          case 1:
+            data.current_stream->set_state(PlayQueue::ItemState::ACTIVE_HALF_PLAYING);
+            return ActivateStreamResult::ACTIVATED;
+
+          case 2:
+            data.current_stream->set_state(PlayQueue::ItemState::ACTIVE_NOW_PLAYING);
+            return ActivateStreamResult::ACTIVATED;
+
+          default:
+            break;
+        }
     }
 
     return ActivateStreamResult::INVALID_STATE;
@@ -1646,7 +1689,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        switch(activate_stream(data, state))
+        switch(activate_stream(data, state, 0))
         {
           case ActivateStreamResult::INVALID_ITEM:
           case ActivateStreamResult::INVALID_STATE:
@@ -1669,24 +1712,24 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        switch(activate_stream(data, state))
+        if(dbus_playback_iface != nullptr && !data.stream_has_just_started)
         {
-          case ActivateStreamResult::INVALID_ITEM:
-          case ActivateStreamResult::INVALID_STATE:
-          case ActivateStreamResult::ALREADY_ACTIVE:
-            break;
-
-          case ActivateStreamResult::ACTIVATED:
-            if(dbus_playback_iface != nullptr && !data.stream_has_just_started)
+            switch(activate_stream(data, state, 2))
             {
+              case ActivateStreamResult::INVALID_ITEM:
+              case ActivateStreamResult::INVALID_STATE:
+              case ActivateStreamResult::ALREADY_ACTIVE:
+                break;
+
+              case ActivateStreamResult::ACTIVATED:
                 data.url_fifo_LOCK_ME->locked_rw(
-                    [&dbus_playback_iface, &data]
-                    (PlayQueue::Queue<PlayQueue::Item> &fifo)
-                    {
-                        emit_now_playing(dbus_playback_iface, data, fifo);
-                    });
+                        [&dbus_playback_iface, &data]
+                        (PlayQueue::Queue<PlayQueue::Item> &fifo)
+                        {
+                            emit_now_playing(dbus_playback_iface, data, fifo);
+                        });
+                break;
             }
-            break;
         }
 
         data.stream_has_just_started = false;
@@ -1737,7 +1780,7 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
             break;
 
-          case PlayQueue::ItemState::ACTIVE:
+          case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
             {
                 const auto *next_stream = data.url_fifo_LOCK_ME->peek();
 
@@ -1751,7 +1794,8 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
                         need_pop = true;
                         break;
 
-                      case PlayQueue::ItemState::ACTIVE:
+                      case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+                      case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
                       case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
                       case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
                         BUG("Next stream %u in unexpected state %d",
@@ -1766,6 +1810,10 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
                 }
             }
 
+            break;
+
+          case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
+            need_activation = false;
             break;
         }
     }
@@ -1789,18 +1837,32 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         need_activation = false;
 
     if(need_activation)
-        data.current_stream->set_state(PlayQueue::ItemState::ACTIVE);
+        data.current_stream->set_state(PlayQueue::ItemState::ACTIVE_HALF_PLAYING);
 
-    if(data.current_stream != nullptr)
+    switch(activate_stream(data, GST_STATE_PLAYING, 2))
     {
-        auto &sd = data.current_stream->get_stream_data();
+      case ActivateStreamResult::INVALID_ITEM:
+      case ActivateStreamResult::INVALID_STATE:
+        BUG("Failed activating stream %u in GStreamer handler",
+            data.current_stream->stream_id_);
+        break;
 
-        sd.clear_meta_data();
-        invalidate_stream_position_information(data);
-        query_seconds(gst_element_query_duration, data.pipeline,
-                      data.current_time.duration_s);
-        emit_now_playing(dbus_get_playback_iface(), data,
-                         *data.url_fifo_LOCK_ME);
+      case ActivateStreamResult::ALREADY_ACTIVE:
+        break;
+
+      case ActivateStreamResult::ACTIVATED:
+        {
+            auto &sd = data.current_stream->get_stream_data();
+            sd.clear_meta_data();
+            invalidate_stream_position_information(data);
+            query_seconds(gst_element_query_duration, data.pipeline,
+                          data.current_time.duration_s);
+
+            emit_now_playing(dbus_get_playback_iface(), data,
+                             *data.url_fifo_LOCK_ME);
+        }
+
+        break;
     }
 }
 
@@ -2497,6 +2559,7 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
         switch(streamer_data.current_stream->get_state())
         {
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+          case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
             streamer_data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED);
             streamer_data.url_fifo_LOCK_ME->locked_rw(
                 [id = streamer_data.current_stream->stream_id_]
@@ -2504,7 +2567,7 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
             break;
 
           case PlayQueue::ItemState::IN_QUEUE:
-          case PlayQueue::ItemState::ACTIVE:
+          case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
           case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
           case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
             streamer_data.current_stream.reset();
@@ -2551,7 +2614,8 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
                 break;
 
               case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-              case PlayQueue::ItemState::ACTIVE:
+              case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+              case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
                 /* mark current stream as to-be-skipped */
                 streamer_data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED);
                 break;
