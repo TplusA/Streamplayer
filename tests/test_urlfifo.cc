@@ -48,6 +48,8 @@ TEST_SUITE_BEGIN("Play queue");
 class TestItem
 {
   public:
+    using stream_id_t = unsigned int;
+
     const unsigned int value_;
     const std::string name_;
 
@@ -624,7 +626,7 @@ TEST_CASE_FIXTURE(Fixture, "Push/pop chase stress test")
 /*!\test
  * No items are silently lost by dropping them.
  */
-TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
+TEST_CASE_FIXTURE(Fixture, "Dropped items are stored until finally removed")
 {
     push(*queue, 75, "A", 1);
     push(*queue, 76, "B", 2);
@@ -646,7 +648,7 @@ TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
  * Bug message is emitted when popping item while there are pending removed
  * items.
  */
-TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
+TEST_CASE_FIXTURE(Fixture, "Pop item while there are pending removed items")
 {
     push(*queue, 75, "A", 1);
     push(*queue, 76, "B", 2);
@@ -658,17 +660,13 @@ TEST_CASE_FIXTURE(Fixture, "Dropped item are stored until finally removed")
     CHECK(queue->size() == 3);
 
     std::unique_ptr<TestItem> item;
-    expect<MockMessages::MsgError>(mock_messages, 0, LOG_CRIT,
-                                   "BUG: Pop item before retrieving removed", false);
     CHECK(queue->pop(item));
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 76);
-    expect<MockMessages::MsgError>(mock_messages, 0, LOG_CRIT,
-                                   "BUG: Pop item before retrieving removed", false);
+
     CHECK(queue->pop(item));
     REQUIRE(item != nullptr);
     CHECK(item->value_ == 77);
-    mock_messages->done();
     CHECK(queue->size() == 1);
 
     CHECK(queue->pop_drop());

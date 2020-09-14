@@ -27,6 +27,7 @@
 #include <cinttypes>
 #include <cstring>
 #include <unordered_set>
+#include <vector>
 #include <algorithm>
 
 #include <gst/gst.h>
@@ -90,6 +91,14 @@ enum class StoppedReason
 
     /*! Stable name for the highest-valued code. */
     LAST_VALUE = DECRYPTION_NOT_SUPPORTED,
+};
+
+enum class ActivateStreamResult
+{
+    INVALID_ITEM,
+    INVALID_STATE,
+    ALREADY_ACTIVE,
+    ACTIVATED,
 };
 
 struct time_data
@@ -310,16 +319,23 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
 }
 
 template <typename T>
-static GVariantWrapper mk_id_array(const T &input)
+static inline GVariantWrapper
+mk_id_array(const T &input, std::unordered_set<stream_id_t> &&dropped)
 {
-    if(input.empty())
+    if(input.empty() && dropped.empty())
         return GVariantWrapper(
                     g_variant_new_fixed_array(G_VARIANT_TYPE_UINT16,
                                               nullptr, 0, sizeof(stream_id_t)));
 
     std::vector<stream_id_t> ids;
-    std::transform(input.begin(), input.end(), std::back_inserter(ids),
-                   [] (const auto &item) -> stream_id_t { return item->stream_id_; });
+    std::transform(
+        input.begin(), input.end(), std::back_inserter(ids),
+        [&dropped] (const auto &item) -> stream_id_t
+        {
+            dropped.erase(item->stream_id_);
+            return item->stream_id_;
+        });
+    std::copy(dropped.begin(), dropped.end(), std::back_inserter(ids));
 
     static_assert(sizeof(stream_id_t) == 2, "Unexpected stream ID size");
 
@@ -331,13 +347,13 @@ static GVariantWrapper mk_id_array(const T &input)
 GVariantWrapper
 Streamer::mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
-    return mk_id_array(url_fifo);
+    return mk_id_array(url_fifo, {});
 }
 
 GVariantWrapper
 Streamer::mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
-    return mk_id_array(url_fifo.get_removed());
+    return mk_id_array(url_fifo.get_removed(), std::move(url_fifo.get_dropped()));
 }
 
 static void emit_stopped(tdbussplayPlayback *playback_iface,
@@ -1490,19 +1506,20 @@ static gboolean report_progress(gpointer user_data)
     return G_SOURCE_CONTINUE;
 }
 
-static bool activate_stream(const StreamerData &data, GstState pipeline_state)
+static ActivateStreamResult
+activate_stream(const StreamerData &data, GstState pipeline_state)
 {
     if(data.current_stream == nullptr)
     {
         BUG("Current item is invalid, switched to %s",
             gst_element_state_get_name(pipeline_state));
-        return false;
+        return ActivateStreamResult::INVALID_ITEM;
     }
 
     switch(data.current_stream->get_state())
     {
       case PlayQueue::ItemState::ACTIVE:
-        return true;
+        return ActivateStreamResult::ALREADY_ACTIVE;
 
       case PlayQueue::ItemState::IN_QUEUE:
         BUG("Unexpected state %s for stream switched to %s",
@@ -1519,10 +1536,10 @@ static bool activate_stream(const StreamerData &data, GstState pipeline_state)
 
       case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
         data.current_stream->set_state(PlayQueue::ItemState::ACTIVE);
-        return true;
+        return ActivateStreamResult::ACTIVATED;
     }
 
-    return false;
+    return ActivateStreamResult::INVALID_STATE;
 }
 
 static void handle_stream_state_change(GstMessage *message, StreamerData &data)
@@ -1629,9 +1646,19 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        if(activate_stream(data, state) && dbus_playback_iface != nullptr)
-            tdbus_splay_playback_emit_paused(dbus_playback_iface,
-                                             data.current_stream->stream_id_);
+        switch(activate_stream(data, state))
+        {
+          case ActivateStreamResult::INVALID_ITEM:
+          case ActivateStreamResult::INVALID_STATE:
+            break;
+
+          case ActivateStreamResult::ALREADY_ACTIVE:
+          case ActivateStreamResult::ACTIVATED:
+            if(dbus_playback_iface != nullptr)
+                tdbus_splay_playback_emit_paused(dbus_playback_iface,
+                                                 data.current_stream->stream_id_);
+            break;
+        }
 
         break;
 
@@ -1642,15 +1669,24 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        if(activate_stream(data, state) && dbus_playback_iface != nullptr &&
-           !data.stream_has_just_started)
+        switch(activate_stream(data, state))
         {
-            data.url_fifo_LOCK_ME->locked_rw(
-                [&dbus_playback_iface, &data]
-                (PlayQueue::Queue<PlayQueue::Item> &fifo)
-                {
-                    emit_now_playing(dbus_playback_iface, data, fifo);
-                });
+          case ActivateStreamResult::INVALID_ITEM:
+          case ActivateStreamResult::INVALID_STATE:
+          case ActivateStreamResult::ALREADY_ACTIVE:
+            break;
+
+          case ActivateStreamResult::ACTIVATED:
+            if(dbus_playback_iface != nullptr && !data.stream_has_just_started)
+            {
+                data.url_fifo_LOCK_ME->locked_rw(
+                    [&dbus_playback_iface, &data]
+                    (PlayQueue::Queue<PlayQueue::Item> &fifo)
+                    {
+                        emit_now_playing(dbus_playback_iface, data, fifo);
+                    });
+            }
+            break;
         }
 
         data.stream_has_just_started = false;
@@ -1707,13 +1743,26 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
 
                 if(next_stream == nullptr)
                     need_activation = false;
-                else if(next_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_ACTIVATE)
-                    need_pop = true;
                 else
                 {
-                    BUG("Next stream %u in unexpected state %d",
-                        next_stream->stream_id_, int(next_stream->get_state()));
-                    need_activation = false;
+                    switch(next_stream->get_state())
+                    {
+                      case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+                        need_pop = true;
+                        break;
+
+                      case PlayQueue::ItemState::ACTIVE:
+                      case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
+                      case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
+                        BUG("Next stream %u in unexpected state %d",
+                            next_stream->stream_id_, int(next_stream->get_state()));
+
+                        /* fall-through */
+
+                      case PlayQueue::ItemState::IN_QUEUE:
+                        need_activation = false;
+                        break;
+                    }
                 }
             }
 
@@ -2443,8 +2492,25 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     msg_info("Next requested");
     log_assert(streamer_data.pipeline != nullptr);
 
-    if(skip_only_if_not_stopped)
-        streamer_data.current_stream.reset();
+    if(skip_only_if_not_stopped && streamer_data.current_stream != nullptr)
+    {
+        switch(streamer_data.current_stream->get_state())
+        {
+          case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+            streamer_data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED);
+            streamer_data.url_fifo_LOCK_ME->locked_rw(
+                [id = streamer_data.current_stream->stream_id_]
+                (PlayQueue::Queue<PlayQueue::Item> &fifo) { fifo.mark_as_dropped(id); });
+            break;
+
+          case PlayQueue::ItemState::IN_QUEUE:
+          case PlayQueue::ItemState::ACTIVE:
+          case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
+          case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
+            streamer_data.current_stream.reset();
+            break;
+        }
+    }
 
     const bool is_dequeuing_permitted =
         (streamer_data.supposed_play_status != Streamer::PlayStatus::STOPPED ||
@@ -2559,8 +2625,7 @@ bool Streamer::get_current_stream_id(stream_id_t &id)
 }
 
 bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-                         const char *stream_url, size_t keep_items,
-                         std::vector<std::unique_ptr<PlayQueue::Item>> &removed)
+                         const char *stream_url, size_t keep_items)
 {
     auto data_lock(streamer_data.lock());
     bool is_active = streamer_data.is_player_activated;
@@ -2583,7 +2648,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
     }
 
     return streamer_data.url_fifo_LOCK_ME->locked_rw(
-                [&item, &keep_items, &removed]
+                [&item, &keep_items]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
                     return fifo.push(std::move(item), keep_items) != 0;

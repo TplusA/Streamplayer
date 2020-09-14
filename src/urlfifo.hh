@@ -25,7 +25,7 @@
 #include "messages.h"
 
 #include <deque>
-#include <vector>
+#include <unordered_set>
 #include <mutex>
 #include <memory>
 
@@ -70,6 +70,7 @@ class Queue
 
     std::deque<std::unique_ptr<T>> queue_;
     std::deque<std::unique_ptr<T>> removed_;
+    std::unordered_set<typename T::stream_id_t> dropped_;
     mutable std::recursive_mutex lock_;
 
   public:
@@ -166,11 +167,6 @@ class Queue
      */
     bool pop(std::unique_ptr<T> &dest, const char *what = nullptr)
     {
-        if(what != nullptr)
-            BUG_IF(!removed_.empty(), "Pop item before retrieving removed (%s)", what);
-        else
-            BUG_IF(!removed_.empty(), "Pop item before retrieving removed");
-
         if(empty())
             return false;
 
@@ -193,6 +189,8 @@ class Queue
 
         return true;
     }
+
+    void mark_as_dropped(typename T::stream_id_t id) { dropped_.insert(id); }
 
     /*!
      * Clear URL FIFO, keep number of items at top untouched.
@@ -264,6 +262,8 @@ class Queue
     }
 
     auto get_removed() { return std::move(removed_); }
+
+    auto get_dropped() { return std::move(dropped_); }
 };
 
 }

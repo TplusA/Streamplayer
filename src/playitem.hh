@@ -57,6 +57,9 @@ enum class FailState
  */
 class Item
 {
+  public:
+    using stream_id_t = ::stream_id_t;
+
   private:
     ItemState state_;
     FailState fail_state_;

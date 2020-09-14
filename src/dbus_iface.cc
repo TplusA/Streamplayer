@@ -197,16 +197,23 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
     msg_info("Received stream %u \"%s\", keep %d",
              stream_id, stream_url, keep_first_n_entries);
 
+    /*
+     * The values of keep_first_n_entries:
+     *
+     *    0 - replace whole queue by new item
+     *   -1 - keep all items in queue, enqueue new item
+     *   -2 - replace whole queue by new item and skip to the new item
+     *    n - remove all but the first n items in the queue, enqueue new item
+     */
     const size_t keep =
         (keep_first_n_entries < 0)
         ? ((keep_first_n_entries == -2)
            ? 0
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
-    std::vector<std::unique_ptr<PlayQueue::Item>> removed;
     const bool failed =
         !Streamer::push_item(stream_id, std::move(GVariantWrapper(stream_key)),
-                            stream_url, keep, removed);
+                            stream_url, keep);
 
     uint32_t dummy_skipped;
     uint32_t dummy_next;

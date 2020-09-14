@@ -51,8 +51,7 @@ PlayStatus next(bool skip_only_if_not_stopped, uint32_t &out_skipped_id, uint32_
 bool is_playing();
 bool get_current_stream_id(stream_id_t &id);
 bool push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-               const char *stream_url, size_t keep_items,
-               std::vector<std::unique_ptr<PlayQueue::Item>> &removed);
+               const char *stream_url, size_t keep_items);
 bool remove_items_for_root_path(const char *root_path);
 GVariantWrapper mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo);
 GVariantWrapper mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo);
