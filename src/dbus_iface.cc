@@ -216,7 +216,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                             stream_url, keep);
 
     uint32_t dummy_skipped;
-    uint32_t dummy_next;
+    uint32_t dummy_next = 0;
     const gboolean is_playing = (keep_first_n_entries == -2)
         ? Streamer::next(true, dummy_skipped, dummy_next) == Streamer::PlayStatus::PLAYING
         : Streamer::is_playing();
