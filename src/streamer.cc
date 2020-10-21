@@ -1760,11 +1760,21 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     bool with_bug = false;
     bool need_activation = true;
 
-    if(data.current_stream == nullptr)
+    bool next_stream_is_in_fifo;
+    const PlayQueue::Item *picked_stream =
+        pick_next_item(data.current_stream.get(), *data.url_fifo_LOCK_ME,
+                       next_stream_is_in_fifo);
+
+    if(picked_stream == nullptr)
+        picked_stream = data.current_stream.get();
+    else
+        need_pop = true;
+
+    if(picked_stream == nullptr)
         failed = with_bug = true;
     else
     {
-        switch(data.current_stream->get_state())
+        switch(picked_stream->get_state())
         {
           case PlayQueue::ItemState::IN_QUEUE:
             with_bug = true;
@@ -1820,11 +1830,11 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
 
     if(with_bug)
     {
-        if(data.current_stream == nullptr)
+        if(picked_stream == nullptr)
             BUG("Replace nullptr current by next");
         else
             BUG("Replace current by next in unexpected state %s",
-                PlayQueue::item_state_name(data.current_stream->get_state()));
+                PlayQueue::item_state_name(picked_stream->get_state()));
 
         log_assert(!data.url_fifo_LOCK_ME->empty());
     }
