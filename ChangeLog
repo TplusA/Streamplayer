@@ -1,3 +1,13 @@
+2020-10-28  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.2 released.
+
+	* Streamer: Fix queue handling on start of stream.
+
+	* Streamer: Fix handling of skipped streams.
+
+	* Misc: Avoid a few compiler warnings.
+
 2020-03-03  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.1 released.
