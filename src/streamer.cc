@@ -2338,6 +2338,8 @@ bool Streamer::start()
                       gst_element_state_get_name(state));
             return false;
         }
+
+        break;
     }
 
     return true;
