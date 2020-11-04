@@ -1718,9 +1718,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             {
               case ActivateStreamResult::INVALID_ITEM:
               case ActivateStreamResult::INVALID_STATE:
-              case ActivateStreamResult::ALREADY_ACTIVE:
                 break;
 
+              case ActivateStreamResult::ALREADY_ACTIVE:
               case ActivateStreamResult::ACTIVATED:
                 data.url_fifo_LOCK_ME->locked_rw(
                         [&dbus_playback_iface, &data]
