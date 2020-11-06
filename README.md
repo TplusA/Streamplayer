@@ -115,7 +115,7 @@ and push the next stream URL.
 
 Whenever a stream is stopped or paused, a corresponding
 <tt>de.tahifi.Streamplayer.Playback.Stopped</tt> or
-<tt>de.tahifi.Streamplayer.Playback.Paused</tt> signal is sent.
+<tt>de.tahifi.Streamplayer.Playback.PauseState</tt> signal is sent.
 
 For each second played (or on periodic time position update during fast
 winding), a <tt>de.tahifi.Streamplayer.Playback.PositionChanged</tt> signal is

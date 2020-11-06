@@ -1700,8 +1700,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
           case ActivateStreamResult::ALREADY_ACTIVE:
           case ActivateStreamResult::ACTIVATED:
             if(dbus_playback_iface != nullptr)
-                tdbus_splay_playback_emit_paused(dbus_playback_iface,
-                                                 data.current_stream->stream_id_);
+                tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
+                                                      data.current_stream->stream_id_,
+                                                      TRUE);
             break;
         }
 
@@ -1716,7 +1717,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
         if(dbus_playback_iface != nullptr && !data.stream_has_just_started)
         {
-            switch(activate_stream(data, state, 2))
+            switch(activate_stream(data, state, 0))
             {
               case ActivateStreamResult::INVALID_ITEM:
               case ActivateStreamResult::INVALID_STATE:
@@ -1724,12 +1725,10 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
               case ActivateStreamResult::ALREADY_ACTIVE:
               case ActivateStreamResult::ACTIVATED:
-                data.url_fifo_LOCK_ME->locked_rw(
-                        [&dbus_playback_iface, &data]
-                        (PlayQueue::Queue<PlayQueue::Item> &fifo)
-                        {
-                            emit_now_playing(dbus_playback_iface, data, fifo);
-                        });
+                if(dbus_playback_iface != nullptr)
+                    tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
+                                                          data.current_stream->stream_id_,
+                                                          FALSE);
                 break;
             }
         }
