@@ -1580,6 +1580,8 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
           default:
             break;
         }
+
+        break;
     }
 
     return ActivateStreamResult::INVALID_STATE;
