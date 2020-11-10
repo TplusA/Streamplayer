@@ -1,3 +1,12 @@
+2020-11-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.3 released.
+
+	* Playback: Fix communication of pause/play state. This information is
+	  now cleanly separated from the now-playing signal.
+
+	* Playback: Send signal when leaving pause state.
+
 2020-10-28  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.2 released.
