@@ -2061,8 +2061,10 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 #if GST_CHECK_VERSION(1, 18, 0)
       case GST_MESSAGE_INSTANT_RATE_REQUEST:
 #endif /* v1.16 */
-        BUG("UNHANDLED MESSAGE TYPE %s from %s",
-            GST_MESSAGE_TYPE_NAME(message), GST_MESSAGE_SRC_NAME(message));
+        BUG("UNHANDLED MESSAGE TYPE %s (%u) from %s",
+            GST_MESSAGE_TYPE_NAME(message),
+            static_cast<unsigned int>(GST_MESSAGE_TYPE(message)),
+            GST_MESSAGE_SRC_NAME(message));
         break;
     }
 
