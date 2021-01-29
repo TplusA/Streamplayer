@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <mutex>
 #include <memory>
+#include <functional>
 
 /*!
  * \addtogroup urlfifo URL FIFO
@@ -222,6 +223,23 @@ class Queue
         }
 
         return result;
+    }
+
+    size_t clear_while(const std::function<bool(const T &item)> &pred)
+    {
+        size_t count = 0;
+
+        while(!empty())
+        {
+            if(!pred(*queue_.front()))
+                break;
+
+            removed_.emplace_back(std::move(queue_.front()));
+            queue_.pop_front();
+            ++count;
+        }
+
+        return count;
     }
 
     /*!
