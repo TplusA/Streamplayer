@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -35,6 +35,7 @@
 #include "urlfifo.hh"
 #include "messages.h"
 #include "messages_dbus.h"
+#include "gerrorwrapper.hh"
 
 using FifoType = PlayQueue::Queue<PlayQueue::Item>;
 
@@ -267,22 +268,6 @@ static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
     return Streamer::remove_items_for_root_path(root_path) ? TRUE : FALSE;
 }
 
-bool dbus_handle_error(GError **error)
-{
-    if(*error == nullptr)
-        return true;
-
-    if((*error)->message != nullptr)
-        msg_error(0, LOG_EMERG, "Got D-Bus error: %s", (*error)->message);
-    else
-        msg_error(0, LOG_EMERG, "Got D-Bus error without any message");
-
-    g_error_free(*error);
-    *error = nullptr;
-
-    return false;
-}
-
 struct DBusData
 {
     FifoType *url_fifo;
@@ -306,11 +291,10 @@ struct DBusData
 static void try_export_iface(GDBusConnection *connection,
                              GDBusInterfaceSkeleton *iface)
 {
-    GError *error = nullptr;
-
-    g_dbus_interface_skeleton_export(iface, connection, "/de/tahifi/Streamplayer", &error);
-
-    dbus_handle_error(&error);
+    GErrorWrapper error;
+    g_dbus_interface_skeleton_export(iface, connection,
+                                     "/de/tahifi/Streamplayer", error.await());
+    error.log_failure("D-Bus");
 }
 
 static void bus_acquired(GDBusConnection *connection,
@@ -360,12 +344,12 @@ static void created_config_proxy(GObject *source_object, GAsyncResult *res,
                                  gpointer user_data)
 {
     auto *data = static_cast<struct DBusData *>(user_data);
-    GError *error = nullptr;
+    GErrorWrapper error;
 
     data->debug_logging_config_proxy =
-        tdbus_debug_logging_config_proxy_new_finish(res, &error);
+        tdbus_debug_logging_config_proxy_new_finish(res, error.await());
 
-    if(dbus_handle_error(&error))
+    if(!error.log_failure("D-Bus"))
         g_signal_connect(data->debug_logging_config_proxy, "g-signal",
                          G_CALLBACK(msg_dbus_handle_global_debug_level_changed),
                          nullptr);
@@ -379,30 +363,30 @@ static void name_acquired(GDBusConnection *connection,
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "D-Bus name \"%s\" acquired", name);
     data->acquired = 1;
 
-    GError *error = nullptr;
+    GErrorWrapper error;
 
     data->artcache_write_iface =
         tdbus_artcache_write_proxy_new_sync(connection,
                                             G_DBUS_PROXY_FLAGS_NONE,
                                             "de.tahifi.TACAMan",
                                             "/de/tahifi/TACAMan",
-                                            nullptr, &error);
-    dbus_handle_error(&error);
+                                            nullptr, error.await());
+    error.log_failure("D-Bus");
 
     data->audiopath_manager_proxy =
         tdbus_aupath_manager_proxy_new_sync(connection,
                                             G_DBUS_PROXY_FLAGS_NONE,
                                             "de.tahifi.TAPSwitch",
                                             "/de/tahifi/TAPSwitch",
-                                            nullptr, &error);
-    dbus_handle_error(&error);
+                                            nullptr, error.await());
+    error.log_failure("D-Bus");
 
     data->mounta_proxy =
         tdbus_moun_ta_proxy_new_sync(connection,
                                      G_DBUS_PROXY_FLAGS_NONE,
                                      "de.tahifi.MounTA", "/de/tahifi/MounTA",
-                                     nullptr, &error);
-    if(dbus_handle_error(&error))
+                                     nullptr, error.await());
+    if(!error.log_failure("D-Bus"))
         g_signal_connect(data->mounta_proxy,
                          "device-will-be-removed",
                          G_CALLBACK(mounta_device_will_be_removed), nullptr);

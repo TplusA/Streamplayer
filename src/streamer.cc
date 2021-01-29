@@ -37,6 +37,7 @@
 #include "urlfifo.hh"
 #include "playitem.hh"
 #include "gstringwrapper.hh"
+#include "gerrorwrapper.hh"
 #include "dbus_iface_deep.hh"
 #include "messages.h"
 
@@ -1296,7 +1297,7 @@ static StoppedReason stream_error_to_stopped_reason(GstStreamError code,
     return StoppedReason::UNKNOWN;
 }
 
-static StoppedReason gerror_to_stopped_reason(GError *error, bool is_local_error)
+static StoppedReason gerror_to_stopped_reason(const GErrorWrapper &error, bool is_local_error)
 {
     if(error->domain == GST_CORE_ERROR)
         return core_error_to_stopped_reason((GstCoreError)error->code,
@@ -1377,12 +1378,12 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
-    GError *error = nullptr;
+    GErrorWrapper error;
     const GLibString debug(
         [message, &error] ()
         {
             gchar *temp = nullptr;
-            gst_message_parse_error(message, &error, &temp);
+            gst_message_parse_error(message, error.await(), &temp);
             return temp;
         });
 
@@ -1418,8 +1419,6 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
         if(failed_stream->fail())
             recover_from_error_now_or_later(data, fdata);
     }
-
-    g_error_free(error);
 }
 
 static void handle_warning_message(GstMessage *message)
@@ -1427,12 +1426,12 @@ static void handle_warning_message(GstMessage *message)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
-    GError *error = nullptr;
+    GErrorWrapper error;
     const GLibString debug(
         [message, &error] ()
         {
             gchar *temp = nullptr;
-            gst_message_parse_warning(message, &error, &temp);
+            gst_message_parse_warning(message, error.await(), &temp);
             return temp;
         });
 
@@ -1441,8 +1440,6 @@ static void handle_warning_message(GstMessage *message)
               GST_MESSAGE_SRC_NAME(message));
     msg_error(0, LOG_ERR, "WARNING message: %s", error->message);
     msg_error(0, LOG_ERR, "WARNING debug: %s", debug.get());
-
-    g_error_free(error);
 }
 
 static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
@@ -2747,15 +2744,12 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
     const auto filename_from_uri = [] (const std::string &url) -> GLibString
     {
-        GError *gerror = nullptr;
-        GLibString filename(g_filename_from_uri(url.c_str(), nullptr, &gerror));
+        GErrorWrapper gerror;
+        GLibString filename(g_filename_from_uri(url.c_str(), nullptr, gerror.await()));
 
         if(filename == nullptr)
-        {
             msg_error(0, LOG_EMERG, "Error while extracting file name from uri: '%s'" ,
-                      (gerror && gerror->message) ? gerror->message : "N/A");
-            g_clear_error(&gerror);
-        }
+                      (gerror.failed() && gerror->message) ? gerror->message : "N/A");
 
         return filename;
     };

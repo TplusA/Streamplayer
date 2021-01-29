@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2017, 2018, 2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2017, 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -36,8 +36,6 @@ tdbussplayPlayback *dbus_get_playback_iface(void);
 tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
 
 tdbusaupathManager *dbus_audiopath_get_manager_iface(void);
-
-bool dbus_handle_error(GError **error);
 
 #ifdef __cplusplus
 }
