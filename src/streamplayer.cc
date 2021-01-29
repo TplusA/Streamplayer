@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2018, 2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -38,6 +38,7 @@
 #include "dbus_iface_deep.hh"
 #include "messages.h"
 #include "messages_glib.h"
+#include "gstringwrapper.hh"
 #include "versioninfo.h"
 
 ssize_t (*os_read)(int fd, void *dest, size_t count) = read;
@@ -106,7 +107,7 @@ static int process_command_line(int argc, char *argv[],
     parameters->connect_to_system_dbus = false;
 
     static bool show_version = false;
-    static char *verbose_level_name;
+    gchar *verbose_level_name_raw = nullptr;
     static bool verbose_quiet = false;
 
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
@@ -116,7 +117,7 @@ static int process_command_line(int argc, char *argv[],
           "Print version information to stdout.", nullptr },
         { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
           "Run in foreground, don't run as daemon.", nullptr },
-        { "verbose", 'v', 0, G_OPTION_ARG_STRING, &verbose_level_name,
+        { "verbose", 'v', 0, G_OPTION_ARG_STRING, &verbose_level_name_raw,
           "Set verbosity level to given level.", nullptr },
         { "quiet", 'q', 0, G_OPTION_ARG_NONE, &verbose_quiet,
           "Short for \"--verbose quite\".", nullptr},
@@ -125,6 +126,8 @@ static int process_command_line(int argc, char *argv[],
           "Connect to system D-Bus instead of session D-Bus.", nullptr },
         {}
     };
+
+    GLibString verbose_level_name(std::move(verbose_level_name_raw));
 
     g_option_context_add_main_entries(ctx, entries, nullptr);
     g_option_context_add_group(ctx, gst_init_get_option_group());
@@ -147,24 +150,21 @@ static int process_command_line(int argc, char *argv[],
     if(verbose_level_name != nullptr)
     {
         parameters->verbose_level =
-            msg_verbose_level_name_to_level(verbose_level_name);
+            msg_verbose_level_name_to_level(verbose_level_name.get());
 
         if(parameters->verbose_level == MESSAGE_LEVEL_IMPOSSIBLE)
         {
             fprintf(stderr,
                     "Invalid verbosity \"%s\". "
-                    "Valid verbosity levels are:\n", verbose_level_name);
+                    "Valid verbosity levels are:\n", verbose_level_name.get());
 
             const char *const *names = msg_get_verbose_level_names();
 
             for(const char *name = *names; name != nullptr; name = *++names)
                 fprintf(stderr, "    %s\n", name);
-        }
 
-        g_free(verbose_level_name);
-
-        if(parameters->verbose_level == MESSAGE_LEVEL_IMPOSSIBLE)
             return -1;
+        }
     }
 
     if(verbose_quiet)

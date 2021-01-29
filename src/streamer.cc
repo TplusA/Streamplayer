@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -36,6 +36,7 @@
 #include "streamer.hh"
 #include "urlfifo.hh"
 #include "playitem.hh"
+#include "gstringwrapper.hh"
 #include "dbus_iface_deep.hh"
 #include "messages.h"
 
@@ -1377,9 +1378,13 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
               __func__, GST_MESSAGE_SRC_NAME(message));
 
     GError *error = nullptr;
-    gchar *debug = nullptr;
-
-    gst_message_parse_error(message, &error, &debug);
+    const GLibString debug(
+        [message, &error] ()
+        {
+            gchar *temp = nullptr;
+            gst_message_parse_error(message, &error, &temp);
+            return temp;
+        });
 
     auto data_lock(data.lock());
 
@@ -1405,7 +1410,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
                   error->code, g_quark_to_string(error->domain),
                   GST_MESSAGE_SRC_NAME(message));
         msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
-        msg_error(0, LOG_ERR, "ERROR debug: %s", debug);
+        msg_error(0, LOG_ERR, "ERROR debug: %s", debug.get());
         msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
                   int(fdata.reason),
                   fdata.report_on_stream_stop ? "on stop" : "now");
@@ -1414,7 +1419,6 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
             recover_from_error_now_or_later(data, fdata);
     }
 
-    g_free(debug);
     g_error_free(error);
 }
 
@@ -1424,17 +1428,20 @@ static void handle_warning_message(GstMessage *message)
               __func__, GST_MESSAGE_SRC_NAME(message));
 
     GError *error = nullptr;
-    gchar *debug = nullptr;
-
-    gst_message_parse_warning(message, &error, &debug);
+    const GLibString debug(
+        [message, &error] ()
+        {
+            gchar *temp = nullptr;
+            gst_message_parse_warning(message, &error, &temp);
+            return temp;
+        });
 
     msg_error(0, LOG_ERR, "WARNING code %d, domain %s from \"%s\"",
               error->code, g_quark_to_string(error->domain),
               GST_MESSAGE_SRC_NAME(message));
     msg_error(0, LOG_ERR, "WARNING message: %s", error->message);
-    msg_error(0, LOG_ERR, "WARNING debug: %s", debug);
+    msg_error(0, LOG_ERR, "WARNING debug: %s", debug.get());
 
-    g_free(debug);
     g_error_free(error);
 }
 
@@ -2738,32 +2745,29 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 {
     const std::string PREFIX = "file://";
 
-    auto filename_from_uri = [] (const std::string &url) -> std::string
+    const auto filename_from_uri = [] (const std::string &url) -> GLibString
     {
         GError *gerror = nullptr;
-        char *filename = g_filename_from_uri(url.c_str(), nullptr, &gerror);
+        GLibString filename(g_filename_from_uri(url.c_str(), nullptr, &gerror));
 
-        if(!filename)
+        if(filename == nullptr)
         {
             msg_error(0, LOG_EMERG, "Error while extracting file name from uri: '%s'" ,
                       (gerror && gerror->message) ? gerror->message : "N/A");
             g_clear_error(&gerror);
-            return std::string();
         }
 
-        std::string s(filename);
-        g_free(filename);
-        return s;
+        return filename;
     };
 
-    auto realpath_cxx = [] (const std::string &file_path) -> std::string
+    auto realpath_cxx = [] (GLibString &&file_path) -> std::string
     {
         std::string buf;
         buf.resize(PATH_MAX);
 
-        if(realpath(file_path.c_str(), &buf[0]) == nullptr)
+        if(realpath(file_path.get(), &buf[0]) == nullptr)
             msg_error(0, LOG_EMERG, "Error while realpath(%s) : '%s'" ,
-                      file_path.c_str(), strerror(errno));
+                      file_path.get(), strerror(errno));
 
         return buf;
     };
@@ -2780,11 +2784,11 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
         const auto &url = streamer_data.current_stream->url_;
         if(starts_with(url, "file://"))
         {
-            const auto &filename = filename_from_uri(url);
+            auto filename(filename_from_uri(url));
             if(filename.empty())
                 return false;
 
-            const auto &file_path_real = realpath_cxx(filename);
+            const auto &file_path_real = realpath_cxx(std::move(filename));
             if(starts_with(file_path_real, root_path))
             {
                 msg_info("Will stop streamer because current stream '%s' is on '%s' being removed",
