@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -35,8 +35,7 @@ enum class PlayStatus
     PAUSED,
 };
 
-int setup(GMainLoop *loop, guint soup_http_block_size,
-          PlayQueue::Queue<PlayQueue::Item> &url_fifo);
+int setup(GMainLoop *loop, guint soup_http_block_size);
 void shutdown(GMainLoop *loop);
 
 void activate();
@@ -48,13 +47,12 @@ bool seek(int64_t position, const char *units);
 bool fast_winding(double factor);
 bool fast_winding_stop();
 PlayStatus next(bool skip_only_if_not_stopped, uint32_t &out_skipped_id, uint32_t &out_next_id);
+void clear_queue(int keep_first_n_entries, GVariantWrapper &queued, GVariantWrapper &dropped);
 bool is_playing();
 bool get_current_stream_id(stream_id_t &id);
 bool push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                const char *stream_url, size_t keep_items);
 bool remove_items_for_root_path(const char *root_path);
-GVariantWrapper mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo);
-GVariantWrapper mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo);
 
 }
 

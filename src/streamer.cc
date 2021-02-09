@@ -353,14 +353,14 @@ mk_id_array(const T &input, std::unordered_set<stream_id_t> &&dropped)
                                           ids.size(), sizeof(ids[0])));
 }
 
-GVariantWrapper
-Streamer::mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+static GVariantWrapper
+mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     return mk_id_array(url_fifo, {});
 }
 
-GVariantWrapper
-Streamer::mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+static GVariantWrapper
+mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     return mk_id_array(url_fifo.get_removed(), std::move(url_fifo.get_dropped()));
 }
@@ -370,7 +370,7 @@ static void emit_stopped(tdbussplayPlayback *playback_iface,
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
+    auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
     if(playback_iface != nullptr)
     {
@@ -427,7 +427,7 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     static_assert(G_N_ELEMENTS(reasons) == size_t(StoppedReason::LAST_VALUE) + 1U,
                   "Array size mismatch");
 
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(url_fifo));
+    auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
     if(failed_stream == nullptr)
         tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
@@ -1186,7 +1186,7 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     const auto &sd = data.current_stream->get_stream_data();
     GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list());
 
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(url_fifo));
+    auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data.current_stream->stream_id_,
@@ -2254,8 +2254,7 @@ static bool do_set_speed(StreamerData &data, double factor)
 
 static StreamerData streamer_data;
 
-int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
-                    PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+int Streamer::setup(GMainLoop *loop, guint soup_http_block_size)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
 
@@ -2729,6 +2728,23 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     out_next_id = next_id;
 
     return streamer_data.supposed_play_status;
+}
+
+void Streamer::clear_queue(int keep_first_n_entries,
+                           GVariantWrapper &queued, GVariantWrapper &dropped)
+{
+    auto data_lock(streamer_data.lock());
+
+    streamer_data.url_fifo_LOCK_ME->locked_rw(
+        [keep_first_n_entries, &queued, &dropped]
+        (PlayQueue::Queue<PlayQueue::Item> &fifo)
+        {
+            if(keep_first_n_entries >= 0)
+                fifo.clear(keep_first_n_entries);
+
+            queued = mk_id_array_from_queued_items(fifo);
+            dropped = mk_id_array_from_dropped_items(fifo);
+        });
 }
 
 bool Streamer::is_playing()

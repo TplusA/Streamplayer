@@ -32,12 +32,9 @@
 #include "de_tahifi_mounta.h"
 #include "de_tahifi_artcache.h"
 #include "streamer.hh"
-#include "urlfifo.hh"
 #include "messages.h"
 #include "messages_dbus.h"
 #include "gerrorwrapper.hh"
-
-using FifoType = PlayQueue::Queue<PlayQueue::Item>;
 
 static void enter_urlfifo_handler(GDBusMethodInvocation *invocation)
 {
@@ -144,8 +141,7 @@ static gboolean playback_set_speed(tdbussplayPlayback *object,
 
 static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
-                           gint16 keep_first_n_entries,
-                           FifoType *url_fifo)
+                           gint16 keep_first_n_entries, void *user_data)
 {
     enter_urlfifo_handler(invocation);
 
@@ -153,24 +149,18 @@ static gboolean fifo_clear(tdbussplayURLFIFO *object,
     const uint32_t current_id =
         Streamer::get_current_stream_id(temp) ? temp : UINT32_MAX;
 
-    auto fifo_lock(url_fifo->lock());
-
-    if(keep_first_n_entries >= 0)
-        url_fifo->clear(keep_first_n_entries);
-
-    auto queued_ids(Streamer::mk_id_array_from_queued_items(*url_fifo));
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(*url_fifo));
+    GVariantWrapper queued_ids;
+    GVariantWrapper dropped_ids;
+    Streamer::clear_queue(keep_first_n_entries, queued_ids, dropped_ids);
 
     tdbus_splay_urlfifo_complete_clear(object, invocation, current_id,
                                        GVariantWrapper::move(queued_ids),
                                        GVariantWrapper::move(dropped_ids));
-
     return TRUE;
 }
 
 static gboolean fifo_next(tdbussplayURLFIFO *object,
-                          GDBusMethodInvocation *invocation,
-                          FifoType *url_fifo)
+                          GDBusMethodInvocation *invocation, void *user_data)
 {
     enter_urlfifo_handler(invocation);
 
@@ -190,8 +180,7 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                           GVariant *stream_key,
                           gint64 start_position, const gchar *start_units,
                           gint64 stop_position, const gchar *stop_units,
-                          gint16 keep_first_n_entries,
-                          FifoType *url_fifo)
+                          gint16 keep_first_n_entries, void *user_data)
 {
     enter_urlfifo_handler(invocation);
 
@@ -223,9 +212,6 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
         : Streamer::is_playing();
 
     tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
-
-    msg_vinfo(MESSAGE_LEVEL_DEBUG, "Have %zu FIFO entries",
-              url_fifo->locked_ro([] (const FifoType &fifo) { return fifo.size(); }));
 
     return TRUE;
 }
@@ -270,8 +256,6 @@ static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
 
 struct DBusData
 {
-    FifoType *url_fifo;
-
     guint owner_id;
     int acquired;
     tdbussplayPlayback *playback_iface;
@@ -319,11 +303,11 @@ static void bus_acquired(GDBusConnection *connection,
                      G_CALLBACK(playback_set_speed), nullptr);
 
     g_signal_connect(data->urlfifo_iface, "handle-clear",
-                     G_CALLBACK(fifo_clear), data->url_fifo);
+                     G_CALLBACK(fifo_clear), nullptr);
     g_signal_connect(data->urlfifo_iface, "handle-next",
-                     G_CALLBACK(fifo_next), data->url_fifo);
+                     G_CALLBACK(fifo_next), nullptr);
     g_signal_connect(data->urlfifo_iface, "handle-push",
-                     G_CALLBACK(fifo_push), data->url_fifo);
+                     G_CALLBACK(fifo_push), nullptr);
 
     g_signal_connect(data->audiopath_player_iface, "handle-activate",
                      G_CALLBACK(audiopath_player_activate), nullptr);
@@ -414,8 +398,7 @@ static void destroy_notification(gpointer data)
 
 static struct DBusData dbus_data;
 
-int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
-               PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+int dbus_setup(GMainLoop *loop, bool connect_to_session_bus)
 {
     memset(&dbus_data, 0, sizeof(dbus_data));
 
@@ -424,7 +407,6 @@ int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
 
     static const char bus_name[] = "de.tahifi.Streamplayer";
 
-    dbus_data.url_fifo = &url_fifo;
     dbus_data.owner_id =
         g_bus_own_name(bus_type, bus_name, G_BUS_NAME_OWNER_FLAGS_NONE,
                        bus_acquired, name_acquired, name_lost, &dbus_data,
