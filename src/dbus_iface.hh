@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2018, 2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015, 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -27,8 +27,7 @@
 #include "urlfifo.hh"
 #include "playitem.hh"
 
-int dbus_setup(GMainLoop *loop, bool connect_to_session_bus,
-               PlayQueue::Queue<PlayQueue::Item> &url_fifo);
+int dbus_setup(GMainLoop *loop, bool connect_to_session_bus);
 void dbus_shutdown(GMainLoop *loop);
 
 #endif /* !DBUS_IFACE_HH */

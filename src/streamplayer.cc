@@ -211,12 +211,10 @@ int main(int argc, char *argv[])
 
     static const guint soup_http_block_size = 32U * 1024U;
 
-    static PlayQueue::Queue<PlayQueue::Item> queue;
-
-    if(Streamer::setup(globals.loop, soup_http_block_size, queue) < 0)
+    if(Streamer::setup(globals.loop, soup_http_block_size) < 0)
         return EXIT_FAILURE;
 
-    if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus, queue) < 0)
+    if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)
     {
         Streamer::shutdown(globals.loop);
         return EXIT_FAILURE;

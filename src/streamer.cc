@@ -103,6 +103,13 @@ enum class ActivateStreamResult
     ACTIVATED,
 };
 
+enum class WhichStreamFailed
+{
+    UNKNOWN,
+    CURRENT,
+    GAPLESS_NEXT,
+};
+
 struct time_data
 {
     int64_t position_s;
@@ -346,14 +353,14 @@ mk_id_array(const T &input, std::unordered_set<stream_id_t> &&dropped)
                                           ids.size(), sizeof(ids[0])));
 }
 
-GVariantWrapper
-Streamer::mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+static GVariantWrapper
+mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     return mk_id_array(url_fifo, {});
 }
 
-GVariantWrapper
-Streamer::mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+static GVariantWrapper
+mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     return mk_id_array(url_fifo.get_removed(), std::move(url_fifo.get_dropped()));
 }
@@ -363,18 +370,28 @@ static void emit_stopped(tdbussplayPlayback *playback_iface,
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
+    auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
     if(playback_iface != nullptr)
+    {
+        if(data.current_stream == nullptr &&
+           (dropped_ids == nullptr ||
+            g_variant_n_children(GVariantWrapper::get(dropped_ids)) <= 0))
+            return;
+
         tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
-                                          data.current_stream->stream_id_,
+                                          data.current_stream != nullptr
+                                          ? data.current_stream->stream_id_
+                                          : 0,
                                           GVariantWrapper::move(dropped_ids));
+    }
 }
 
 static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
                                     StreamerData &data,
                                     PlayQueue::Queue<PlayQueue::Item> &url_fifo,
-                                    StoppedReason reason)
+                                    StoppedReason reason,
+                                    std::unique_ptr<PlayQueue::Item> failed_stream)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
@@ -410,17 +427,15 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     static_assert(G_N_ELEMENTS(reasons) == size_t(StoppedReason::LAST_VALUE) + 1U,
                   "Array size mismatch");
 
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(url_fifo));
+    auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
-    if(data.current_stream == nullptr)
+    if(failed_stream == nullptr)
         tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
                                                      url_fifo.size() == 0,
                                                      GVariantWrapper::move(dropped_ids),
                                                      reasons[size_t(reason)]);
     else
     {
-        const auto *const failed_stream = data.current_stream.get();
-
         tdbus_splay_playback_emit_stopped_with_error(playback_iface,
                                                      failed_stream->stream_id_,
                                                      failed_stream->url_.c_str(),
@@ -479,10 +494,9 @@ static int rebuild_playbin(StreamerData &data,
     return create_playbin(data, context);
 }
 
-
-static void do_stop_pipeline_and_recover_from_error(StreamerData &data,
-                                                    std::unique_lock<std::recursive_mutex> &data_lock,
-                                                    PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+static void do_stop_pipeline_and_recover_from_error(
+        StreamerData &data, std::unique_lock<std::recursive_mutex> &data_lock,
+        PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     static const char context[] = "deferred stop";
 
@@ -515,13 +529,11 @@ static void do_stop_pipeline_and_recover_from_error(StreamerData &data,
 
     invalidate_stream_position_information(data);
     emit_stopped_with_error(dbus_get_playback_iface(), data, url_fifo,
-                            data.fail.reason);
+                            data.fail.reason, std::move(data.current_stream));
 
     data.stream_has_just_started = false;
     data.stream_buffer_underrun_filter.reset();
     data.is_failing = false;
-
-    data.current_stream.reset();
     data.fail.reset();
 }
 
@@ -596,6 +608,9 @@ static PlayQueue::Item *pick_next_item(PlayQueue::Item *current_stream,
             return current_stream;
 
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+            next_stream_is_in_fifo = false;
+            return current_stream;
+
           case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
           case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
           case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
@@ -1171,7 +1186,7 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     const auto &sd = data.current_stream->get_stream_data();
     GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list());
 
-    auto dropped_ids(Streamer::mk_id_array_from_dropped_items(url_fifo));
+    auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data.current_stream->stream_id_,
@@ -1321,13 +1336,13 @@ static StoppedReason gerror_to_stopped_reason(const GErrorWrapper &error, bool i
     return StoppedReason::UNKNOWN;
 }
 
-static bool determine_is_local_error_by_url(const PlayQueue::Item &item)
+static bool determine_is_local_error_by_url(const GLibString &url)
 {
-    if(item.url_.empty())
+    if(url.empty())
         return true;
 
 #if GST_CHECK_VERSION(1, 5, 1)
-    GstUri *uri = gst_uri_from_string(item.url_.c_str());
+    GstUri *uri = gst_uri_from_string(url.get());
 
     if(uri == nullptr)
         return true;
@@ -1343,34 +1358,26 @@ static bool determine_is_local_error_by_url(const PlayQueue::Item &item)
 #else /* pre 1.5.1 */
     static const char protocol_prefix[] = "file://";
 
-    return item.url_.compare(0, sizeof(protocol_prefix) - 1,
-                             protocol_prefix) == 0;
+    return strncmp(url.get(), protocol_prefix, sizeof(protocol_prefix) - 1) == 0;
 #endif /* use GstUri if not older than v1.5.1 */
 }
 
-static PlayQueue::Item *get_failed_item(StreamerData &data,
-                                        PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+static WhichStreamFailed
+determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
+                        const PlayQueue::Queue<PlayQueue::Item> &fifo)
 {
-    if(data.current_stream == nullptr)
-        return nullptr;
+    if(current_uri.empty())
+        return WhichStreamFailed::UNKNOWN;
 
-    switch(data.current_stream->get_state())
-    {
-      case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
-      case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
-        if(!url_fifo.pop(data.current_stream, "get failed item, replace current"))
-            return nullptr;
+    if(data.current_stream != nullptr && data.current_stream->url_ == current_uri.get())
+        return WhichStreamFailed::CURRENT;
 
-        break;
+    const auto *const next = fifo.peek();
 
-      case PlayQueue::ItemState::IN_QUEUE:
-      case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-      case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
-      case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
-        break;
-    }
+    if(next != nullptr && next->url_ == current_uri.get())
+        return WhichStreamFailed::GAPLESS_NEXT;
 
-    return data.current_stream.get();
+    return WhichStreamFailed::UNKNOWN;
 }
 
 static void handle_error_message(GstMessage *message, StreamerData &data)
@@ -1387,37 +1394,75 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
             return temp;
         });
 
-    auto data_lock(data.lock());
+    const auto data_lock(data.lock());
+    const auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
-    PlayQueue::Item *const failed_stream =
-        data.url_fifo_LOCK_ME->locked_rw(
-            [&data] (PlayQueue::Queue<PlayQueue::Item> &fifo)
-            {
-                return get_failed_item(data, fifo);
-            });
+    const GLibString current_uri(
+        [p = data.pipeline] ()
+        {
+            gchar *temp = nullptr;
+            g_object_get(p, "current-uri", &temp, nullptr);
+            return temp;
+        });
 
-    if(failed_stream == nullptr)
-        BUG("Supposed to handle error, but have no item");
-    else
+
+    auto which_stream_failed =
+        determine_failed_stream(data, current_uri, *data.url_fifo_LOCK_ME);
+    bool foreground_stream_failed = true;
+
+    switch(which_stream_failed)
     {
-        const bool is_local_error = determine_is_local_error_by_url(*failed_stream);
+      case WhichStreamFailed::UNKNOWN:
+        BUG("Supposed to handle error, but have no item");
+        return;
 
-        GstElement *source_elem;
-        g_object_get(data.pipeline, "source", &source_elem, nullptr);
+      case WhichStreamFailed::CURRENT:
+        break;
 
-        const FailureData fdata(gerror_to_stopped_reason(error, is_local_error));
+      case WhichStreamFailed::GAPLESS_NEXT:
+        foreground_stream_failed = false;
+        break;
+    }
 
-        msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
-                  error->code, g_quark_to_string(error->domain),
-                  GST_MESSAGE_SRC_NAME(message));
-        msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
-        msg_error(0, LOG_ERR, "ERROR debug: %s", debug.get());
+    const FailureData fdata(gerror_to_stopped_reason(error, determine_is_local_error_by_url(current_uri)));
+
+    msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
+              error->code, g_quark_to_string(error->domain),
+              GST_MESSAGE_SRC_NAME(message));
+    msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
+    msg_error(0, LOG_ERR, "ERROR debug: %s", debug.get());
+    error.noticed();
+
+    if(foreground_stream_failed)
+    {
         msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
                   int(fdata.reason),
                   fdata.report_on_stream_stop ? "on stop" : "now");
-
-        if(failed_stream->fail())
+        if(data.current_stream->fail())
             recover_from_error_now_or_later(data, fdata);
+    }
+    else
+    {
+        msg_error(0, LOG_ERR, "ERROR prefetching for gapless failed for reason %d",
+                  int(fdata.reason));
+        std::unique_ptr<PlayQueue::Item> item;
+        data.url_fifo_LOCK_ME->pop(item, "prefetched stream failed");
+
+        if(data.current_stream != nullptr)
+            data.url_fifo_LOCK_ME->mark_as_dropped(data.current_stream->stream_id_);
+
+        if(item->fail())
+        {
+            set_stream_state(data.pipeline, GST_STATE_NULL, "stop on bad stream");
+            invalidate_stream_position_information(data);
+            emit_stopped_with_error(dbus_get_playback_iface(), data, *data.url_fifo_LOCK_ME,
+                                    fdata.reason, std::move(item));
+            data.stream_has_just_started = false;
+            data.stream_buffer_underrun_filter.reset();
+            data.is_failing = false;
+            data.current_stream.reset();
+            data.fail.reset();
+        }
     }
 }
 
@@ -1440,6 +1485,7 @@ static void handle_warning_message(GstMessage *message)
               GST_MESSAGE_SRC_NAME(message));
     msg_error(0, LOG_ERR, "WARNING message: %s", error->message);
     msg_error(0, LOG_ERR, "WARNING debug: %s", debug.get());
+    error.noticed();
 }
 
 static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
@@ -1761,7 +1807,6 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
     bool failed = false;
-    bool need_pop = false;
     bool with_bug = false;
     bool need_activation = true;
 
@@ -1772,8 +1817,6 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
 
     if(picked_stream == nullptr)
         picked_stream = data.current_stream.get();
-    else
-        need_pop = true;
 
     if(picked_stream == nullptr)
         failed = with_bug = true;
@@ -1806,7 +1849,6 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
                     switch(next_stream->get_state())
                     {
                       case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-                        need_pop = true;
                         break;
 
                       case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
@@ -1838,13 +1880,14 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         if(picked_stream == nullptr)
             BUG("Replace nullptr current by next");
         else
-            BUG("Replace current by next in unexpected state %s",
+            BUG("Replace current by next %u in unexpected state %s",
+                picked_stream->stream_id_,
                 PlayQueue::item_state_name(picked_stream->get_state()));
 
         log_assert(!data.url_fifo_LOCK_ME->empty());
     }
 
-    if(need_pop &&
+    if(next_stream_is_in_fifo &&
        !data.url_fifo_LOCK_ME->pop(data.current_stream,
                                    failed
                                    ? "replace current due to failure at start of stream"
@@ -2211,8 +2254,7 @@ static bool do_set_speed(StreamerData &data, double factor)
 
 static StreamerData streamer_data;
 
-int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
-                    PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+int Streamer::setup(GMainLoop *loop, guint soup_http_block_size)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
 
@@ -2381,7 +2423,8 @@ bool Streamer::stop(const char *reason)
             (PlayQueue::Queue<PlayQueue::Item> &fifo)
             {
                 emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
-                                        fifo, StoppedReason::ALREADY_STOPPED);
+                                        fifo, StoppedReason::ALREADY_STOPPED,
+                                        std::move(streamer_data.current_stream));
             });
     }
 
@@ -2687,6 +2730,23 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     return streamer_data.supposed_play_status;
 }
 
+void Streamer::clear_queue(int keep_first_n_entries,
+                           GVariantWrapper &queued, GVariantWrapper &dropped)
+{
+    auto data_lock(streamer_data.lock());
+
+    streamer_data.url_fifo_LOCK_ME->locked_rw(
+        [keep_first_n_entries, &queued, &dropped]
+        (PlayQueue::Queue<PlayQueue::Item> &fifo)
+        {
+            if(keep_first_n_entries >= 0)
+                fifo.clear(keep_first_n_entries);
+
+            queued = mk_id_array_from_queued_items(fifo);
+            dropped = mk_id_array_from_dropped_items(fifo);
+        });
+}
+
 bool Streamer::is_playing()
 {
     return streamer_data.locked(
@@ -2748,8 +2808,11 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
         GLibString filename(g_filename_from_uri(url.c_str(), nullptr, gerror.await()));
 
         if(filename == nullptr)
+        {
             msg_error(0, LOG_EMERG, "Error while extracting file name from uri: '%s'" ,
                       (gerror.failed() && gerror->message) ? gerror->message : "N/A");
+            gerror.noticed();
+        }
 
         return filename;
     };
