@@ -1,3 +1,19 @@
+2021-02-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.4 released.
+
+	* Playback: Fix error detection during gapless playback, and improve
+	  error handling.
+
+	* D-Bus: Fix de.tahifi.Streamplayer.URLFIFO.Clear() implementation
+	  which was operating on its very own, useless queue.
+
+	* Misc: Use GLib RAII wrappers for GError and GLib strings to avoid
+	  memory leaks.
+
+	* Logging: Avoid flooding the log with messages telling that the
+	  "beats-per-minute" tag is not known.
+
 2020-11-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.3 released.
@@ -357,4 +373,4 @@
 	* First release for testing.
 
 
-Copyright 2015--2020 T+A elektroakustik GmbH & Co. KG
+Copyright 2015--2021 T+A elektroakustik GmbH & Co. KG
