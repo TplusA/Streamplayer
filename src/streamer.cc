@@ -206,7 +206,7 @@ class StreamerData
     guint bus_watch;
     guint progress_watcher;
     guint soup_http_block_size;
-    gulong signal_handler_ids[2];
+    std::vector<gulong> signal_handler_ids;
 
     std::unique_ptr<PlayQueue::Queue<PlayQueue::Item>> url_fifo_LOCK_ME;
 
@@ -245,7 +245,6 @@ class StreamerData
         bus_watch(0),
         progress_watcher(0),
         soup_http_block_size(0),
-        signal_handler_ids{0, 0},
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
         is_failing(false),
         previous_time{},
@@ -450,13 +449,10 @@ static void disconnect_playbin_signals(StreamerData &data)
     if(data.pipeline == nullptr)
         return;
 
-    for(size_t i = 0;
-        i < sizeof(data.signal_handler_ids) / sizeof(data.signal_handler_ids[0]);
-        ++i)
-    {
-        g_signal_handler_disconnect(data.pipeline, data.signal_handler_ids[i]);
-        data.signal_handler_ids[i] = 0;
-    }
+    for(const auto id : data.signal_handler_ids)
+        g_signal_handler_disconnect(data.pipeline, id);
+
+    data.signal_handler_ids.clear();
 }
 
 static void teardown_playbin(StreamerData &data)
@@ -2134,13 +2130,14 @@ static int create_playbin(StreamerData &data, const char *context)
 
     g_object_set(data.pipeline, "flags", GST_PLAY_FLAG_AUDIO, nullptr);
 
-    data.signal_handler_ids[0] =
+    log_assert(data.signal_handler_ids.empty());
+    data.signal_handler_ids.push_back(
         g_signal_connect(data.pipeline, "about-to-finish",
-                         G_CALLBACK(queue_stream_from_url_fifo), &data);
+                         G_CALLBACK(queue_stream_from_url_fifo), &data));
 
-    data.signal_handler_ids[1] =
+    data.signal_handler_ids.push_back(
         g_signal_connect(data.pipeline, "source-setup",
-                         G_CALLBACK(setup_source_element), &data);
+                         G_CALLBACK(setup_source_element), &data));
 
     set_stream_state(data.pipeline, GST_STATE_READY, context);
 
