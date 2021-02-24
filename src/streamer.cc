@@ -2009,7 +2009,11 @@ static void setup_source_element(GstElement *playbin,
     static const std::string soup_name("GstSoupHTTPSrc");
 
     if(G_OBJECT_TYPE_NAME(source) == soup_name)
-        g_object_set(source, "blocksize", &data.soup_http_block_size, nullptr);
+    {
+        BUG_IF(data.soup_http_block_size <= 0,
+               "Invalid soup blocksize %u", data.soup_http_block_size);
+        g_object_set(source, "blocksize", data.soup_http_block_size, nullptr);
+    }
 }
 
 /*

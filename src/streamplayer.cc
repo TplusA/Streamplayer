@@ -209,7 +209,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    static const guint soup_http_block_size = 32U * 1024U;
+    static const guint soup_http_block_size = 512U * 1024U;
 
     if(Streamer::setup(globals.loop, soup_http_block_size) < 0)
         return EXIT_FAILURE;
