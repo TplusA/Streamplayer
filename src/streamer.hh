@@ -35,7 +35,8 @@ enum class PlayStatus
     PAUSED,
 };
 
-int setup(GMainLoop *loop, guint soup_http_block_size);
+int setup(GMainLoop *loop, guint soup_http_block_size,
+          gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us);
 void shutdown(GMainLoop *loop);
 
 void activate();

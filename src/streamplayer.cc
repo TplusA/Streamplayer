@@ -210,8 +210,11 @@ int main(int argc, char *argv[])
     }
 
     static const guint soup_http_block_size = 512U * 1024U;
+    static const gint64 alsa_latency_time_us = 250U * 1000U;
+    static const gint64 alsa_buffer_time_us = 1000U * 1000U;
 
-    if(Streamer::setup(globals.loop, soup_http_block_size) < 0)
+    if(Streamer::setup(globals.loop, soup_http_block_size,
+                       alsa_latency_time_us, alsa_buffer_time_us) < 0)
         return EXIT_FAILURE;
 
     if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)
