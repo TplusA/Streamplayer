@@ -1,3 +1,19 @@
+2021-03-01  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.5 released.
+
+	* Playback: Avoid stuttering while playing high-res streams on CM1 by
+	  increasing buffer sizes. The buffers on the ALSA sink are too small
+	  for the CM1, especially the latency of 10 ms was often not
+	  sustainable on the CM1.
+
+	  Not all stuttering can be avoided this way, but the situation has
+	  improved a lot by this change.
+
+	  Note that this change has no effect with older GStreamer versions as
+	  those versions will not call the required callbacks and thus won't
+	  allow us to adjust ALSA settings.
+
 2021-02-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.4 released.
