@@ -55,6 +55,9 @@ struct parameters
     enum MessageVerboseLevel verbose_level;
     bool run_in_foreground;
     bool connect_to_system_dbus;
+    gint soup_http_blocksize_kb;
+    gint alsa_latency_ms;
+    gint alsa_buffer_ms;
 };
 
 static void show_version_info(void)
@@ -105,6 +108,9 @@ static int process_command_line(int argc, char *argv[],
     parameters->verbose_level = MESSAGE_LEVEL_NORMAL;
     parameters->run_in_foreground = false;
     parameters->connect_to_system_dbus = false;
+    parameters->soup_http_blocksize_kb = 512;
+    parameters->alsa_latency_ms = 100;
+    parameters->alsa_buffer_ms = 5000;
 
     static bool show_version = false;
     gchar *verbose_level_name_raw = nullptr;
@@ -124,6 +130,15 @@ static int process_command_line(int argc, char *argv[],
         { "system-dbus", 's', 0, G_OPTION_ARG_NONE,
           &parameters->connect_to_system_dbus,
           "Connect to system D-Bus instead of session D-Bus.", nullptr },
+        { "soup-blocksize", 0, 0,
+          G_OPTION_ARG_INT, &parameters->soup_http_blocksize_kb,
+          "Block size in kiB for GstSoupHTTPSrc elements", nullptr },
+        { "alsa-latency", 0, 0,
+          G_OPTION_ARG_INT, &parameters->alsa_latency_ms,
+          "ALSA latency in ms", nullptr },
+        { "alsa-buffer", 0, 0,
+          G_OPTION_ARG_INT, &parameters->alsa_buffer_ms,
+          "ALSA buffer size in ms", nullptr },
         {}
     };
 
@@ -165,6 +180,27 @@ static int process_command_line(int argc, char *argv[],
 
             return -1;
         }
+    }
+
+    if(parameters->soup_http_blocksize_kb <= 0)
+    {
+        fprintf(stderr, "Invalid block size %d.\n",
+                parameters->soup_http_blocksize_kb);
+        return -1;
+    }
+
+    if(parameters->alsa_latency_ms <= 0)
+    {
+        fprintf(stderr, "Invalid ALSA latency %d.\n",
+                parameters->alsa_latency_ms);
+        return -1;
+    }
+
+    if(parameters->alsa_buffer_ms <= 0)
+    {
+        fprintf(stderr, "Invalid ALSA buffer size %d.\n",
+                parameters->alsa_buffer_ms);
+        return -1;
     }
 
     if(verbose_quiet)
@@ -209,12 +245,17 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    static const guint soup_http_block_size = 512U * 1024U;
-    static const gint64 alsa_latency_time_us = 1U * 1000U * 1000U;
-    static const gint64 alsa_buffer_time_us = 20U * 1000U * 1000U;
+    msg_vinfo(MESSAGE_LEVEL_NORMAL,
+              "SOUP block size : %d kiB", parameters.soup_http_blocksize_kb);
+    msg_vinfo(MESSAGE_LEVEL_NORMAL,
+              "ALSA latency    : %d ms", parameters.alsa_latency_ms);
+    msg_vinfo(MESSAGE_LEVEL_NORMAL,
+              "ALSA buffer size: %d ms", parameters.alsa_buffer_ms);
 
-    if(Streamer::setup(globals.loop, soup_http_block_size,
-                       alsa_latency_time_us, alsa_buffer_time_us) < 0)
+    if(Streamer::setup(globals.loop,
+                       parameters.soup_http_blocksize_kb * 1024U,
+                       parameters.alsa_latency_ms * 1000U,
+                       parameters.alsa_buffer_ms * 1000U) < 0)
         return EXIT_FAILURE;
 
     if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)
