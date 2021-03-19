@@ -1,3 +1,12 @@
+2021-03-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.6 released.
+
+	* Playback: Reduce buffer sizes again to make pause mode work as
+	  expected.
+
+	* Misc: Add command line options for adjusting buffer sizes.
+
 2021-03-01  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.5 released.
