@@ -1,3 +1,10 @@
+2021-04-16  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.7 released.
+
+	* Playback: Add command line option for using GStreamer's default
+	  buffers instead of our adjusted sizes.
+
 2021-03-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.6 released.
