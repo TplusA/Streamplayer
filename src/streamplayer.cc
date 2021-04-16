@@ -53,8 +53,8 @@ globals;
 struct parameters
 {
     enum MessageVerboseLevel verbose_level;
-    bool run_in_foreground;
-    bool connect_to_system_dbus;
+    gboolean run_in_foreground;
+    gboolean connect_to_system_dbus;
     gint soup_http_blocksize_kb;
     gint alsa_latency_ms;
     gint alsa_buffer_ms;
@@ -106,8 +106,8 @@ static int process_command_line(int argc, char *argv[],
                                 struct parameters *parameters)
 {
     parameters->verbose_level = MESSAGE_LEVEL_NORMAL;
-    parameters->run_in_foreground = false;
-    parameters->connect_to_system_dbus = false;
+    parameters->run_in_foreground = FALSE;
+    parameters->connect_to_system_dbus = FALSE;
     parameters->soup_http_blocksize_kb = 512;
     parameters->alsa_latency_ms = 100;
     parameters->alsa_buffer_ms = 5000;
