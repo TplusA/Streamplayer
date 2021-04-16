@@ -208,6 +208,7 @@ class StreamerData
     guint soup_http_block_size;
     gint64 alsa_latency_time_us;
     gint64 alsa_buffer_time_us;
+    bool use_default_buffer_settings;
     std::vector<gulong> signal_handler_ids;
 
     std::unique_ptr<PlayQueue::Queue<PlayQueue::Item>> url_fifo_LOCK_ME;
@@ -249,6 +250,7 @@ class StreamerData
         soup_http_block_size(0),
         alsa_latency_time_us(0),
         alsa_buffer_time_us(0),
+        use_default_buffer_settings(false),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
         is_failing(false),
         previous_time{},
@@ -2010,6 +2012,9 @@ static void setup_element(GstElement *playbin,
     if(data.is_failing)
         return;
 
+    if(data.use_default_buffer_settings)
+        return;
+
     static const std::string alsasink_name("GstAlsaSink");
 
     if(G_OBJECT_TYPE_NAME(source) == alsasink_name)
@@ -2032,6 +2037,9 @@ static void setup_source_element(GstElement *playbin,
     const auto &data = *static_cast<const StreamerData *>(user_data);
 
     if(data.is_failing)
+        return;
+
+    if(data.use_default_buffer_settings)
         return;
 
     static const std::string soup_name("GstSoupHTTPSrc");
@@ -2289,11 +2297,13 @@ static bool do_set_speed(StreamerData &data, double factor)
 static StreamerData streamer_data;
 
 int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
-                    gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us)
+                    gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us,
+                    bool use_default_buffer_settings)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
     streamer_data.alsa_latency_time_us = alsa_latency_time_us;
     streamer_data.alsa_buffer_time_us = alsa_buffer_time_us;
+    streamer_data.use_default_buffer_settings = use_default_buffer_settings;
 
     if(create_playbin(streamer_data, "setup") < 0)
         return -1;
