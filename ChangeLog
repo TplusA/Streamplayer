@@ -1,3 +1,11 @@
+2021-04-23  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.8 released.
+
+	* Playback: ALSA latency set to 50 ms, other buffers are back to
+	  GStreamer defaults. The buffers can still be manipulated from the
+	  command line.
+
 2021-04-16  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.7 released.
