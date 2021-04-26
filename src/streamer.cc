@@ -156,7 +156,8 @@ class BufferUnderrunFilter
         EVERYTHING_IS_GOING_ACCORDING_TO_PLAN,
         UNDERRUN_DETECTED,
         FILLING_UP,
-        RECOVERED,
+        RECOVERED_A_BIT,
+        RECOVERED_100,
     };
 
   private:
@@ -180,11 +181,15 @@ class BufferUnderrunFilter
         if(percent > 0)
         {
             if(recovered_count_ == 0)
-                return EVERYTHING_IS_GOING_ACCORDING_TO_PLAN;
+                return percent < 100
+                    ? EVERYTHING_IS_GOING_ACCORDING_TO_PLAN
+                    : RECOVERED_100;
 
             --recovered_count_;
 
-            return recovered_count_ == 0 ? RECOVERED : FILLING_UP;
+            return recovered_count_ == 0
+                ? (percent < 100 ? RECOVERED_A_BIT : RECOVERED_100)
+                : FILLING_UP;
         }
         else
         {
@@ -192,6 +197,13 @@ class BufferUnderrunFilter
             return UNDERRUN_DETECTED;
         }
     }
+};
+
+enum class BufferingState
+{
+    NOT_BUFFERING,
+    ACTIVELY_PAUSED_FOR_BUFFERING,
+    JOINED_PAUSE_FOR_BUFFERING,
 };
 
 class StreamerData
@@ -234,6 +246,7 @@ class StreamerData
 
     bool stream_has_just_started;
     BufferUnderrunFilter stream_buffer_underrun_filter;
+    BufferingState stream_buffering_state;
 
     Streamer::PlayStatus supposed_play_status;
 
@@ -257,6 +270,7 @@ class StreamerData
         is_tag_update_scheduled(false),
         next_allowed_tag_update_time(0),
         stream_has_just_started(false),
+        stream_buffering_state(BufferingState::NOT_BUFFERING),
         supposed_play_status(Streamer::PlayStatus::STOPPED)
     {}
 
@@ -372,6 +386,7 @@ static void emit_stopped(tdbussplayPlayback *playback_iface,
                          StreamerData &data)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
+    data.stream_buffering_state = BufferingState::NOT_BUFFERING;
 
     auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
@@ -1750,10 +1765,20 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
           case ActivateStreamResult::ALREADY_ACTIVE:
           case ActivateStreamResult::ACTIVATED:
-            if(dbus_playback_iface != nullptr)
-                tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
-                                                      data.current_stream->stream_id_,
-                                                      TRUE);
+            switch(data.stream_buffering_state)
+            {
+              case BufferingState::NOT_BUFFERING:
+                if(dbus_playback_iface != nullptr)
+                    tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
+                                                          data.current_stream->stream_id_,
+                                                          TRUE);
+                break;
+
+              case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+              case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+                break;
+            }
+
             break;
         }
 
@@ -1776,10 +1801,20 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
               case ActivateStreamResult::ALREADY_ACTIVE:
               case ActivateStreamResult::ACTIVATED:
-                if(dbus_playback_iface != nullptr)
-                    tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
-                                                          data.current_stream->stream_id_,
-                                                          FALSE);
+                switch(data.stream_buffering_state)
+                {
+                  case BufferingState::NOT_BUFFERING:
+                    if(dbus_playback_iface != nullptr)
+                        tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
+                                                              data.current_stream->stream_id_,
+                                                              FALSE);
+                    break;
+
+                  case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+                  case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+                    break;
+                }
+
                 break;
             }
         }
@@ -1947,15 +1982,83 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
         break;
 
       case BufferUnderrunFilter::UNDERRUN_DETECTED:
-        msg_error(0, LOG_WARNING, "Buffer underrun detected");
+        {
+            msg_error(0, LOG_WARNING, "Buffer underrun detected");
+            const GstState state = GST_STATE(data.pipeline);
+
+            switch(state)
+            {
+              case GST_STATE_PLAYING:
+                msg_info("Pausing stream to fill buffer");
+                data.stream_buffering_state =
+                    set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer")
+                    ? BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING
+                    : BufferingState::NOT_BUFFERING;
+                break;
+
+              case GST_STATE_PAUSED:
+                msg_info("Stream already paused, filling buffer");
+
+                switch(data.stream_buffering_state)
+                {
+                  case BufferingState::NOT_BUFFERING:
+                    data.stream_buffering_state = BufferingState::JOINED_PAUSE_FOR_BUFFERING;
+                    break;
+
+                  case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+                  case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+                    break;
+                }
+
+                break;
+
+              case GST_STATE_READY:
+                data.stream_buffering_state = BufferingState::NOT_BUFFERING;
+                break;
+
+              case GST_STATE_NULL:
+              case GST_STATE_VOID_PENDING:
+                BUG("Unexpected stream state %s while hitting buffer underrun",
+                    gst_element_state_get_name(state));
+                break;
+            }
+        }
+
         break;
 
       case BufferUnderrunFilter::FILLING_UP:
         msg_info("Buffer filling up (%d%%)", percent);
         break;
 
-      case BufferUnderrunFilter::RECOVERED:
+      case BufferUnderrunFilter::RECOVERED_A_BIT:
         msg_info("Buffer recovered (%d%%)", percent);
+        break;
+
+      case BufferUnderrunFilter::RECOVERED_100:
+        msg_info("Buffer filled");
+
+        switch(data.stream_buffering_state)
+        {
+          case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+            switch(data.supposed_play_status)
+            {
+              case Streamer::PlayStatus::PLAYING:
+                set_stream_state(data.pipeline, GST_STATE_PLAYING, "buffer filled");
+                break;
+
+              case Streamer::PlayStatus::STOPPED:
+              case Streamer::PlayStatus::PAUSED:
+                break;
+            }
+
+            break;
+
+          case BufferingState::NOT_BUFFERING:
+          case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+            break;
+        }
+
+        data.stream_buffering_state = BufferingState::NOT_BUFFERING;
         break;
     }
 }
@@ -2390,6 +2493,17 @@ bool Streamer::start()
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PLAYING;
 
+    switch(streamer_data.stream_buffering_state)
+    {
+      case BufferingState::NOT_BUFFERING:
+        break;
+
+      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+        msg_info("Play request deferred, we are buffering");
+        return true;
+    }
+
     GstState state = GST_STATE(streamer_data.pipeline);
     const GstState pending_state = GST_STATE_PENDING(streamer_data.pipeline);
 
@@ -2501,6 +2615,17 @@ bool Streamer::pause()
     log_assert(streamer_data.pipeline != nullptr);
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PAUSED;
+
+    switch(streamer_data.stream_buffering_state)
+    {
+      case BufferingState::NOT_BUFFERING:
+        break;
+
+      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+        msg_info("Pause request deferred, we are buffering");
+        return true;
+    }
 
     const GstState state = GST_STATE(streamer_data.pipeline);
 
