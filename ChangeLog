@@ -1,3 +1,19 @@
+2021-04-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.9 released.
+
+	* Playback: Proper reaction to buffer underruns. In case of an
+	  underrun, the stream is paused until the buffer is filled to 100%,
+	  then unpaused. This avoids permanent stuttering in case we are
+	  playing a little bit too fast or the server is a little bit too
+	  slow.
+
+	* D-Bus: Emit buffer level and buffering state over D-Bus.
+
+	* Playback: We always use GStreamer's default buffer sizes now unless
+	  something else is specified on the command line. No more magic
+	  buffer setups, just clear and simple command line parameters.
+
 2021-04-23  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.8 released.
