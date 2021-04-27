@@ -58,7 +58,6 @@ struct parameters
     gint soup_http_blocksize_kb;
     gint alsa_latency_ms;
     gint alsa_buffer_ms;
-    gboolean use_default_buffer_settings;
 };
 
 static void show_version_info(void)
@@ -110,9 +109,8 @@ static int process_command_line(int argc, char *argv[],
     parameters->run_in_foreground = FALSE;
     parameters->connect_to_system_dbus = FALSE;
     parameters->soup_http_blocksize_kb = 0;
-    parameters->alsa_latency_ms = 50;
+    parameters->alsa_latency_ms = 0;
     parameters->alsa_buffer_ms = 0;
-    parameters->use_default_buffer_settings = FALSE;
 
     static bool show_version = false;
     gchar *verbose_level_name_raw = nullptr;
@@ -141,9 +139,6 @@ static int process_command_line(int argc, char *argv[],
         { "alsa-buffer", 0, 0,
           G_OPTION_ARG_INT, &parameters->alsa_buffer_ms,
           "ALSA buffer size in ms", nullptr },
-        { "default-buffers", 0, 0, G_OPTION_ARG_NONE,
-          &parameters->use_default_buffer_settings,
-          "Do not alter buffer sizes, use GStreamer defaults", nullptr },
         {}
     };
 
@@ -185,13 +180,6 @@ static int process_command_line(int argc, char *argv[],
 
             return -1;
         }
-    }
-
-    if(parameters->use_default_buffer_settings)
-    {
-        parameters->soup_http_blocksize_kb = 0;
-        parameters->alsa_latency_ms = 0;
-        parameters->alsa_buffer_ms = 0;
     }
 
     if(parameters->soup_http_blocksize_kb < 0)
@@ -265,7 +253,8 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    if(parameters.use_default_buffer_settings)
+    if(parameters.soup_http_blocksize_kb <= 0 &&
+       parameters.alsa_latency_ms <= 0 && parameters.alsa_buffer_ms <= 0)
         msg_vinfo(MESSAGE_LEVEL_NORMAL,
                   "Using GStreamer default buffer settings");
     else
