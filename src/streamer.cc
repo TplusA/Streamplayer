@@ -2061,6 +2061,20 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
         data.stream_buffering_state = BufferingState::NOT_BUFFERING;
         break;
     }
+
+    switch(data.stream_buffering_state)
+    {
+      case BufferingState::NOT_BUFFERING:
+        tdbus_splay_playback_emit_buffer(dbus_get_playback_iface(),
+                                         percent, FALSE);
+        break;
+
+      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+        tdbus_splay_playback_emit_buffer(dbus_get_playback_iface(),
+                                         percent, TRUE);
+        break;
+    }
 }
 
 static void handle_stream_duration(GstMessage *message, StreamerData &data)
