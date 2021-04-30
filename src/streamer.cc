@@ -180,16 +180,18 @@ class BufferUnderrunFilter
     {
         if(percent > 0)
         {
+            if(percent >= 100)
+            {
+                reset();
+                return RECOVERED_100;
+            }
+
             if(recovered_count_ == 0)
-                return percent < 100
-                    ? EVERYTHING_IS_GOING_ACCORDING_TO_PLAN
-                    : RECOVERED_100;
+                return EVERYTHING_IS_GOING_ACCORDING_TO_PLAN;
 
             --recovered_count_;
 
-            return recovered_count_ == 0
-                ? (percent < 100 ? RECOVERED_A_BIT : RECOVERED_100)
-                : FILLING_UP;
+            return recovered_count_ == 0 ? RECOVERED_A_BIT : FILLING_UP;
         }
         else
         {
