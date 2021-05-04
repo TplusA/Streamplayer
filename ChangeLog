@@ -1,3 +1,9 @@
+2021-05-04  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.10 released.
+
+	* Playback: Fix leaving pause state during buffering phase.
+
 2021-04-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.9 released.
