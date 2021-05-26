@@ -34,6 +34,7 @@
 #include <gst/tag/tag.h>
 
 #include "streamer.hh"
+#include "strbo_usb_url.hh"
 #include "urlfifo.hh"
 #include "playitem.hh"
 #include "gstringwrapper.hh"
@@ -458,7 +459,7 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     {
         tdbus_splay_playback_emit_stopped_with_error(playback_iface,
                                                      failed_stream->stream_id_,
-                                                     failed_stream->url_.c_str(),
+                                                     failed_stream->get_url_for_reporting().c_str(),
                                                      url_fifo.size() == 0,
                                                      GVariantWrapper::move(dropped_ids),
                                                      reasons[size_t(reason)]);
@@ -717,7 +718,7 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
         msg_info("[%s] Cannot dequeue, URL FIFO is empty", context);
         fdata.reason = StoppedReason::QUEUE_EMPTY;
     }
-    else if(next->url_.empty())
+    else if(next->empty())
     {
         msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
                   "[%s] Cannot dequeue, URL in item is empty", context);
@@ -806,9 +807,10 @@ static bool play_next_stream(StreamerData &data,
                                    : PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
 
     msg_info("Setting URL %s for next stream %u",
-             next_stream.url_.c_str(), next_stream.stream_id_);
+             next_stream.get_url_for_playing().c_str(), next_stream.stream_id_);
 
-    g_object_set(data.pipeline, "uri", next_stream.url_.c_str(), nullptr);
+    g_object_set(data.pipeline, "uri",
+                 next_stream.get_url_for_playing().c_str(), nullptr);
 
     if(is_prefetching_for_gapless)
         return true;
@@ -1209,7 +1211,7 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
     tdbus_splay_playback_emit_now_playing(playback_iface,
                                           data.current_stream->stream_id_,
                                           GVariantWrapper::get(sd.stream_key_),
-                                          data.current_stream->url_.c_str(),
+                                          data.current_stream->get_url_for_reporting().c_str(),
                                           url_fifo.full(),
                                           GVariantWrapper::move(dropped_ids),
                                           meta_data);
@@ -1387,12 +1389,13 @@ determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
     if(current_uri.empty())
         return WhichStreamFailed::UNKNOWN;
 
-    if(data.current_stream != nullptr && data.current_stream->url_ == current_uri.get())
+    if(data.current_stream != nullptr &&
+       data.current_stream->get_url_for_playing() == current_uri.get())
         return WhichStreamFailed::CURRENT;
 
     const auto *const next = fifo.peek();
 
-    if(next != nullptr && next->url_ == current_uri.get())
+    if(next != nullptr && next->get_url_for_playing() == current_uri.get())
         return WhichStreamFailed::GAPLESS_NEXT;
 
     return WhichStreamFailed::UNKNOWN;
@@ -2945,7 +2948,7 @@ bool Streamer::get_current_stream_id(stream_id_t &id)
     auto data_lock(streamer_data.lock());
 
     if(streamer_data.current_stream != nullptr &&
-       !streamer_data.current_stream->url_.empty())
+       !streamer_data.current_stream->empty())
     {
         id = streamer_data.current_stream->stream_id_;
         return true;
@@ -2968,6 +2971,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
 
     auto item(std::make_unique<PlayQueue::Item>(
             stream_id, std::move(stream_key), stream_url,
+            StrBo::translate_url_to_regular_url(stream_url),
             std::chrono::time_point<std::chrono::nanoseconds>::min(),
             std::chrono::time_point<std::chrono::nanoseconds>::max()));
 
@@ -3025,7 +3029,7 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
     if(streamer_data.is_player_activated && streamer_data.current_stream != nullptr)
     {
-        const auto &url = streamer_data.current_stream->url_;
+        const auto &url = streamer_data.current_stream->get_url_for_playing();
         if(starts_with(url, "file://"))
         {
             auto filename(filename_from_uri(url));
