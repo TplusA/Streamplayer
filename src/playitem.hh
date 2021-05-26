@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -67,7 +67,12 @@ class Item
 
   public:
     const stream_id_t stream_id_;
-    const std::string url_;
+
+  private:
+    const std::string original_url_;
+    const std::string xlated_url_;
+
+  public:
     const std::chrono::time_point<std::chrono::nanoseconds> start_time_;
     const std::chrono::time_point<std::chrono::nanoseconds> end_time_;
 
@@ -86,6 +91,9 @@ class Item
      *     daemon whenever cover arts are discovered.
      * \param stream_url
      *     The stream URL requested to play.
+     * \param xlated_url
+     *     The translated stream URL which can be handled by GStreamer. Leave
+     *     empty if \p stream_url can be handled by GStreamer anyway.
      * \param start_time, end_time
      *     The start and stop positions of a stretch to be played. Pass
      *     \c std::chrono::time_point::min() and
@@ -93,13 +101,14 @@ class Item
      *     stream from its natural start to its natural end.
      */
     explicit Item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-                  std::string &&stream_url,
+                  std::string &&stream_url, std::string &&xlated_url,
                   std::chrono::time_point<std::chrono::nanoseconds> &&start_time,
                   std::chrono::time_point<std::chrono::nanoseconds> &&end_time):
         state_(ItemState::IN_QUEUE),
         fail_state_(FailState::NOT_FAILED),
         stream_id_(stream_id),
-        url_(std::move(stream_url)),
+        original_url_(std::move(stream_url)),
+        xlated_url_(std::move(xlated_url)),
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
         stream_data_(std::move(stream_key))
@@ -115,6 +124,15 @@ class Item
 
     const StreamData &get_stream_data() const { return stream_data_; }
     StreamData &get_stream_data() { return stream_data_; }
+
+    bool empty() const { return original_url_.empty(); }
+
+    const std::string get_url_for_playing() const
+    {
+        return xlated_url_.empty() ? original_url_ : xlated_url_;
+    }
+
+    const std::string get_url_for_reporting() const { return original_url_; }
 };
 
 /*!
