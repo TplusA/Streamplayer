@@ -1,3 +1,10 @@
+2021-06-01  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.11 released.
+
+	* Playback: Support playing from USB partitions using the strbo-usb
+	  URI scheme.
+
 2021-05-04  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.10 released.
