@@ -244,6 +244,7 @@ static gboolean audiopath_player_deactivate(tdbusaupathPlayer *object,
 
 static gboolean mounta_device_will_be_removed(tdbusMounTA *mounta_proxy,
                                               guint16 id,
+                                              const gchar *uuid,
                                               const gchar *root_path,
                                               gpointer user_data)
 {
