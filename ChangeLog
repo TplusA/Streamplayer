@@ -1,3 +1,10 @@
+2021-06-30  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.12 released.
+
+	* Playback: Extend handling of strbo-usb to be useful with devices
+	  which have no UUIDs. Requires MounTA v1.2 or later.
+
 2021-06-01  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.11 released.
