@@ -27,7 +27,7 @@
 namespace StrBo
 {
 
-std::string translate_url_to_regular_url(const char *url);
+std::string translate_url_to_regular_url(const char *url, bool &failed);
 
 }
 

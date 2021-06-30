@@ -142,12 +142,15 @@ static std::string translate(const char *uuid, const GList *path_segments)
     return tempstring;
 }
 
-std::string StrBo::translate_url_to_regular_url(const char *url)
+std::string StrBo::translate_url_to_regular_url(const char *url, bool &failed)
 {
     GstUri *uri = gst_uri_from_string(url);
 
     if(uri == nullptr)
+    {
+        failed = true;
         return std::string();
+    }
 
     const char *scheme = gst_uri_get_scheme(uri);
     static const std::string strbo_scheme("strbo-usb");
@@ -160,7 +163,10 @@ std::string StrBo::translate_url_to_regular_url(const char *url)
             result = translate(static_cast<const char *>(segs->next->data),
                                segs->next->next);
         g_list_free_full(segs, g_free);
+        failed = result.empty();
     }
+    else
+        failed = false;
 
     gst_uri_unref(uri);
     return result;
