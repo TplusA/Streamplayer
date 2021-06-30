@@ -27,6 +27,8 @@
 #include "messages.h"
 
 #include <gst/gst.h>
+#include <algorithm>
+#include <cstring>
 
 class Tempfile
 {
@@ -81,6 +83,16 @@ class Tempfile
 
 constexpr char Tempfile::NAME_TEMPLATE[];
 
+static const char *beyond_fake_uuid_prefix(const char *uuid)
+{
+    const char fake_prefix[] = "DO-NOT-STORE:";
+
+    return
+        strncmp(uuid, fake_prefix, sizeof(fake_prefix) - 1) != 0
+        ? nullptr
+        : uuid + sizeof(fake_prefix) - 1;
+}
+
 static std::string no_mountpoint_found_error(const char *uuid)
 {
     msg_error(ENOMEDIUM, LOG_NOTICE,
@@ -98,10 +110,20 @@ static std::string translate(const char *uuid, const GList *path_segments)
         return std::string();
     }
 
-    auto cmd = std::string("/bin/grep \"^$(/usr/bin/realpath /dev/disk/by-uuid/");
-    cmd += uuid;
-    cmd += ")\" /proc/mounts | cut -f 2 -d ' ' >";
-    cmd += tempfile.name();
+    std::string device_name;
+    const char *const fake_uuid_content = beyond_fake_uuid_prefix(uuid);
+
+    if(fake_uuid_content != nullptr)
+        std::transform(
+            fake_uuid_content, fake_uuid_content + strlen(fake_uuid_content),
+            std::back_inserter(device_name),
+            [] (const char &ch) { return ch == '_' ? '/' : ch; });
+    else
+        device_name =
+            std::string("$(/usr/bin/realpath /dev/disk/by-uuid/") + uuid + ")";
+
+    const auto cmd = "/bin/grep \"" + device_name +
+                     "\" /proc/mounts | cut -f 2 -d ' ' >" + tempfile.name();
 
     if(os_system_formatted(msg_is_verbose(MESSAGE_LEVEL_DEBUG), cmd.c_str()))
         return no_mountpoint_found_error(uuid);
@@ -142,12 +164,15 @@ static std::string translate(const char *uuid, const GList *path_segments)
     return tempstring;
 }
 
-std::string StrBo::translate_url_to_regular_url(const char *url)
+std::string StrBo::translate_url_to_regular_url(const char *url, bool &failed)
 {
     GstUri *uri = gst_uri_from_string(url);
 
     if(uri == nullptr)
+    {
+        failed = true;
         return std::string();
+    }
 
     const char *scheme = gst_uri_get_scheme(uri);
     static const std::string strbo_scheme("strbo-usb");
@@ -160,7 +185,10 @@ std::string StrBo::translate_url_to_regular_url(const char *url)
             result = translate(static_cast<const char *>(segs->next->data),
                                segs->next->next);
         g_list_free_full(segs, g_free);
+        failed = result.empty();
     }
+    else
+        failed = false;
 
     gst_uri_unref(uri);
     return result;

@@ -2969,9 +2969,20 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
         return false;
     }
 
+    bool translation_failed;
+    auto xlated_url(StrBo::translate_url_to_regular_url(stream_url,
+                                                        translation_failed));
+
+    if(translation_failed)
+    {
+        msg_error(0, LOG_ERR,
+                  "Failed to create regular URL from \"%s\"", stream_url);
+        return false;
+    }
+
     auto item(std::make_unique<PlayQueue::Item>(
             stream_id, std::move(stream_key), stream_url,
-            StrBo::translate_url_to_regular_url(stream_url),
+            std::move(xlated_url),
             std::chrono::time_point<std::chrono::nanoseconds>::min(),
             std::chrono::time_point<std::chrono::nanoseconds>::max()));
 
