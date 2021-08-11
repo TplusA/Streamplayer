@@ -180,7 +180,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                           GVariant *stream_key,
                           gint64 start_position, const gchar *start_units,
                           gint64 stop_position, const gchar *stop_units,
-                          gint16 keep_first_n_entries, void *user_data)
+                          gint16 keep_first_n_entries, GVariant *meta_data,
+                          void *user_data)
 {
     enter_urlfifo_handler(invocation);
 
