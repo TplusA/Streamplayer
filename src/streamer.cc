@@ -972,6 +972,29 @@ static GVariant *tag_list_to_g_variant(const GstTagList *list)
     return g_variant_builder_end(&builder);
 }
 
+static GstTagList *g_variant_to_tag_list(GVariantWrapper &&md,
+                                         std::string &cover_art_uri)
+{
+    if(g_variant_n_children(GVariantWrapper::get(md)) == 0)
+        return nullptr;
+
+    GstTagList *list = gst_tag_list_new_empty();
+    GVariantIter iter;
+    g_variant_iter_init(&iter, GVariantWrapper::get(md));
+    gchar *tag;
+    gchar *value;
+
+    while(g_variant_iter_loop(&iter, "(ss)", &tag, &value))
+    {
+        if(strcmp(tag, "cover_art") == 0)
+            cover_art_uri = value;
+        else if(strcmp(tag, "parent_id") != 0)
+            gst_tag_list_add(list, GST_TAG_MERGE_KEEP, tag, value, nullptr);
+    }
+
+    return list;
+}
+
 enum ImageTagType
 {
     IMAGE_TAG_TYPE_NONE,
@@ -2958,7 +2981,8 @@ bool Streamer::get_current_stream_id(stream_id_t &id)
 }
 
 bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-                         const char *stream_url, size_t keep_items)
+                         const char *stream_url, GVariantWrapper &&meta_data,
+                         size_t keep_items)
 {
     auto data_lock(streamer_data.lock());
     bool is_active = streamer_data.is_player_activated;
@@ -2980,9 +3004,11 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
         return false;
     }
 
+    std::string cover_art_url;
+    auto *list = g_variant_to_tag_list(std::move(meta_data), cover_art_url);
     auto item(std::make_unique<PlayQueue::Item>(
             stream_id, std::move(stream_key), stream_url,
-            std::move(xlated_url),
+            std::move(xlated_url), std::move(cover_art_url), list,
             std::chrono::time_point<std::chrono::nanoseconds>::min(),
             std::chrono::time_point<std::chrono::nanoseconds>::max()));
 

@@ -94,6 +94,11 @@ class Item
      * \param xlated_url
      *     The translated stream URL which can be handled by GStreamer. Leave
      *     empty if \p stream_url can be handled by GStreamer anyway.
+     * \param cover_art_url
+     *     URL of cover art (may be empty).
+     * \param meta_data
+     *     Preset meta data for the stream as pulled from some external data
+     *     source.
      * \param start_time, end_time
      *     The start and stop positions of a stretch to be played. Pass
      *     \c std::chrono::time_point::min() and
@@ -102,6 +107,7 @@ class Item
      */
     explicit Item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                   std::string &&stream_url, std::string &&xlated_url,
+                  std::string &&cover_art_url, GstTagList *preset_tag_list,
                   std::chrono::time_point<std::chrono::nanoseconds> &&start_time,
                   std::chrono::time_point<std::chrono::nanoseconds> &&end_time):
         state_(ItemState::IN_QUEUE),
@@ -111,7 +117,8 @@ class Item
         xlated_url_(std::move(xlated_url)),
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
-        stream_data_(std::move(stream_key))
+        stream_data_(preset_tag_list, std::move(cover_art_url),
+                     std::move(stream_key))
     {}
 
     void set_state(ItemState state) { state_ = state; }
