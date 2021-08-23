@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -53,6 +53,8 @@ class StreamData
 {
   private:
     GstTagList *tag_list_;
+    GstTagList *preset_tag_list_;
+    std::string cover_art_url_;
     ImageSentData big_image_;
     ImageSentData preview_image_;
 
@@ -62,8 +64,12 @@ class StreamData
     StreamData(const StreamData &) = delete;
     StreamData &operator=(const StreamData &) = delete;
 
-    explicit StreamData(GVariantWrapper &&stream_key):
+    explicit StreamData(GstTagList *preset_tag_list,
+                        std::string &&cover_art_url,
+                        GVariantWrapper &&stream_key):
         tag_list_(nullptr),
+        preset_tag_list_(preset_tag_list),
+        cover_art_url_(std::move(cover_art_url)),
         stream_key_(std::move(stream_key))
     {}
 
@@ -71,6 +77,9 @@ class StreamData
     {
         if(tag_list_ != nullptr)
             gst_tag_list_unref(tag_list_);
+
+        if(preset_tag_list_ != nullptr)
+            gst_tag_list_unref(preset_tag_list_);
     }
 
     void clear_meta_data()
@@ -78,7 +87,11 @@ class StreamData
         if(tag_list_ != nullptr)
             gst_tag_list_unref(tag_list_);
 
-        tag_list_ = gst_tag_list_new_empty();
+        if(preset_tag_list_ != nullptr)
+            tag_list_ = gst_tag_list_copy(preset_tag_list_);
+        else
+            tag_list_ = gst_tag_list_new_empty();
+
         big_image_.reset();
         preview_image_.reset();
     }

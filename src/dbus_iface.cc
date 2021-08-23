@@ -180,7 +180,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
                           GVariant *stream_key,
                           gint64 start_position, const gchar *start_units,
                           gint64 stop_position, const gchar *stop_units,
-                          gint16 keep_first_n_entries, void *user_data)
+                          gint16 keep_first_n_entries, GVariant *meta_data,
+                          void *user_data)
 {
     enter_urlfifo_handler(invocation);
 
@@ -203,7 +204,8 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
         : (size_t)keep_first_n_entries;
     const bool failed =
         !Streamer::push_item(stream_id, std::move(GVariantWrapper(stream_key)),
-                            stream_url, keep);
+                             stream_url, std::move(GVariantWrapper(meta_data)),
+                             keep);
 
     uint32_t dummy_skipped;
     uint32_t dummy_next = 0;
