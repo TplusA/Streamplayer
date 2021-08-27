@@ -1,3 +1,11 @@
+2021-08-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.13 released.
+
+	* D-Bus: The de.tahifi.Streamplayer.URLFIFO.Push() method takes preset
+	  meta data which we can use as fallback in case the stream itself
+	  doesn't contain any meta data.
+
 2021-06-30  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.12 released.
