@@ -125,7 +125,7 @@ static std::string translate(const char *uuid, const GList *path_segments)
     const auto cmd = "/bin/grep \"" + device_name +
                      "\" /proc/mounts | cut -f 2 -d ' ' >" + tempfile.name();
 
-    if(os_system_formatted(msg_is_verbose(MESSAGE_LEVEL_DEBUG), cmd.c_str()))
+    if(os_system_formatted(msg_is_verbose(MESSAGE_LEVEL_DEBUG), "%s", cmd.c_str()))
         return no_mountpoint_found_error(uuid);
 
     struct os_mapped_file_data output;
