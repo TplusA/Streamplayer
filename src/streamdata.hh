@@ -96,6 +96,8 @@ class StreamData
         preview_image_.reset();
     }
 
+    const std::string &get_cover_art_url() const { return cover_art_url_; }
+
     void merge_tag_list(GstTagList *tags)
     {
         if(tags == nullptr)

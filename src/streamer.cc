@@ -1976,6 +1976,14 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         {
             auto &sd = data.current_stream->get_stream_data();
             sd.clear_meta_data();
+
+            const auto &cover_art_url(sd.get_cover_art_url());
+            if(!cover_art_url.empty())
+                tdbus_artcache_write_call_add_image_by_uri(
+                    dbus_artcache_get_write_iface(),
+                    GVariantWrapper::get(sd.stream_key_),
+                    140, cover_art_url.c_str(), nullptr, nullptr, nullptr);
+
             invalidate_stream_position_information(data);
             query_seconds(gst_element_query_duration, data.pipeline,
                           data.current_time.duration_s);
