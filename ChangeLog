@@ -1,3 +1,12 @@
+2021-09-20  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.14 released.
+
+	* Cover art: Send cover art URLs to TACAMan for download,
+	  preprocessing, and sending to our remote control. These URLs are
+	  usually passed in by REST API clients which send them as part of
+	  preset meta data.
+
 2021-08-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.13 released.
