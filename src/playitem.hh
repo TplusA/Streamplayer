@@ -96,6 +96,8 @@ class Item
      *     empty if \p stream_url can be handled by GStreamer anyway.
      * \param cover_art_url
      *     URL of cover art (may be empty).
+     * \param extra_tags
+     *     Non-standard tags.
      * \param meta_data
      *     Preset meta data for the stream as pulled from some external data
      *     source.
@@ -107,7 +109,9 @@ class Item
      */
     explicit Item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                   std::string &&stream_url, std::string &&xlated_url,
-                  std::string &&cover_art_url, GstTagList *preset_tag_list,
+                  std::string &&cover_art_url,
+                  std::unordered_map<std::string, std::string> &&extra_tags,
+                  GstTagList *preset_tag_list,
                   std::chrono::time_point<std::chrono::nanoseconds> &&start_time,
                   std::chrono::time_point<std::chrono::nanoseconds> &&end_time):
         state_(ItemState::IN_QUEUE),
@@ -118,7 +122,7 @@ class Item
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
         stream_data_(preset_tag_list, std::move(cover_art_url),
-                     std::move(stream_key))
+                     std::move(extra_tags), std::move(stream_key))
     {}
 
     void set_state(ItemState state) { state_ = state; }

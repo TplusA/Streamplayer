@@ -950,7 +950,8 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
  * \todo Check embedded comment. How should we go about the GVariant format
  *     string(s)?
  */
-static GVariant *tag_list_to_g_variant(const GstTagList *list)
+static GVariant *tag_list_to_g_variant(const GstTagList *list,
+                                       const std::unordered_map<std::string, std::string> &extra_tags)
 {
     /*
      * The proper way to get at the GVariant format string would be to call
@@ -969,11 +970,15 @@ static GVariant *tag_list_to_g_variant(const GstTagList *list)
     if(list != nullptr)
         gst_tag_list_foreach(list, add_tuple_to_tags_variant_builder, &builder);
 
+    for(const auto &it : extra_tags)
+        g_variant_builder_add(&builder, "(ss)", it.first.c_str(), it.second.c_str());
+
     return g_variant_builder_end(&builder);
 }
 
 static GstTagList *g_variant_to_tag_list(GVariantWrapper &&md,
-                                         std::string &cover_art_uri)
+                                         std::string &cover_art_uri,
+                                         std::unordered_map<std::string, std::string> &extra_tags)
 {
     if(g_variant_n_children(GVariantWrapper::get(md)) == 0)
         return nullptr;
@@ -988,6 +993,8 @@ static GstTagList *g_variant_to_tag_list(GVariantWrapper &&md,
     {
         if(strcmp(tag, "cover_art") == 0)
             cover_art_uri = value;
+        else if(strcmp(tag, "x-drcpd-title") == 0)
+            extra_tags.emplace(tag, value);
         else if(strcmp(tag, "parent_id") != 0)
             gst_tag_list_add(list, GST_TAG_MERGE_KEEP, tag, value, nullptr);
     }
@@ -1162,7 +1169,7 @@ static void update_picture_for_item(PlayQueue::Item &item,
 static void emit_tags__unlocked(StreamerData &data)
 {
     auto &sd = data.current_stream->get_stream_data();
-    GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list());
+    GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list(), sd.get_extra_tags());
 
     tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
                                                 data.current_stream->stream_id_,
@@ -1227,7 +1234,7 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
         return;
 
     const auto &sd = data.current_stream->get_stream_data();
-    GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list());
+    GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list(), sd.get_extra_tags());
 
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
@@ -3013,10 +3020,11 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
     }
 
     std::string cover_art_url;
-    auto *list = g_variant_to_tag_list(std::move(meta_data), cover_art_url);
+    std::unordered_map<std::string, std::string> extra_tags;
+    auto *list = g_variant_to_tag_list(std::move(meta_data), cover_art_url, extra_tags);
     auto item(std::make_unique<PlayQueue::Item>(
             stream_id, std::move(stream_key), stream_url,
-            std::move(xlated_url), std::move(cover_art_url), list,
+            std::move(xlated_url), std::move(cover_art_url), std::move(extra_tags), list,
             std::chrono::time_point<std::chrono::nanoseconds>::min(),
             std::chrono::time_point<std::chrono::nanoseconds>::max()));
 

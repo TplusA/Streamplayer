@@ -23,6 +23,7 @@
 #define STREAMDATA_HH
 
 #include <gst/tag/tag.h>
+#include <unordered_map>
 
 #include "gvariantwrapper.hh"
 
@@ -55,6 +56,7 @@ class StreamData
     GstTagList *tag_list_;
     GstTagList *preset_tag_list_;
     std::string cover_art_url_;
+    std::unordered_map<std::string, std::string> extra_tag_list_;
     ImageSentData big_image_;
     ImageSentData preview_image_;
 
@@ -66,10 +68,12 @@ class StreamData
 
     explicit StreamData(GstTagList *preset_tag_list,
                         std::string &&cover_art_url,
+                        std::unordered_map<std::string, std::string> &&extra_tags,
                         GVariantWrapper &&stream_key):
         tag_list_(nullptr),
         preset_tag_list_(preset_tag_list),
         cover_art_url_(std::move(cover_art_url)),
+        extra_tag_list_(std::move(extra_tags)),
         stream_key_(std::move(stream_key))
     {}
 
@@ -118,6 +122,7 @@ class StreamData
     }
 
     const GstTagList *get_tag_list() const { return tag_list_; }
+    const std::unordered_map<std::string, std::string> &get_extra_tags() const { return extra_tag_list_; }
 
     ImageSentData &get_image_sent_data(bool is_big_image)
     {

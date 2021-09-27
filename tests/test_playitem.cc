@@ -81,7 +81,7 @@ static std::string default_url()
  */
 TEST_CASE_FIXTURE(Fixture, "Set state does not consider current state")
 {
-    PlayQueue::Item it(25, default_key(), default_url(), "", "", nullptr,
+    PlayQueue::Item it(25, default_key(), default_url(), "", "", {}, nullptr,
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
@@ -114,7 +114,7 @@ TEST_CASE_FIXTURE(Fixture, "Set state does not consider current state")
  */
 TEST_CASE_FIXTURE(Fixture, "Retrieve stream data")
 {
-    PlayQueue::Item it(123, default_key(), default_url(), "", "", nullptr,
+    PlayQueue::Item it(123, default_key(), default_url(), "", "", {}, nullptr,
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
@@ -130,7 +130,7 @@ TEST_CASE_FIXTURE(Fixture, "Retrieve stream data")
  */
 TEST_CASE_FIXTURE(Fixture, "Item can be set to failed state")
 {
-    PlayQueue::Item it(50, default_key(), default_url(), "", "", nullptr,
+    PlayQueue::Item it(50, default_key(), default_url(), "", "", {}, nullptr,
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
@@ -142,7 +142,7 @@ TEST_CASE_FIXTURE(Fixture, "Item can be set to failed state")
  */
 TEST_CASE_FIXTURE(Fixture, "Cannot enter failed state twice")
 {
-    PlayQueue::Item it(40, default_key(), default_url(), "", "", nullptr,
+    PlayQueue::Item it(40, default_key(), default_url(), "", "", {}, nullptr,
                        std::chrono::time_point<std::chrono::nanoseconds>::min(),
                        std::chrono::time_point<std::chrono::nanoseconds>::max());
 
