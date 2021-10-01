@@ -1,3 +1,11 @@
+2021-10-01  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.15 released.
+
+	* Queue: Allow certain non-standard tags in preset tags so that
+	  x-drcpd-title can be set by REST API or SPI slave, and sent to drcpd
+	  when the stream starts playing.
+
 2021-09-20  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.14 released.
