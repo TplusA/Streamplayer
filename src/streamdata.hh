@@ -122,6 +122,7 @@ class StreamData
     }
 
     const GstTagList *get_tag_list() const { return tag_list_; }
+    const GstTagList *get_preset_tag_list() const { return preset_tag_list_; }
     const std::unordered_map<std::string, std::string> &get_extra_tags() const { return extra_tag_list_; }
 
     ImageSentData &get_image_sent_data(bool is_big_image)
