@@ -833,8 +833,8 @@ static void log_next_stream_tags(const GstTagList *tag_list, const char prefix)
 
 static void log_next_stream(const PlayQueue::Item &next_stream)
 {
-    msg_info("Setting URL %s for next stream %u",
-             next_stream.get_url_for_playing().c_str(), next_stream.stream_id_);
+    msg_info("Setting stream %u URL %s",
+             next_stream.stream_id_, next_stream.get_url_for_playing().c_str());
 
     const auto &sd = next_stream.get_stream_data();
 
