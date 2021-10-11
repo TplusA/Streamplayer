@@ -1,3 +1,11 @@
+2021-10-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.17 released.
+
+	* Logging: Improve line which informs about which URL is going to play
+	  next, and which ID that stream has. The ID is at the front of the
+	  message so that it is easier to find.
+
 2021-10-06  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.16 released.
