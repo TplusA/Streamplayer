@@ -2095,11 +2095,39 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
 
     if(percent < 0 || percent > 100)
     {
-        msg_error(ERANGE, LOG_NOTICE, "Buffering percentage is %d", percent);
+        msg_error(ERANGE, LOG_NOTICE, "Buffering percentage is %d%%", percent);
         return;
     }
 
-    msg_vinfo(MESSAGE_LEVEL_DIAG, "Buffer level: %d%%", percent);
+    GstBufferingMode mode;
+    gint avg_in, avg_out;
+    gint64 buffering_left;
+    gst_message_parse_buffering_stats(message, &mode, &avg_in, &avg_out, &buffering_left);
+
+    const char *mode_name;
+    switch(mode)
+    {
+      case GST_BUFFERING_STREAM:
+        mode_name = "a small amount of data is buffered";
+        break;
+      case GST_BUFFERING_DOWNLOAD:
+        mode_name = "the stream is being downloaded";
+        break;
+      case GST_BUFFERING_TIMESHIFT:
+        mode_name = "the stream is being downloaded in a ringbuffer";
+        break;
+      case GST_BUFFERING_LIVE:
+        mode_name = "the stream is a live stream";
+        break;
+      default:
+        mode_name = "<unknown buffering mode>";
+        break;
+    }
+
+    msg_vinfo(MESSAGE_LEVEL_NORMAL,
+              "Buffer level: %d%%, %s, avg in/out rates %d/%d, "
+              "buffered time %" G_GINT64_FORMAT " ms",
+              percent, mode_name, avg_in, avg_out, buffering_left);
 
     switch(data.stream_buffer_underrun_filter.update(percent))
     {
