@@ -2355,6 +2355,16 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         /* these messages are not handled, and they are explicitly ignored */
         break;
 
+#if GST_CHECK_VERSION(1, 10, 0)
+      case GST_MESSAGE_STREAM_COLLECTION:
+      case GST_MESSAGE_STREAMS_SELECTED:
+        /* these messages are sent by playbin3; we should try to make use of
+         * them because according to the documentation, "This provides more
+         * information and flexibility compared to the legacy property and
+         * signal-based mechanism." */
+        break;
+#endif /* v1.10 */
+
       case GST_MESSAGE_UNKNOWN:
       case GST_MESSAGE_INFO:
       case GST_MESSAGE_STATE_DIRTY:
@@ -2378,8 +2388,6 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 #endif /* v1.5.1 */
 #if GST_CHECK_VERSION(1, 10, 0)
       case GST_MESSAGE_PROPERTY_NOTIFY:
-      case GST_MESSAGE_STREAM_COLLECTION:
-      case GST_MESSAGE_STREAMS_SELECTED:
       case GST_MESSAGE_REDIRECT:
 #endif /* v1.10 */
 #if GST_CHECK_VERSION(1, 16, 0)
@@ -2400,7 +2408,7 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 
 static int create_playbin(StreamerData &data, const char *context)
 {
-    data.pipeline = gst_element_factory_make("playbin", "play");
+    data.pipeline = gst_element_factory_make("playbin3", "play");
     data.bus_watch = 0;
 
     if(data.pipeline == nullptr)
