@@ -60,6 +60,13 @@ struct parameters
     gint alsa_buffer_ms;
 };
 
+#if LOGGED_LOCKS_ENABLED
+bool LoggedLock::log_messages_enabled = true;
+#if LOGGED_LOCKS_THREAD_CONTEXTS
+thread_local LoggedLock::Context LoggedLock::context;
+#endif
+#endif
+
 static void show_version_info(void)
 {
     printf("%s\n"

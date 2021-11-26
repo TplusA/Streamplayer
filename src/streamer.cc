@@ -212,7 +212,7 @@ enum class BufferingState
 class StreamerData
 {
   private:
-    mutable std::recursive_mutex lock_;
+    mutable LoggedLock::RecMutex lock_;
 
   public:
     bool is_player_activated;
@@ -275,17 +275,19 @@ class StreamerData
         stream_has_just_started(false),
         stream_buffering_state(BufferingState::NOT_BUFFERING),
         supposed_play_status(Streamer::PlayStatus::STOPPED)
-    {}
-
-    std::unique_lock<std::recursive_mutex> lock() const
     {
-        return std::unique_lock<std::recursive_mutex>(lock_);
+        LoggedLock::configure(lock_, "StreamerData", MESSAGE_LEVEL_DEBUG);
+    }
+
+    LoggedLock::UniqueLock<LoggedLock::RecMutex> lock() const
+    {
+        return LoggedLock::UniqueLock<LoggedLock::RecMutex>(lock_);
     }
 
     template <typename F>
     auto locked(F &&code) -> decltype(code(*this))
     {
-        std::lock_guard<std::recursive_mutex> lk(lock_);
+        std::lock_guard<LoggedLock::RecMutex> lk(lock_);
         return code(*this);
     }
 };
@@ -496,7 +498,7 @@ static void teardown_playbin(StreamerData &data)
 static int create_playbin(StreamerData &data, const char *context);
 
 static int rebuild_playbin(StreamerData &data,
-                           std::unique_lock<std::recursive_mutex> &data_lock,
+                           LoggedLock::UniqueLock<LoggedLock::RecMutex> &data_lock,
                            const char *context)
 {
     disconnect_playbin_signals(data);
@@ -504,6 +506,7 @@ static int rebuild_playbin(StreamerData &data,
     /* allow signal handlers already waiting for the lock to pass */
     data_lock.unlock();
     g_usleep(500000);
+    LOGGED_LOCK_CONTEXT_HINT;
     data_lock.lock();
 
     set_stream_state(data.pipeline, GST_STATE_NULL, "rebuild");
@@ -513,7 +516,7 @@ static int rebuild_playbin(StreamerData &data,
 }
 
 static void do_stop_pipeline_and_recover_from_error(
-        StreamerData &data, std::unique_lock<std::recursive_mutex> &data_lock,
+        StreamerData &data, LoggedLock::UniqueLock<LoggedLock::RecMutex> &data_lock,
         PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     static const char context[] = "deferred stop";
@@ -560,6 +563,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
     msg_vinfo(MESSAGE_LEVEL_DIAG, "Recover from error");
 
     auto &data = *static_cast<StreamerData *>(user_data);
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     data.url_fifo_LOCK_ME->locked_rw(
@@ -910,11 +914,13 @@ static bool play_next_stream(StreamerData &data,
  */
 static void queue_stream_from_url_fifo(GstElement *elem, StreamerData &data)
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     if(data.is_failing)
         return;
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
     static const char context[] = "need next stream";
 
@@ -948,6 +954,7 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
 
     msg_info("Finished playing all streams");
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     if(set_stream_state(data.pipeline, GST_STATE_READY, "EOS"))
@@ -1265,6 +1272,7 @@ static void emit_tags__unlocked(StreamerData &data)
 static gboolean emit_tags(gpointer user_data)
 {
     auto &data = *static_cast<StreamerData *>(user_data);
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     if(data.current_stream != nullptr)
@@ -1280,6 +1288,7 @@ static void handle_tag(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     if(data.current_stream == nullptr)
@@ -1527,7 +1536,9 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
             return temp;
         });
 
+    LOGGED_LOCK_CONTEXT_HINT;
     const auto data_lock(data.lock());
+    LOGGED_LOCK_CONTEXT_HINT;
     const auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
     const GLibString current_uri(
@@ -1651,6 +1662,7 @@ static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
 static gboolean report_progress(gpointer user_data)
 {
     auto &data = *static_cast<StreamerData *>(user_data);
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     if(data.current_stream == nullptr)
@@ -1775,6 +1787,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     const bool is_ours =
@@ -1853,6 +1866,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         }
 
         {
+            LOGGED_LOCK_CONTEXT_HINT;
             auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
             if(data.current_stream != nullptr)
@@ -1956,7 +1970,9 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
+    LOGGED_LOCK_CONTEXT_HINT;
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
     bool failed = false;
@@ -2235,6 +2251,7 @@ static void handle_stream_duration(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    LOGGED_LOCK_CONTEXT_HINT;
     data.locked([] (StreamerData &d)
     {
         query_seconds(gst_element_query_duration, d.pipeline,
@@ -2247,6 +2264,7 @@ static void handle_stream_duration_async(GstMessage *message, StreamerData &data
     GstClockTime running_time;
     gst_message_parse_async_done(message, &running_time);
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     if(running_time != GST_CLOCK_TIME_NONE)
@@ -2261,6 +2279,7 @@ static void handle_clock_lost_message(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(data.lock());
 
     static const char context[] = "clock lost";
@@ -2620,6 +2639,7 @@ void Streamer::shutdown(GMainLoop *loop)
 
 void Streamer::activate()
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(streamer_data.is_player_activated)
@@ -2635,6 +2655,7 @@ void Streamer::deactivate()
 {
     static const char context[] = "deactivate";
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
@@ -2654,6 +2675,7 @@ void Streamer::deactivate()
 
 bool Streamer::start()
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
@@ -2731,6 +2753,7 @@ bool Streamer::start()
 
 bool Streamer::stop(const char *reason)
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
@@ -2776,6 +2799,7 @@ bool Streamer::stop(const char *reason)
  */
 bool Streamer::pause()
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
@@ -2862,6 +2886,7 @@ bool Streamer::seek(int64_t position, const char *units)
 
     gint64 duration_ns;
 
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
@@ -2935,6 +2960,7 @@ bool Streamer::seek(int64_t position, const char *units)
 bool Streamer::fast_winding(double factor)
 {
     msg_info("Setting playback speed to %f", factor);
+    LOGGED_LOCK_CONTEXT_HINT;
     return streamer_data.locked(
                 [&factor] (StreamerData &d) { return do_set_speed(d, factor); });
 }
@@ -2942,6 +2968,7 @@ bool Streamer::fast_winding(double factor)
 bool Streamer::fast_winding_stop()
 {
     msg_info("Playing at regular speed");
+    LOGGED_LOCK_CONTEXT_HINT;
     return streamer_data.locked(
                 [] (StreamerData &d) { return do_set_speed(d, 1.0); });
 }
@@ -2949,6 +2976,7 @@ bool Streamer::fast_winding_stop()
 Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
                                     uint32_t &out_skipped_id, uint32_t &out_next_id)
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
@@ -3079,6 +3107,7 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
 void Streamer::clear_queue(int keep_first_n_entries,
                            GVariantWrapper &queued, GVariantWrapper &dropped)
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     streamer_data.url_fifo_LOCK_ME->locked_rw(
@@ -3095,12 +3124,14 @@ void Streamer::clear_queue(int keep_first_n_entries,
 
 bool Streamer::is_playing()
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     return streamer_data.locked(
                 [] (StreamerData &d) { return GST_STATE(d.pipeline) == GST_STATE_PLAYING; });
 }
 
 bool Streamer::get_current_stream_id(stream_id_t &id)
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
 
     if(streamer_data.current_stream != nullptr &&
@@ -3117,6 +3148,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                          const char *stream_url, GVariantWrapper &&meta_data,
                          size_t keep_items)
 {
+    LOGGED_LOCK_CONTEXT_HINT;
     auto data_lock(streamer_data.lock());
     bool is_active = streamer_data.is_player_activated;
 
@@ -3196,7 +3228,8 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
         return s.size() > prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
     };
 
-    std::unique_lock<std::recursive_mutex> data_lock(streamer_data.lock());
+    LOGGED_LOCK_CONTEXT_HINT;
+    LoggedLock::UniqueLock<LoggedLock::RecMutex> data_lock(streamer_data.lock());
 
     if(streamer_data.is_player_activated && streamer_data.current_stream != nullptr)
     {
