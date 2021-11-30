@@ -2306,6 +2306,19 @@ static void handle_request_state_message(GstMessage *message, StreamerData &data
     set_stream_state(data.pipeline, state, "requested by pipeline element");
 }
 
+static void handle_stream_status_message(GstMessage *message, StreamerData &data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    LOGGED_LOCK_CONTEXT_HINT;
+    data.locked([] (StreamerData &d)
+    {
+        query_seconds(gst_element_query_duration, d.pipeline,
+                      d.current_time.duration_s);
+    });
+}
+
 /*
  * GLib signal callback.
  */
@@ -2418,8 +2431,11 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         handle_request_state_message(message, data);
         break;
 
-      case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
+        handle_stream_status_message(message, data);
+        break;
+
+      case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_RESET_TIME:
       case GST_MESSAGE_ELEMENT:
       case GST_MESSAGE_NEED_CONTEXT:
