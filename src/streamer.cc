@@ -2291,6 +2291,21 @@ static void handle_clock_lost_message(GstMessage *message, StreamerData &data)
         set_stream_state(data.pipeline, GST_STATE_PLAYING, context);
 }
 
+static void handle_request_state_message(GstMessage *message, StreamerData &data)
+{
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
+    GstState state;
+    gst_message_parse_request_state(message, &state);
+
+    const GLibString name(gst_object_get_path_string(GST_MESSAGE_SRC(message)));
+    msg_info("Setting state to %s as requested by %s",
+             gst_element_state_get_name(state), name.get());
+
+    set_stream_state(data.pipeline, state, "requested by pipeline element");
+}
+
 /*
  * GLib signal callback.
  */
@@ -2399,6 +2414,10 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         gst_bin_recalculate_latency(GST_BIN(data.pipeline));
         break;
 
+      case GST_MESSAGE_REQUEST_STATE:
+        handle_request_state_message(message, data);
+        break;
+
       case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
       case GST_MESSAGE_RESET_TIME:
@@ -2428,7 +2447,6 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
       case GST_MESSAGE_SEGMENT_START:
       case GST_MESSAGE_SEGMENT_DONE:
       case GST_MESSAGE_ASYNC_START:
-      case GST_MESSAGE_REQUEST_STATE:
       case GST_MESSAGE_STEP_START:
       case GST_MESSAGE_QOS:
       case GST_MESSAGE_PROGRESS:
