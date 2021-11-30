@@ -2348,11 +2348,14 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         handle_clock_lost_message(message, data);
         break;
 
+      case GST_MESSAGE_LATENCY:
+        gst_bin_recalculate_latency(GST_BIN(data.pipeline));
+        break;
+
       case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
       case GST_MESSAGE_RESET_TIME:
       case GST_MESSAGE_ELEMENT:
-      case GST_MESSAGE_LATENCY:
       case GST_MESSAGE_NEED_CONTEXT:
       case GST_MESSAGE_HAVE_CONTEXT:
         /* these messages are not handled, and they are explicitly ignored */
