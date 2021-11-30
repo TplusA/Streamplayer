@@ -2216,6 +2216,9 @@ static void handle_stream_duration(GstMessage *message, StreamerData &data)
 
 static void handle_stream_duration_async(GstMessage *message, StreamerData &data)
 {
+    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
+              __func__, GST_MESSAGE_SRC_NAME(message));
+
     GstClockTime running_time;
     gst_message_parse_async_done(message, &running_time);
 
