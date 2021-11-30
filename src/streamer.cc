@@ -2483,7 +2483,10 @@ static int create_playbin(StreamerData &data, const char *context)
     data.bus_watch = 0;
 
     if(data.pipeline == nullptr)
+    {
+        msg_out_of_memory("playbin");
         return -1;
+    }
 
     gst_object_ref(GST_OBJECT(data.pipeline));
 
