@@ -3101,6 +3101,12 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     {
         GstState next_state = GST_STATE_READY;
 
+        if(rebuild_playbin(streamer_data, data_lock, "skip to next") < 0)
+        {
+            streamer_data.supposed_play_status = Streamer::PlayStatus::STOPPED;
+            goto rebuild_playbin_failed;
+        }
+
         if(set_stream_state(streamer_data.pipeline, next_state, context))
         {
             switch(streamer_data.supposed_play_status)
@@ -3125,6 +3131,7 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
         }
     }
 
+rebuild_playbin_failed:
     out_skipped_id = skipped_id;
     out_next_id = next_id;
 
