@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -65,12 +65,12 @@ static void enter_audiopath_player_handler(GDBusMethodInvocation *invocation)
 
 static gboolean playback_start(tdbussplayPlayback *object,
                                GDBusMethodInvocation *invocation,
-                               gpointer user_data)
+                               const char *reason, gpointer user_data)
 {
     enter_playback_handler(invocation);
 
     tdbus_splay_playback_complete_start(object, invocation);
-    Streamer::start();
+    Streamer::start(reason);
 
     return TRUE;
 }
@@ -89,12 +89,12 @@ static gboolean playback_stop(tdbussplayPlayback *object,
 
 static gboolean playback_pause(tdbussplayPlayback *object,
                                GDBusMethodInvocation *invocation,
-                               gpointer user_data)
+                               const char *reason, gpointer user_data)
 {
     enter_playback_handler(invocation);
 
     tdbus_splay_playback_complete_pause(object, invocation);
-    Streamer::pause();
+    Streamer::pause(reason);
 
     return TRUE;
 }

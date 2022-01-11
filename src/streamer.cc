@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -2666,17 +2666,19 @@ void Streamer::deactivate()
     }
 }
 
-bool Streamer::start()
+bool Streamer::start(const char *reason)
 {
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Start request while inactive");
+        BUG("Start request while inactive (%s)", reason);
         return false;
     }
 
     static const char context[] = "start playing";
+
+    msg_info("Starting as requested (%s)", reason);
 
     log_assert(streamer_data.pipeline != nullptr);
 
@@ -2788,19 +2790,19 @@ bool Streamer::stop(const char *reason)
  *     but playbin won't tell us. It is therefore not easy to determine if we
  *     should reconnect or really take the next URL when asked to.
  */
-bool Streamer::pause()
+bool Streamer::pause(const char *reason)
 {
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Pause request while inactive");
+        BUG("Pause request while inactive (%s)", reason);
         return false;
     }
 
     static const char context[] = "pause stream";
 
-    msg_info("Pausing as requested");
+    msg_info("Pausing as requested (%s)", reason);
     log_assert(streamer_data.pipeline != nullptr);
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PAUSED;
