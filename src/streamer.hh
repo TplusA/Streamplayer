@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -41,9 +41,9 @@ void shutdown(GMainLoop *loop);
 
 void activate();
 void deactivate();
-bool start();
+bool start(const char *reason);
 bool stop(const char *reason);
-bool pause();
+bool pause(const char *reason);
 bool seek(int64_t position, const char *units);
 bool fast_winding(double factor);
 bool fast_winding_stop();
