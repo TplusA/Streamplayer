@@ -1,14 +1,3 @@
-2021-11-25  Robert Tiemann  <r.tiemann@ta-hifi.de>
-
-	* Version 5.18 released.
-
-	* Playback: Use playbin3 instead of playbin to fix buffering problems
-	  after seeks.
-
-	* Logging: More details about buffering state. With playbin3, however,
-	  the buffering messages seem to have gone. Could be good, could be
-	  bad.
-
 2021-10-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.17 released.

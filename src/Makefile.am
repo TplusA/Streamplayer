@@ -32,7 +32,7 @@ streamplayer_SOURCES = \
     streamer.cc streamer.hh stream_id.h stream_id.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     gstringwrapper.hh gerrorwrapper.hh \
-    os.c os.h logged_lock.hh
+    os.c os.h
 
 DBUS_IFACES = $(top_srcdir)/dbus_interfaces
 

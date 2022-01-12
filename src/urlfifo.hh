@@ -22,7 +22,7 @@
 #ifndef URLFIFO_HH
 #define URLFIFO_HH
 
-#include "logged_lock.hh"
+#include "messages.h"
 
 #include <deque>
 #include <unordered_set>
@@ -72,7 +72,7 @@ class Queue
     std::deque<std::unique_ptr<T>> queue_;
     std::deque<std::unique_ptr<T>> removed_;
     std::unordered_set<typename T::stream_id_t> dropped_;
-    mutable LoggedLock::RecMutex lock_;
+    mutable std::recursive_mutex lock_;
 
   public:
     Queue(const Queue &) = delete;
@@ -80,29 +80,27 @@ class Queue
 
     explicit Queue(size_t max_number_of_items = 8):
         max_number_of_items_(max_number_of_items)
-    {
-        LoggedLock::configure(lock_, "Queue", MESSAGE_LEVEL_DEBUG);
-    }
+    {}
 
     /*!
      * Lock access to the URL FIFO.
      */
-    LoggedLock::UniqueLock<LoggedLock::RecMutex> lock()
+    std::unique_lock<std::recursive_mutex> lock()
     {
-        return LoggedLock::UniqueLock<LoggedLock::RecMutex>(lock_);
+        return std::unique_lock<std::recursive_mutex>(lock_);
     }
 
     template <typename F>
     auto locked_rw(F &&code) -> decltype(code(*this))
     {
-        std::lock_guard<LoggedLock::RecMutex> lk(lock_);
+        std::lock_guard<std::recursive_mutex> lk(lock_);
         return code(*this);
     }
 
     template <typename F>
     auto locked_ro(F &&code) -> decltype(code(*this)) const
     {
-        std::lock_guard<LoggedLock::RecMutex> lk(lock_);
+        std::lock_guard<std::recursive_mutex> lk(lock_);
         return code(*this);
     }
 
