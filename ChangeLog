@@ -1,6 +1,6 @@
 2022-01-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
-	* Version 5.18 released.
+	* Version 5.19 released.
 
 	* ALSA: Disable clock synchronization to work around silent fast
 	  forward problem.
