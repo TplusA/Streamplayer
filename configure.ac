@@ -1,4 +1,4 @@
-dnl Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
+dnl Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
 dnl
 dnl This file is part of T+A Streamplayer.
 dnl
@@ -18,7 +18,7 @@ dnl Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 dnl MA  02110-1301, USA.
 
 AC_PREREQ([2.69])
-AC_INIT([Streamplayer], [5.17], [r.tiemann@ta-hifi.com])
+AC_INIT([Streamplayer], [5.18], [r.tiemann@ta-hifi.com])
 AC_CONFIG_AUX_DIR([config])
 AM_INIT_AUTOMAKE([1.11 -Wall -Werror foreign])
 AM_SILENT_RULES([yes])

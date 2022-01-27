@@ -1,3 +1,16 @@
+2022-01-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.18 released.
+
+	* ALSA: Disable clock synchronization to work around silent fast
+	  forward problem.
+
+	* Playback: Handle state change messages sent by pipeline elements.
+
+	* Playback: Handle latency messages.
+
+	* Logging: Added a few debug messages.
+
 2021-10-11  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.17 released.
@@ -491,4 +504,4 @@
 	* First release for testing.
 
 
-Copyright 2015--2021 T+A elektroakustik GmbH & Co. KG
+Copyright 2015--2022 T+A elektroakustik GmbH & Co. KG
