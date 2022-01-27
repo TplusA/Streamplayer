@@ -2282,14 +2282,21 @@ static void setup_element(GstElement *playbin,
             g_object_set(source,
                          "latency-time", data.alsa_latency_time_us,
                          "buffer-time", data.alsa_buffer_time_us,
+                         "sync", FALSE,
                          nullptr);
         else if(data.alsa_latency_time_us > 0)
             g_object_set(source,
                          "latency-time", data.alsa_latency_time_us,
+                         "sync", FALSE,
                          nullptr);
         else if(data.alsa_buffer_time_us > 0)
             g_object_set(source,
                          "buffer-time", data.alsa_buffer_time_us,
+                         "sync", FALSE,
+                         nullptr);
+        else
+            g_object_set(source,
+                         "sync", FALSE,
                          nullptr);
     }
 }
