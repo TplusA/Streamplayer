@@ -1,3 +1,15 @@
+2022-04-07  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 5.20 released.
+
+	* Playback: Use playbin3 for improved Internet radio playback and
+	  better behavior on seek.
+
+	* Playback: Query stream duration on each stream status message to fix
+	  wrong values retrieved which handling duration-changed message.
+
+	* Debugging: Show start and pause command reasons in the log.
+
 2022-01-27  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.19 released.
