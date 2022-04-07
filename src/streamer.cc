@@ -2096,11 +2096,39 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
 
     if(percent < 0 || percent > 100)
     {
-        msg_error(ERANGE, LOG_NOTICE, "Buffering percentage is %d", percent);
+        msg_error(ERANGE, LOG_NOTICE, "Buffering percentage is %d%%", percent);
         return;
     }
 
-    msg_vinfo(MESSAGE_LEVEL_DIAG, "Buffer level: %d%%", percent);
+    GstBufferingMode mode;
+    gint avg_in, avg_out;
+    gint64 buffering_left;
+    gst_message_parse_buffering_stats(message, &mode, &avg_in, &avg_out, &buffering_left);
+
+    const char *mode_name;
+    switch(mode)
+    {
+      case GST_BUFFERING_STREAM:
+        mode_name = "a small amount of data is buffered";
+        break;
+      case GST_BUFFERING_DOWNLOAD:
+        mode_name = "the stream is being downloaded";
+        break;
+      case GST_BUFFERING_TIMESHIFT:
+        mode_name = "the stream is being downloaded in a ringbuffer";
+        break;
+      case GST_BUFFERING_LIVE:
+        mode_name = "the stream is a live stream";
+        break;
+      default:
+        mode_name = "<unknown buffering mode>";
+        break;
+    }
+
+    msg_vinfo(MESSAGE_LEVEL_NORMAL,
+              "Buffer level: %d%%, %s, avg in/out rates %d/%d, "
+              "buffered time %" G_GINT64_FORMAT " ms",
+              percent, mode_name, avg_in, avg_out, buffering_left);
 
     switch(data.stream_buffer_underrun_filter.update(percent))
     {
@@ -2294,21 +2322,14 @@ static void setup_element(GstElement *playbin,
             g_object_set(source,
                          "latency-time", data.alsa_latency_time_us,
                          "buffer-time", data.alsa_buffer_time_us,
-                         "sync", FALSE,
                          nullptr);
         else if(data.alsa_latency_time_us > 0)
             g_object_set(source,
                          "latency-time", data.alsa_latency_time_us,
-                         "sync", FALSE,
                          nullptr);
         else if(data.alsa_buffer_time_us > 0)
             g_object_set(source,
                          "buffer-time", data.alsa_buffer_time_us,
-                         "sync", FALSE,
-                         nullptr);
-        else
-            g_object_set(source,
-                         "sync", FALSE,
                          nullptr);
     }
 }
@@ -2403,6 +2424,16 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         /* these messages are not handled, and they are explicitly ignored */
         break;
 
+#if GST_CHECK_VERSION(1, 10, 0)
+      case GST_MESSAGE_STREAM_COLLECTION:
+      case GST_MESSAGE_STREAMS_SELECTED:
+        /* these messages are sent by playbin3; we should try to make use of
+         * them because according to the documentation, "This provides more
+         * information and flexibility compared to the legacy property and
+         * signal-based mechanism." */
+        break;
+#endif /* v1.10 */
+
       case GST_MESSAGE_UNKNOWN:
       case GST_MESSAGE_INFO:
       case GST_MESSAGE_STATE_DIRTY:
@@ -2425,8 +2456,6 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 #endif /* v1.5.1 */
 #if GST_CHECK_VERSION(1, 10, 0)
       case GST_MESSAGE_PROPERTY_NOTIFY:
-      case GST_MESSAGE_STREAM_COLLECTION:
-      case GST_MESSAGE_STREAMS_SELECTED:
       case GST_MESSAGE_REDIRECT:
 #endif /* v1.10 */
 #if GST_CHECK_VERSION(1, 16, 0)
@@ -2447,7 +2476,7 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 
 static int create_playbin(StreamerData &data, const char *context)
 {
-    data.pipeline = gst_element_factory_make("playbin", "play");
+    data.pipeline = gst_element_factory_make("playbin3", "play");
     data.bus_watch = 0;
 
     if(data.pipeline == nullptr)
@@ -3060,6 +3089,12 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     {
         GstState next_state = GST_STATE_READY;
 
+        if(rebuild_playbin(streamer_data, data_lock, "skip to next") < 0)
+        {
+            streamer_data.supposed_play_status = Streamer::PlayStatus::STOPPED;
+            goto rebuild_playbin_failed;
+        }
+
         if(set_stream_state(streamer_data.pipeline, next_state, context))
         {
             switch(streamer_data.supposed_play_status)
@@ -3084,6 +3119,7 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
         }
     }
 
+rebuild_playbin_failed:
     out_skipped_id = skipped_id;
     out_next_id = next_id;
 
