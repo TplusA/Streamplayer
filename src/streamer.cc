@@ -32,6 +32,7 @@
 
 #include <gst/gst.h>
 #include <gst/tag/tag.h>
+#include <gst/video/gstvideodecoder.h>
 
 #include "streamer.hh"
 #include "strbo_usb_url.hh"
@@ -1607,8 +1608,10 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
     const bool is_ours =
         (GST_MESSAGE_SRC(message) == GST_OBJECT(data.pipeline));
+    const bool work_around_video_decoder = GST_IS_VIDEO_DECODER(GST_MESSAGE_SRC(message));
 
-    if(!is_ours && !msg_is_verbose(MESSAGE_LEVEL_TRACE))
+    if(!work_around_video_decoder &&
+       !is_ours && !msg_is_verbose(MESSAGE_LEVEL_TRACE))
         return;
 
     const GstState target_state = GST_STATE_TARGET(data.pipeline);
@@ -1624,6 +1627,41 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
               gst_element_state_get_name(pending),
               gst_element_state_get_name(target_state),
               is_ours ? "" : "not ");
+
+    if(work_around_video_decoder)
+    {
+        auto fifo_lock(data.url_fifo_LOCK_ME->lock());
+
+        switch(state)
+        {
+          case GST_STATE_PAUSED:
+          case GST_STATE_PLAYING:
+            if(data.current_stream == nullptr)
+                break;
+
+            switch(data.current_stream->get_state())
+            {
+              case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+              case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
+              case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
+                GST_ELEMENT_ERROR(data.pipeline, STREAM, WRONG_TYPE,
+                                  ("blocked video content"), ("blocked video content"));
+                break;
+
+              case PlayQueue::ItemState::IN_QUEUE:
+              case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
+              case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
+                break;
+            }
+
+            break;
+
+          case GST_STATE_NULL:
+          case GST_STATE_READY:
+          case GST_STATE_VOID_PENDING:
+            break;
+        }
+    }
 
     /* leave now if we came here only for the trace */
     if(!is_ours)
