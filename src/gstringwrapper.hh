@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2021, 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of the T+A Streaming Board software stack ("StrBoWare").
  *
@@ -23,6 +23,7 @@
 #define GSTRINGWRAPPER_HH
 
 #include <glib.h>
+#include <functional>
 
 class GLibString
 {
