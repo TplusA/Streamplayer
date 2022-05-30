@@ -622,9 +622,6 @@ static PlayQueue::Item *pick_next_item(PlayQueue::Item *current_stream,
         switch(current_stream->get_state())
         {
           case PlayQueue::ItemState::IN_QUEUE:
-            next_stream_is_in_fifo = false;
-            return current_stream;
-
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
             next_stream_is_in_fifo = false;
             return current_stream;
