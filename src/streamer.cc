@@ -908,7 +908,7 @@ static bool play_next_stream(StreamerData &data,
 }
 
 /*
- * GLib signal callback.
+ * GLib signal callback: playbin3 "about-to-finish".
  */
 static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 {
@@ -1644,7 +1644,7 @@ static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
 }
 
 /*!
- * GLib callback.
+ * GLib callback: timer function, GSourceFunc.
  *
  * \bug There is a bug in GStreamer that leads to the wrong position being
  *     displayed in pause mode for internet streams. How to trigger: play some
@@ -2303,7 +2303,7 @@ static void handle_stream_status_message(GstMessage *message, StreamerData &data
 }
 
 /*
- * GLib signal callback.
+ * GLib signal callback: playbin3 "element-setup".
  */
 static void setup_element(GstElement *playbin,
                           GstElement *source, gpointer user_data)
@@ -2337,7 +2337,7 @@ static void setup_element(GstElement *playbin,
 }
 
 /*
- * GLib signal callback.
+ * GLib signal callback: playbin3 "source-setup".
  */
 static void setup_source_element(GstElement *playbin,
                                  GstElement *source, gpointer user_data)
@@ -2357,7 +2357,7 @@ static void setup_source_element(GstElement *playbin,
 }
 
 /*
- * GStreamer callback.
+ * GStreamer callback: bus watch, GstBusFunc.
  */
 static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
                                     gpointer user_data)
