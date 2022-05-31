@@ -35,9 +35,7 @@
 
 #include "streamer.hh"
 #include "strbo_usb_url.hh"
-#include "urlfifo.hh"
-#include "playitem.hh"
-#include "stopped_reasons.hh"
+#include "queue_filter.hh"
 #include "gstringwrapper.hh"
 #include "gerrorwrapper.hh"
 #include "dbus_iface_deep.hh"
@@ -173,6 +171,7 @@ class StreamerData
     std::vector<gulong> signal_handler_ids;
 
     std::unique_ptr<PlayQueue::Queue<PlayQueue::Item>> url_fifo_LOCK_ME;
+    QueueFilter queue_filter;
 
     /*!
      * The item currently played/paused/handled.
@@ -204,7 +203,7 @@ class StreamerData
     StreamerData(const StreamerData &) = delete;
     StreamerData &operator=(const StreamerData &) = delete;
 
-    explicit StreamerData():
+    explicit StreamerData(QueueFilter::UnplayableStreamRemovedNotification &&notify_unplayable_stream_removed_fn):
         is_player_activated(false),
         pipeline(nullptr),
         bus_watch(0),
@@ -213,6 +212,8 @@ class StreamerData
         alsa_latency_time_us(0),
         alsa_buffer_time_us(0),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
+        queue_filter(*url_fifo_LOCK_ME,
+                     std::move(notify_unplayable_stream_removed_fn)),
         is_failing(false),
         previous_time{},
         current_time{},
@@ -2339,10 +2340,24 @@ static bool do_set_speed(StreamerData &data, double factor)
     return success;
 }
 
-static StreamerData streamer_data;
+/*
+ * Callback from #QueueFilter thread after a stream has been removed from the
+ * URL FIFO.
+ *
+ * This function will be called without holding any locks.
+ */
+static void unplayable_stream_removed_from_queue(stream_id_t stream_id,
+                                                 StoppedReasons::Reason reason)
+{
+    tdbus_splay_urlfifo_emit_dropped(dbus_get_urlfifo_iface(), stream_id,
+                                     StoppedReasons::as_string(reason));
+}
+
+static StreamerData streamer_data(unplayable_stream_removed_from_queue);
 
 int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
-                    gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us)
+                    gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us,
+                    gboolean queue_filter_enabled)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
     streamer_data.alsa_latency_time_us = alsa_latency_time_us;
@@ -2354,6 +2369,9 @@ int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
     streamer_data.system_clock = gst_system_clock_obtain();
     streamer_data.next_allowed_tag_update_time =
         gst_clock_get_time(streamer_data.system_clock);
+
+    if(queue_filter_enabled)
+        streamer_data.queue_filter.init();
 
     static bool initialized;
 
@@ -2371,6 +2389,8 @@ void Streamer::shutdown(GMainLoop *loop)
 {
     if(loop == nullptr)
         return;
+
+    streamer_data.queue_filter.shutdown();
 
     g_main_loop_unref(loop);
 
@@ -2921,12 +2941,16 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
         return false;
     }
 
-    return streamer_data.url_fifo_LOCK_ME->locked_rw(
+    if(!streamer_data.url_fifo_LOCK_ME->locked_rw(
                 [&item, &keep_items]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
                     return fifo.push(std::move(item), keep_items) != 0;
-                });
+                }))
+        return false;
+
+    streamer_data.queue_filter.queue_item_added();
+    return true;
 }
 
 bool Streamer::remove_items_for_root_path(const char *root_path)

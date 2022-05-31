@@ -44,6 +44,7 @@ glib_deps = [
     dependency('gthread-2.0'),
     dependency('gstreamer-tag-1.0'),
     dependency('gstreamer-plugins-base-1.0'),
+    dependency('gstreamer-pbutils-1.0'),
 ]
 
 autorevision = find_program('autorevision')

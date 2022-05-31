@@ -36,7 +36,8 @@ enum class PlayStatus
 };
 
 int setup(GMainLoop *loop, guint soup_http_block_size,
-          gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us);
+          gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us,
+          gboolean queue_filter_enabled);
 void shutdown(GMainLoop *loop);
 
 void activate();

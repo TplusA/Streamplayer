@@ -31,8 +31,9 @@ streamplayer_SOURCES = \
     strbo_usb_url.cc strbo_usb_url.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh \
     stopped_reasons.cc stopped_reasons.hh \
+    queue_filter.cc queue_filter.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
-    gstringwrapper.hh gerrorwrapper.hh \
+    gstringwrapper.hh gerrorwrapper.hh guard.hh \
     os.c os.h
 
 DBUS_IFACES = $(top_srcdir)/dbus_interfaces

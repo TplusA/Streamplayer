@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2020, 2021  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -120,7 +120,7 @@ executable(
     'streamplayer',
     [
         'streamplayer.cc', 'streamer.cc', 'dbus_iface.cc', 'os.c',
-        'stopped_reasons.cc',
+        'stopped_reasons.cc', 'queue_filter.cc',
         'strbo_usb_url.cc', 'messages.c', 'messages_glib.c', 'messages_dbus.c',
         version_info
     ],

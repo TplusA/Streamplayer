@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2018, 2020--2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -55,6 +55,7 @@ struct parameters
     enum MessageVerboseLevel verbose_level;
     gboolean run_in_foreground;
     gboolean connect_to_system_dbus;
+    gboolean queue_filter_enabled;
     gint soup_http_blocksize_kb;
     gint alsa_latency_ms;
     gint alsa_buffer_ms;
@@ -108,6 +109,7 @@ static int process_command_line(int argc, char *argv[],
     parameters->verbose_level = MESSAGE_LEVEL_NORMAL;
     parameters->run_in_foreground = FALSE;
     parameters->connect_to_system_dbus = FALSE;
+    parameters->queue_filter_enabled = TRUE;
     parameters->soup_http_blocksize_kb = 0;
     parameters->alsa_latency_ms = 0;
     parameters->alsa_buffer_ms = 0;
@@ -130,6 +132,10 @@ static int process_command_line(int argc, char *argv[],
         { "system-dbus", 's', 0, G_OPTION_ARG_NONE,
           &parameters->connect_to_system_dbus,
           "Connect to system D-Bus instead of session D-Bus.", nullptr },
+        { "no-queue-filtering", 0, G_OPTION_FLAG_REVERSE,
+          G_OPTION_ARG_NONE, &parameters->queue_filter_enabled,
+          "Disable probing and removing queued streams in the background",
+          nullptr },
         { "soup-blocksize", 0, 0,
           G_OPTION_ARG_INT, &parameters->soup_http_blocksize_kb,
           "Block size in kiB for GstSoupHTTPSrc elements", nullptr },
@@ -267,7 +273,8 @@ int main(int argc, char *argv[])
     if(Streamer::setup(globals.loop,
                        parameters.soup_http_blocksize_kb * 1024U,
                        parameters.alsa_latency_ms * 1000U,
-                       parameters.alsa_buffer_ms * 1000U) < 0)
+                       parameters.alsa_buffer_ms * 1000U,
+                       parameters.queue_filter_enabled) < 0)
         return EXIT_FAILURE;
 
     if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)

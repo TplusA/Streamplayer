@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -102,7 +102,7 @@ class StreamData
 
     const std::string &get_cover_art_url() const { return cover_art_url_; }
 
-    void merge_tag_list(GstTagList *tags)
+    void merge_tag_list(GstTagList *tags, bool can_ref_tags = true)
     {
         if(tags == nullptr)
             return;
@@ -116,7 +116,11 @@ class StreamData
         }
         else
         {
-            gst_tag_list_ref(tags);
+            if(can_ref_tags)
+                gst_tag_list_ref(tags);
+            else
+                tags = gst_tag_list_copy(tags);
+
             tag_list_ = tags;
         }
     }

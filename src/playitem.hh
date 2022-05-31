@@ -71,6 +71,7 @@ class Item
   private:
     const std::string original_url_;
     const std::string xlated_url_;
+    bool has_passed_filter_;
 
   public:
     const std::chrono::time_point<std::chrono::nanoseconds> start_time_;
@@ -119,6 +120,7 @@ class Item
         stream_id_(stream_id),
         original_url_(std::move(stream_url)),
         xlated_url_(std::move(xlated_url)),
+        has_passed_filter_(false),
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
         stream_data_(preset_tag_list, std::move(cover_art_url),
@@ -144,6 +146,9 @@ class Item
     }
 
     const std::string get_url_for_reporting() const { return original_url_; }
+
+    bool was_probed() const { return has_passed_filter_; }
+    void filter_passed() { has_passed_filter_ = true; }
 };
 
 /*!

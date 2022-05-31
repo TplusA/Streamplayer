@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -189,6 +189,18 @@ class Queue
         queue_.pop_front();
 
         return true;
+    }
+
+    /*!
+     * Remove given item from URL FIFO.
+     *
+     * The erased item is not moved to the #PlayQueue::Queue::removed_
+     * container. Use this function to remove items before the gapless playback
+     * engine can take it.
+     */
+    void erase_directly(const typename std::deque<std::unique_ptr<T>>::const_iterator &it)
+    {
+        queue_.erase(it);
     }
 
     void mark_as_dropped(typename T::stream_id_t id) { dropped_.insert(id); }
