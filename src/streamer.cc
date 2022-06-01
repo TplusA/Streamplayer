@@ -37,64 +37,11 @@
 #include "strbo_usb_url.hh"
 #include "urlfifo.hh"
 #include "playitem.hh"
+#include "stopped_reasons.hh"
 #include "gstringwrapper.hh"
 #include "gerrorwrapper.hh"
 #include "dbus_iface_deep.hh"
 #include "messages.h"
-
-enum class StoppedReason
-{
-    /*! Reason not known. Should be used very rarely, if ever. */
-    UNKNOWN,
-
-    /*! Cannot play because URL FIFO is empty. */
-    QUEUE_EMPTY,
-
-    /*! Cannot stop because the player is already stopped. */
-    ALREADY_STOPPED,
-
-    /*! I/O error on physical medium (e.g., read error on some USB drive). */
-    PHYSICAL_MEDIA_IO,
-
-    /*! I/O error on the network (e.g., broken network connection). */
-    NET_IO,
-
-    /*! Have no URL. */
-    URL_MISSING,
-
-    /*! Network protocol error. */
-    PROTOCOL,
-
-    /*! Authentication with some external system has failed. */
-    AUTHENTICATION,
-
-    /*! Resource does not exist. */
-    DOES_NOT_EXIST,
-
-    /*! Resource has wrong type. */
-    WRONG_TYPE,
-
-    /*! Cannot access resource due to restricted permissions. */
-    PERMISSION_DENIED,
-
-    /*! Failed decoding stream because of a missing codec. */
-    MISSING_CODEC,
-
-    /*! Stream codec is known, but format wrong. */
-    WRONG_STREAM_FORMAT,
-
-    /*! Decoding failed. */
-    BROKEN_STREAM,
-
-    /*! Decryption key missing. */
-    ENCRYPTED,
-
-    /*! Cannot decrypt because this is not implemented/supported. */
-    DECRYPTION_NOT_SUPPORTED,
-
-    /*! Stable name for the highest-valued code. */
-    LAST_VALUE = DECRYPTION_NOT_SUPPORTED,
-};
 
 enum class ActivateStreamResult
 {
@@ -119,31 +66,31 @@ struct time_data
 
 struct FailureData
 {
-    StoppedReason reason;
+    StoppedReasons::Reason reason;
     bool clear_fifo_on_error;
     bool report_on_stream_stop;
 
     explicit FailureData():
-        reason(StoppedReason::UNKNOWN),
+        reason(StoppedReasons::Reason::UNKNOWN),
         clear_fifo_on_error(false),
         report_on_stream_stop(false)
     {}
 
-    explicit FailureData(StoppedReason sreason):
+    explicit FailureData(StoppedReasons::Reason sreason):
         reason(sreason),
         clear_fifo_on_error(false),
         report_on_stream_stop(false)
     {}
 
     explicit FailureData(bool report_on_stop):
-        reason(StoppedReason::UNKNOWN),
+        reason(StoppedReasons::Reason::UNKNOWN),
         clear_fifo_on_error(false),
         report_on_stream_stop(report_on_stop)
     {}
 
     void reset()
     {
-        reason = StoppedReason::UNKNOWN;
+        reason = StoppedReasons::Reason::UNKNOWN;
         clear_fifo_on_error = false;
         report_on_stream_stop = false;
     }
@@ -413,7 +360,7 @@ static void emit_stopped(tdbussplayPlayback *playback_iface,
 static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
                                     StreamerData &data,
                                     PlayQueue::Queue<PlayQueue::Item> &url_fifo,
-                                    StoppedReason reason,
+                                    StoppedReasons::Reason reason,
                                     std::unique_ptr<PlayQueue::Item> failed_stream)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
@@ -421,50 +368,21 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
     if(playback_iface == nullptr)
         return;
 
-    /*!
-     * String IDs that can be used as a reason as to why the stream was
-     * stopped.
-     *
-     * Must be sorted according to values in #StoppedReason enumeration.
-     */
-    static const char *reasons[] =
-    {
-        "flow.unknown",
-        "flow.nourl",
-        "flow.stopped",
-        "io.media",
-        "io.net",
-        "io.nourl",
-        "io.protocol",
-        "io.auth",
-        "io.unavailable",
-        "io.type",
-        "io.denied",
-        "data.codec",
-        "data.format",
-        "data.broken",
-        "data.encrypted",
-        "data.nodecrypter",
-    };
-
-    static_assert(G_N_ELEMENTS(reasons) == size_t(StoppedReason::LAST_VALUE) + 1U,
-                  "Array size mismatch");
-
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
     if(failed_stream == nullptr)
-        tdbus_splay_playback_emit_stopped_with_error(playback_iface, 0, "",
-                                                     url_fifo.size() == 0,
-                                                     GVariantWrapper::move(dropped_ids),
-                                                     reasons[size_t(reason)]);
+        tdbus_splay_playback_emit_stopped_with_error(
+            playback_iface, 0, "", url_fifo.size() == 0,
+            GVariantWrapper::move(dropped_ids),
+            StoppedReasons::as_string(reason));
     else
     {
-        tdbus_splay_playback_emit_stopped_with_error(playback_iface,
-                                                     failed_stream->stream_id_,
-                                                     failed_stream->get_url_for_reporting().c_str(),
-                                                     url_fifo.size() == 0,
-                                                     GVariantWrapper::move(dropped_ids),
-                                                     reasons[size_t(reason)]);
+        tdbus_splay_playback_emit_stopped_with_error(
+            playback_iface, failed_stream->stream_id_,
+            failed_stream->get_url_for_reporting().c_str(),
+            url_fifo.size() == 0,
+            GVariantWrapper::move(dropped_ids),
+            StoppedReasons::as_string(reason));
     }
 }
 
@@ -574,7 +492,8 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-static void schedule_error_recovery(StreamerData &data, StoppedReason reason)
+static void schedule_error_recovery(StreamerData &data,
+                                    StoppedReasons::Reason reason)
 {
     data.is_failing = true;
     data.fail.reason = reason;
@@ -715,13 +634,13 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
             return nullptr;
 
         msg_info("[%s] Cannot dequeue, URL FIFO is empty", context);
-        fdata.reason = StoppedReason::QUEUE_EMPTY;
+        fdata.reason = StoppedReasons::Reason::QUEUE_EMPTY;
     }
     else if(next->empty())
     {
         msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
                   "[%s] Cannot dequeue, URL in item is empty", context);
-        fdata.reason = StoppedReason::URL_MISSING;
+        fdata.reason = StoppedReasons::Reason::URL_MISSING;
     }
     else
     {
@@ -1329,171 +1248,6 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
                                           meta_data);
 }
 
-static StoppedReason core_error_to_stopped_reason(GstCoreError code,
-                                                  bool is_local_error)
-{
-    switch(code)
-    {
-      case GST_CORE_ERROR_MISSING_PLUGIN:
-      case GST_CORE_ERROR_DISABLED:
-        return StoppedReason::MISSING_CODEC;
-
-      case GST_CORE_ERROR_FAILED:
-      case GST_CORE_ERROR_TOO_LAZY:
-      case GST_CORE_ERROR_NOT_IMPLEMENTED:
-      case GST_CORE_ERROR_STATE_CHANGE:
-      case GST_CORE_ERROR_PAD:
-      case GST_CORE_ERROR_THREAD:
-      case GST_CORE_ERROR_NEGOTIATION:
-      case GST_CORE_ERROR_EVENT:
-      case GST_CORE_ERROR_SEEK:
-      case GST_CORE_ERROR_CAPS:
-      case GST_CORE_ERROR_TAG:
-      case GST_CORE_ERROR_CLOCK:
-      case GST_CORE_ERROR_NUM_ERRORS:
-        break;
-    }
-
-    BUG("Failed to convert GstCoreError code %d to reason code", code);
-
-    return StoppedReason::UNKNOWN;
-}
-
-static StoppedReason library_error_to_stopped_reason(GstLibraryError code,
-                                                     bool is_local_error)
-{
-    BUG("Failed to convert GstLibraryError code %d to reason code", code);
-    return StoppedReason::UNKNOWN;
-}
-
-static StoppedReason resource_error_to_stopped_reason(GstResourceError code,
-                                                      bool is_local_error)
-{
-    switch(code)
-    {
-      case GST_RESOURCE_ERROR_NOT_FOUND:
-        return StoppedReason::DOES_NOT_EXIST;
-
-      case GST_RESOURCE_ERROR_OPEN_READ:
-        return is_local_error
-            ? StoppedReason::PHYSICAL_MEDIA_IO
-            : StoppedReason::NET_IO;
-
-      case GST_RESOURCE_ERROR_READ:
-      case GST_RESOURCE_ERROR_SEEK:
-        return StoppedReason::PROTOCOL;
-
-      case GST_RESOURCE_ERROR_NOT_AUTHORIZED:
-        return StoppedReason::PERMISSION_DENIED;
-
-      case GST_RESOURCE_ERROR_FAILED:
-      case GST_RESOURCE_ERROR_TOO_LAZY:
-      case GST_RESOURCE_ERROR_BUSY:
-      case GST_RESOURCE_ERROR_OPEN_WRITE:
-      case GST_RESOURCE_ERROR_OPEN_READ_WRITE:
-      case GST_RESOURCE_ERROR_CLOSE:
-      case GST_RESOURCE_ERROR_WRITE:
-      case GST_RESOURCE_ERROR_SYNC:
-      case GST_RESOURCE_ERROR_SETTINGS:
-      case GST_RESOURCE_ERROR_NO_SPACE_LEFT:
-      case GST_RESOURCE_ERROR_NUM_ERRORS:
-        break;
-    }
-
-    BUG("Failed to convert GstResourceError code %d to reason code", code);
-
-    return StoppedReason::UNKNOWN;
-}
-
-static StoppedReason stream_error_to_stopped_reason(GstStreamError code,
-                                                    bool is_local_error)
-{
-    switch(code)
-    {
-      case GST_STREAM_ERROR_FAILED:
-      case GST_STREAM_ERROR_TYPE_NOT_FOUND:
-      case GST_STREAM_ERROR_WRONG_TYPE:
-        return StoppedReason::WRONG_TYPE;
-
-      case GST_STREAM_ERROR_CODEC_NOT_FOUND:
-        return StoppedReason::MISSING_CODEC;
-
-      case GST_STREAM_ERROR_DECODE:
-      case GST_STREAM_ERROR_DEMUX:
-        return StoppedReason::BROKEN_STREAM;
-
-      case GST_STREAM_ERROR_FORMAT:
-        return StoppedReason::WRONG_STREAM_FORMAT;
-
-      case GST_STREAM_ERROR_DECRYPT:
-        return StoppedReason::DECRYPTION_NOT_SUPPORTED;
-
-      case GST_STREAM_ERROR_DECRYPT_NOKEY:
-        return StoppedReason::ENCRYPTED;
-
-      case GST_STREAM_ERROR_TOO_LAZY:
-      case GST_STREAM_ERROR_NOT_IMPLEMENTED:
-      case GST_STREAM_ERROR_ENCODE:
-      case GST_STREAM_ERROR_MUX:
-      case GST_STREAM_ERROR_NUM_ERRORS:
-        break;
-    }
-
-    BUG("Failed to convert GstStreamError code %d to reason code", code);
-
-    return StoppedReason::UNKNOWN;
-}
-
-static StoppedReason gerror_to_stopped_reason(const GErrorWrapper &error, bool is_local_error)
-{
-    if(error->domain == GST_CORE_ERROR)
-        return core_error_to_stopped_reason((GstCoreError)error->code,
-                                            is_local_error);
-
-    if(error->domain == GST_LIBRARY_ERROR)
-        return library_error_to_stopped_reason((GstLibraryError)error->code,
-                                               is_local_error);
-
-    if(error->domain == GST_RESOURCE_ERROR)
-        return resource_error_to_stopped_reason((GstResourceError)error->code,
-                                                is_local_error);
-
-    if(error->domain == GST_STREAM_ERROR)
-        return stream_error_to_stopped_reason((GstStreamError)error->code,
-                                              is_local_error);
-
-    BUG("Unknown error domain %u for error code %d",
-        error->domain, error->code);
-
-    return StoppedReason::UNKNOWN;
-}
-
-static bool determine_is_local_error_by_url(const GLibString &url)
-{
-    if(url.empty())
-        return true;
-
-#if GST_CHECK_VERSION(1, 5, 1)
-    GstUri *uri = gst_uri_from_string(url.get());
-
-    if(uri == nullptr)
-        return true;
-
-    static const std::string file_scheme("file");
-
-    const char *scheme = gst_uri_get_scheme(uri);
-    const bool retval = (scheme == nullptr || scheme == file_scheme);
-
-    gst_uri_unref(uri);
-
-    return retval;
-#else /* pre 1.5.1 */
-    static const char protocol_prefix[] = "file://";
-
-    return strncmp(url.get(), protocol_prefix, sizeof(protocol_prefix) - 1) == 0;
-#endif /* use GstUri if not older than v1.5.1 */
-}
-
 static WhichStreamFailed
 determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
                         const PlayQueue::Queue<PlayQueue::Item> &fifo)
@@ -1557,7 +1311,8 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
         break;
     }
 
-    const FailureData fdata(gerror_to_stopped_reason(error, determine_is_local_error_by_url(current_uri)));
+    const FailureData fdata(StoppedReasons::from_gerror(
+            error, StoppedReasons::determine_is_local_error_by_url(current_uri)));
 
     msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
               error->code, g_quark_to_string(error->domain),
@@ -2802,7 +2557,8 @@ bool Streamer::stop(const char *reason)
             (PlayQueue::Queue<PlayQueue::Item> &fifo)
             {
                 emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
-                                        fifo, StoppedReason::ALREADY_STOPPED,
+                                        fifo,
+                                        StoppedReasons::Reason::ALREADY_STOPPED,
                                         std::move(streamer_data.current_stream));
             });
     }
