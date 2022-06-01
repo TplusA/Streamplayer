@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -98,7 +98,7 @@ class Item
      *     URL of cover art (may be empty).
      * \param extra_tags
      *     Non-standard tags.
-     * \param meta_data
+     * \param preset_tag_list
      *     Preset meta data for the stream as pulled from some external data
      *     source.
      * \param start_time, end_time
