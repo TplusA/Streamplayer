@@ -120,6 +120,7 @@ executable(
     'streamplayer',
     [
         'streamplayer.cc', 'streamer.cc', 'dbus_iface.cc', 'os.c',
+        'stopped_reasons.cc',
         'strbo_usb_url.cc', 'messages.c', 'messages_glib.c', 'messages_dbus.c',
         version_info
     ],

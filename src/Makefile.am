@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2018, 2019, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2018--2022  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -30,6 +30,7 @@ streamplayer_SOURCES = \
     dbus_iface.cc dbus_iface.hh dbus_iface_deep.hh \
     strbo_usb_url.cc strbo_usb_url.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh \
+    stopped_reasons.cc stopped_reasons.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     gstringwrapper.hh gerrorwrapper.hh \
     os.c os.h
