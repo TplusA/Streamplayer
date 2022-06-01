@@ -108,7 +108,7 @@ class Item
      *     URL of cover art (may be empty).
      * \param extra_tags
      *     Non-standard tags.
-     * \param meta_data
+     * \param preset_tag_list
      *     Preset meta data for the stream as pulled from some external data
      *     source.
      * \param start_time, end_time
