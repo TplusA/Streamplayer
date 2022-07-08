@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -27,6 +27,7 @@
 
 #include "playitem.hh"
 
+#define MOCK_EXPECTATION_WITH_EXPECTATION_SEQUENCE_SINGLETON
 #include "mock_messages.hh"
 
 /*!
@@ -36,6 +37,9 @@
  * Play item tests (items stored inside a URL FIFO).
  */
 /*!@{*/
+
+std::shared_ptr<MockExpectationSequence> mock_expectation_sequence_singleton =
+    std::make_shared<MockExpectationSequence>();
 
 TEST_SUITE_BEGIN("Play queue item");
 
@@ -48,6 +52,7 @@ class Fixture
     explicit Fixture():
         mock_messages(std::make_unique<MockMessages::Mock>())
     {
+        mock_expectation_sequence_singleton->reset();
         MockMessages::singleton = mock_messages.get();
     }
 
@@ -55,6 +60,7 @@ class Fixture
     {
         try
         {
+            mock_expectation_sequence_singleton->done();
             mock_messages->done();
         }
         catch(...)
