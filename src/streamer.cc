@@ -544,10 +544,10 @@ static PlayQueue::Item *pick_next_item(PlayQueue::Item *current_stream,
         {
           case PlayQueue::ItemState::IN_QUEUE:
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+          case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
             next_stream_is_in_fifo = false;
             return current_stream;
 
-          case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
           case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
           case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
           case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
