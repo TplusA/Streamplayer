@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2018, 2020--2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -142,8 +142,6 @@ static int process_command_line(int argc, char *argv[],
         {}
     };
 
-    GLibString verbose_level_name(std::move(verbose_level_name_raw));
-
     g_option_context_add_main_entries(ctx, entries, nullptr);
     g_option_context_add_group(ctx, gst_init_get_option_group());
 
@@ -158,6 +156,8 @@ static int process_command_line(int argc, char *argv[],
     }
 
     g_option_context_free(ctx);
+
+    GLibString verbose_level_name(std::move(verbose_level_name_raw));
 
     if(show_version)
         return 1;
