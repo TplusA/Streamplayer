@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -52,6 +52,16 @@ enum class FailState
 
     LAST_FAIL_STATE = FAILURE_DETECTED,
 };
+
+/*!
+ * Convert enum to printable string for diagnostic purposes.
+ */
+const char *item_state_name(ItemState state);
+
+/*!
+ * Convert enum to printable string for diagnostic purposes.
+ */
+const char *fail_state_name(FailState state);
 
 /*!
  * URL FIFO item data.
@@ -145,16 +155,6 @@ class Item
 
     const std::string get_url_for_reporting() const { return original_url_; }
 };
-
-/*!
- * Convert enum to printable string for diagnostic purposes.
- */
-const char *item_state_name(ItemState state);
-
-/*!
- * Convert enum to printable string for diagnostic purposes.
- */
-const char *fail_state_name(FailState state);
 
 }
 
