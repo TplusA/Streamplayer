@@ -62,12 +62,17 @@ struct parameters
 
 static void show_version_info(void)
 {
+    gchar *temp = gst_version_string();
     printf("%s\n"
            "Revision %s%s\n"
-           "         %s+%d, %s\n",
+           "         %s+%d, %s\n"
+           "%s\n"
+           "GLib %u.%u.%u\n",
            PACKAGE_STRING,
            VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tainted)" : "",
-           VCS_TAG, VCS_TICK, VCS_DATE);
+           VCS_TAG, VCS_TICK, VCS_DATE, temp,
+           glib_major_version, glib_minor_version, glib_micro_version);
+    g_free(temp);
 }
 
 static void log_version_info(void)
@@ -75,6 +80,13 @@ static void log_version_info(void)
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Rev %s%s, %s+%d, %s",
               VCS_FULL_HASH, VCS_WC_MODIFIED ? " (tainted)" : "",
               VCS_TAG, VCS_TICK, VCS_DATE);
+
+    gchar *temp = gst_version_string();
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "%s", temp);
+    g_free(temp);
+
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "GLib %u.%u.%u",
+              glib_major_version, glib_minor_version, glib_micro_version);
 }
 
 /*!
