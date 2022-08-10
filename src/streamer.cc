@@ -823,6 +823,9 @@ static bool play_next_stream(StreamerData &data,
     return retval;
 }
 
+static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
+                                                 const char *context);
+
 /*
  * GLib signal callback: playbin3 "about-to-finish".
  */
@@ -835,8 +838,12 @@ static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
         return;
 
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-    static const char context[] = "need next stream";
+    queue_stream_from_url_fifo__unlocked(data, "need next stream");
+}
 
+static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
+                                                 const char *context)
+{
     bool is_next_current;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
                                              *data.url_fifo_LOCK_ME,
@@ -2963,7 +2970,19 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                 [&item, &keep_items]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
-                    return fifo.push(std::move(item), keep_items) != 0;
+                    const auto queue_now = streamer_data.current_stream != nullptr && fifo.empty();
+
+                    // cppcheck-suppress shadowVar
+                    const bool result = fifo.push(std::move(item), keep_items) != 0;
+
+                    if(queue_now)
+                    {
+                        queue_stream_from_url_fifo__unlocked(
+                                streamer_data, "immediately queued on push");
+                        set_stream_state(streamer_data.pipeline,
+                                         GST_STATE_PLAYING, "continue");
+                    }
+                    return result;
                 });
 }
 
