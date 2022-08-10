@@ -24,6 +24,7 @@
 
 #include <glib.h>
 #include <functional>
+#include <cstring>
 
 class GLibString
 {
@@ -62,6 +63,7 @@ class GLibString
     bool operator==(std::nullptr_t) const { return str_ == nullptr; }
     bool operator!=(std::nullptr_t) const { return str_ != nullptr; }
     bool empty() const { return str_ == nullptr || str_[0] == '\0'; }
+    size_t size() const { return empty() ? 0 : strlen(str_); }
 };
 
 #endif /* !GSTRINGWRAPPER_HH */

@@ -331,7 +331,7 @@ mk_id_array_from_queued_items(const PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 static GVariantWrapper
 mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
-    return mk_id_array(url_fifo.get_removed(), std::move(url_fifo.get_dropped()));
+    return mk_id_array(url_fifo.get_removed(), url_fifo.get_dropped());
 }
 
 static void emit_stopped(tdbussplayPlayback *playback_iface,
@@ -2989,10 +2989,18 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
     auto realpath_cxx = [] (GLibString &&file_path) -> std::string
     {
         std::string buf;
+
+        if(file_path.size() > PATH_MAX)
+        {
+            msg_error(0, LOG_EMERG, "Path too long for realpath(): '%s'",
+                      file_path.get());
+            return buf;
+        }
+
         buf.resize(PATH_MAX);
 
         if(realpath(file_path.get(), &buf[0]) == nullptr)
-            msg_error(0, LOG_EMERG, "Error while realpath(%s) : '%s'" ,
+            msg_error(0, LOG_EMERG, "Error while realpath(%s): '%s'" ,
                       file_path.get(), strerror(errno));
 
         return buf;
