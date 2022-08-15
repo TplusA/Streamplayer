@@ -1,7 +1,7 @@
-#define PACKAGE			"@PACKAGE@"
-#define PACKAGE_NAME		"@PACKAGE_NAME@"
-#define PACKAGE_STRING		"@PACKAGE_NAME@ @PACKAGE_VERSION@"
-#define PACKAGE_VERSION		"@PACKAGE_VERSION@"
+#mesondefine PACKAGE
+#mesondefine PACKAGE_NAME
+#mesondefine PACKAGE_STRING
+#mesondefine PACKAGE_VERSION
 
 /* Enable extensions on AIX 3, Interix.  */
 #ifndef _ALL_SOURCE

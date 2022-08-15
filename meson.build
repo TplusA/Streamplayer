@@ -26,9 +26,10 @@ project('Streamplayer', ['cpp', 'c'],
 PACKAGE = 'streamplayer'
 
 config_data = configuration_data()
-config_data.set('PACKAGE', PACKAGE)
-config_data.set('PACKAGE_NAME', meson.project_name())
-config_data.set('PACKAGE_VERSION', meson.project_version())
+config_data.set_quoted('PACKAGE', PACKAGE)
+config_data.set_quoted('PACKAGE_NAME', meson.project_name())
+config_data.set_quoted('PACKAGE_STRING', meson.project_name() + ' ' + meson.project_version())
+config_data.set_quoted('PACKAGE_VERSION', meson.project_version())
 config_data.set('abs_srcdir', meson.current_source_dir())
 config_data.set('abs_builddir', meson.build_root())
 config_data.set('bindir', get_option('prefix') / get_option('bindir'))
@@ -77,4 +78,5 @@ custom_target('doxygen', output: 'doxygen.stamp',
 custom_target('documentation',
     output: 'README.html', input: 'README.md',
     command: [markdown, '-o', '@OUTPUT@', '@INPUT@'],
-    install: true, install_dir: get_option('datadir') / 'doc/streamplayer')
+    install: true, install_dir: get_option('datadir') / 'doc' / PACKAGE
+)
