@@ -788,11 +788,6 @@ RECURSIVE              = YES
 # run.
 
 EXCLUDE                = \
-    @abs_builddir@/src/de_tahifi_streamplayer.c \
-    @abs_builddir@/src/de_tahifi_artcache.c \
-    @abs_builddir@/src/de_tahifi_audiopath.c \
-    @abs_builddir@/src/de_tahifi_mounta.c \
-    @abs_builddir@/src/de_tahifi_debug.c \
     @abs_srcdir@/dbus_interfaces/de_tahifi_lists_errors.hh
 
 # The EXCLUDE_SYMLINKS tag can be used to select whether or not files or
@@ -809,7 +804,8 @@ EXCLUDE_SYMLINKS       = NO
 # Note that the wildcards are matched against the file with absolute path, so to
 # exclude all test directories for example use the pattern */test/*
 
-EXCLUDE_PATTERNS       =
+EXCLUDE_PATTERNS       = \
+    @abs_builddir@/src/dbus/*.c
 
 # The EXCLUDE_SYMBOLS tag can be used to specify one or more symbol names
 # (namespaces, classes, functions, etc.) that should be excluded from the

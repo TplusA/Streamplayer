@@ -34,8 +34,7 @@
 #include <gst/gst.h>
 
 #include "streamer.hh"
-#include "dbus_iface.hh"
-#include "dbus_iface_deep.hh"
+#include "dbus.hh"
 #include "messages.h"
 #include "messages_glib.h"
 #include "gstringwrapper.hh"
@@ -282,17 +281,7 @@ int main(int argc, char *argv[])
                        parameters.alsa_buffer_ms * 1000U) < 0)
         return EXIT_FAILURE;
 
-    if(dbus_setup(globals.loop, !parameters.connect_to_system_dbus) < 0)
-    {
-        Streamer::shutdown(globals.loop);
-        return EXIT_FAILURE;
-    }
-
-    tdbus_aupath_manager_call_register_player(dbus_audiopath_get_manager_iface(),
-                                              "strbo",
-                                              "T+A Streaming Board streamplayer",
-                                              "/de/tahifi/Streamplayer",
-                                              nullptr, nullptr, nullptr);
+    TDBus::setup(TDBus::session_bus());
 
     g_unix_signal_add(SIGINT, signal_handler, globals.loop);
     g_unix_signal_add(SIGTERM, signal_handler, globals.loop);
@@ -300,10 +289,7 @@ int main(int argc, char *argv[])
     g_main_loop_run(globals.loop);
 
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Shutting down");
-
-    dbus_shutdown(globals.loop);
     Streamer::shutdown(globals.loop);
-
     g_main_loop_unref(globals.loop);
 
     return EXIT_SUCCESS;

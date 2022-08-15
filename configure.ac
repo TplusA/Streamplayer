@@ -92,6 +92,6 @@ AM_CONDITIONAL([WITH_DOCTEST], [test "x$ac_cv_header_doctest_h" = "xyes"])
 AM_CONDITIONAL([WITH_VALGRIND], [test "x$enable_valgrind" = "xyes"])
 AM_CONDITIONAL([WITH_MARKDOWN], [test "x$ac_cv_prog_MARKDOWN" != "x"])
 
-AC_CONFIG_FILES([Makefile src/Makefile tests/Makefile dist/Makefile Doxyfile])
+AC_CONFIG_FILES([Makefile src/Makefile src/dbus/Makefile tests/Makefile dist/Makefile Doxyfile])
 AC_CONFIG_FILES([versioninfo.cache])
 AC_OUTPUT

@@ -40,8 +40,10 @@
 #include "stopped_reasons.hh"
 #include "gstringwrapper.hh"
 #include "gerrorwrapper.hh"
-#include "dbus_iface_deep.hh"
 #include "messages.h"
+#include "dbus.hh"
+#include "dbus/de_tahifi_streamplayer.hh"
+#include "dbus/de_tahifi_artcache.hh"
 
 enum class ActivateStreamResult
 {
@@ -334,7 +336,7 @@ mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
     return mk_id_array(url_fifo.get_removed(), url_fifo.get_dropped());
 }
 
-static void emit_stopped(tdbussplayPlayback *playback_iface,
+static void emit_stopped(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                          StreamerData &data)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
@@ -342,22 +344,19 @@ static void emit_stopped(tdbussplayPlayback *playback_iface,
 
     auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
-    if(playback_iface != nullptr)
-    {
-        if(data.current_stream == nullptr &&
-           (dropped_ids == nullptr ||
-            g_variant_n_children(GVariantWrapper::get(dropped_ids)) <= 0))
-            return;
+    if(data.current_stream == nullptr &&
+       (dropped_ids == nullptr ||
+        g_variant_n_children(GVariantWrapper::get(dropped_ids)) <= 0))
+        return;
 
-        tdbus_splay_playback_emit_stopped(dbus_get_playback_iface(),
-                                          data.current_stream != nullptr
-                                          ? data.current_stream->stream_id_
-                                          : 0,
-                                          GVariantWrapper::move(dropped_ids));
-    }
+    playback_iface.emit(tdbus_splay_playback_emit_stopped,
+                        data.current_stream != nullptr
+                        ? data.current_stream->stream_id_
+                        : 0,
+                        GVariantWrapper::move(dropped_ids));
 }
 
-static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
+static void emit_stopped_with_error(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                                     StreamerData &data,
                                     PlayQueue::Queue<PlayQueue::Item> &url_fifo,
                                     StoppedReasons::Reason reason,
@@ -365,20 +364,19 @@ static void emit_stopped_with_error(tdbussplayPlayback *playback_iface,
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
-    if(playback_iface == nullptr)
-        return;
-
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
     if(failed_stream == nullptr)
-        tdbus_splay_playback_emit_stopped_with_error(
-            playback_iface, 0, "", url_fifo.size() == 0,
+        playback_iface.emit(
+            tdbus_splay_playback_emit_stopped_with_error,
+            0, "", url_fifo.size() == 0,
             GVariantWrapper::move(dropped_ids),
             StoppedReasons::as_string(reason));
     else
     {
-        tdbus_splay_playback_emit_stopped_with_error(
-            playback_iface, failed_stream->stream_id_,
+        playback_iface.emit(
+            tdbus_splay_playback_emit_stopped_with_error,
+            failed_stream->stream_id_,
             failed_stream->get_url_for_reporting().c_str(),
             url_fifo.size() == 0,
             GVariantWrapper::move(dropped_ids),
@@ -466,7 +464,8 @@ static void do_stop_pipeline_and_recover_from_error(
         url_fifo.clear(0);
 
     invalidate_stream_position_information(data);
-    emit_stopped_with_error(dbus_get_playback_iface(), data, url_fifo,
+    emit_stopped_with_error(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                            data, url_fifo,
                             data.fail.reason, std::move(data.current_stream));
 
     data.stream_has_just_started = false;
@@ -871,7 +870,6 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
 {
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
-
     msg_info("Finished playing all streams");
 
     auto data_lock(data.lock());
@@ -879,7 +877,11 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
     if(set_stream_state(data.pipeline, GST_STATE_READY, "EOS"))
     {
         data.url_fifo_LOCK_ME->locked_rw(
-            [&data] (auto &) { emit_stopped(dbus_get_playback_iface(), data); });
+            [&data] (auto &)
+            {
+                emit_stopped(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                             data);
+            });
         data.current_stream.reset();
     }
 }
@@ -1117,13 +1119,11 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
     sent_data.size = mi.size;
     sent_data.priority = priority;
 
-    tdbus_artcache_write_call_add_image_by_data(dbus_artcache_get_write_iface(),
-                                                GVariantWrapper::get(sd.stream_key_),
-                                                priority,
-                                                g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
-                                                                          mi.data, mi.size,
-                                                                          sizeof(mi.data[0])),
-                                                nullptr, nullptr, nullptr);
+    TDBus::get_singleton<tdbusartcacheWrite>()
+        .call_and_forget<TDBus::ArtCacheWriteAddImageByData>(
+            GVariantWrapper::get(sd.stream_key_), priority,
+            g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
+                                      mi.data, mi.size, sizeof(mi.data[0])));
 
     gst_memory_unmap(memory, &mi);
 }
@@ -1179,9 +1179,9 @@ static void emit_tags__unlocked(StreamerData &data)
     auto &sd = data.current_stream->get_stream_data();
     GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list(), sd.get_extra_tags());
 
-    tdbus_splay_playback_emit_meta_data_changed(dbus_get_playback_iface(),
-                                                data.current_stream->stream_id_,
-                                                meta_data);
+    TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+        tdbus_splay_playback_emit_meta_data_changed,
+        data.current_stream->stream_id_, meta_data);
 
     data.next_allowed_tag_update_time =
         gst_clock_get_time(data.system_clock) + 500UL * GST_MSECOND;
@@ -1234,11 +1234,11 @@ static void handle_tag(GstMessage *message, StreamerData &data)
     }
 }
 
-static void emit_now_playing(tdbussplayPlayback *playback_iface,
+static void emit_now_playing(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                              const StreamerData &data,
                              PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
-    if(playback_iface == nullptr || data.current_stream == nullptr)
+    if(data.current_stream == nullptr)
         return;
 
     const auto &sd = data.current_stream->get_stream_data();
@@ -1246,13 +1246,13 @@ static void emit_now_playing(tdbussplayPlayback *playback_iface,
 
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
-    tdbus_splay_playback_emit_now_playing(playback_iface,
-                                          data.current_stream->stream_id_,
-                                          GVariantWrapper::get(sd.stream_key_),
-                                          data.current_stream->get_url_for_reporting().c_str(),
-                                          url_fifo.full(),
-                                          GVariantWrapper::move(dropped_ids),
-                                          meta_data);
+    playback_iface.emit(tdbus_splay_playback_emit_now_playing,
+                        data.current_stream->stream_id_,
+                        GVariantWrapper::get(sd.stream_key_),
+                        data.current_stream->get_url_for_reporting().c_str(),
+                        url_fifo.full(),
+                        GVariantWrapper::move(dropped_ids),
+                        meta_data);
 }
 
 static WhichStreamFailed
@@ -1350,7 +1350,8 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
         {
             set_stream_state(data.pipeline, GST_STATE_NULL, "stop on bad stream");
             invalidate_stream_position_information(data);
-            emit_stopped_with_error(dbus_get_playback_iface(), data, *data.url_fifo_LOCK_ME,
+            emit_stopped_with_error(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                                    data, *data.url_fifo_LOCK_ME,
                                     fdata.reason, std::move(item));
             data.stream_has_just_started = false;
             data.stream_buffer_underrun_filter.reset();
@@ -1443,13 +1444,11 @@ static gboolean report_progress(gpointer user_data)
     {
         data.previous_time = data.current_time;
 
-        tdbussplayPlayback *playback_iface = dbus_get_playback_iface();
-
-        if(playback_iface != nullptr)
-            tdbus_splay_playback_emit_position_changed(playback_iface,
-                                                       data.current_stream->stream_id_,
-                                                       data.current_time.position_s, "s",
-                                                       data.current_time.duration_s, "s");
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_position_changed,
+            data.current_stream->stream_id_,
+            data.current_time.position_s, "s",
+            data.current_time.duration_s, "s");
     }
 
     return G_SOURCE_CONTINUE;
@@ -1575,8 +1574,6 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             return;
     }
 
-    tdbussplayPlayback *dbus_playback_iface = dbus_get_playback_iface();
-
     switch(state)
     {
       case GST_STATE_NULL:
@@ -1618,7 +1615,8 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
             if(data.current_stream != nullptr)
-                emit_stopped(dbus_playback_iface, data);
+                emit_stopped(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                             data);
 
             if(!data.url_fifo_LOCK_ME->pop(data.current_stream,
                                            "previous stream stopped"))
@@ -1647,10 +1645,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             switch(data.stream_buffering_state)
             {
               case BufferingState::NOT_BUFFERING:
-                if(dbus_playback_iface != nullptr)
-                    tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
-                                                          data.current_stream->stream_id_,
-                                                          TRUE);
+                TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+                    tdbus_splay_playback_emit_pause_state,
+                    data.current_stream->stream_id_, TRUE);
                 break;
 
               case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
@@ -1670,7 +1667,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        if(dbus_playback_iface != nullptr && !data.stream_has_just_started)
+        if(!data.stream_has_just_started)
         {
             switch(activate_stream(data, state, 0))
             {
@@ -1683,10 +1680,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
                 switch(data.stream_buffering_state)
                 {
                   case BufferingState::NOT_BUFFERING:
-                    if(dbus_playback_iface != nullptr)
-                        tdbus_splay_playback_emit_pause_state(dbus_playback_iface,
-                                                              data.current_stream->stream_id_,
-                                                              FALSE);
+                    TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+                        tdbus_splay_playback_emit_pause_state,
+                        data.current_stream->stream_id_, FALSE);
                     break;
 
                   case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
@@ -1830,17 +1826,17 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
 
             const auto &cover_art_url(sd.get_cover_art_url());
             if(!cover_art_url.empty())
-                tdbus_artcache_write_call_add_image_by_uri(
-                    dbus_artcache_get_write_iface(),
-                    GVariantWrapper::get(sd.stream_key_),
-                    140, cover_art_url.c_str(), nullptr, nullptr, nullptr);
+                TDBus::get_singleton<tdbusartcacheWrite>()
+                    .call_and_forget<TDBus::ArtCacheWriteAddImageByURI>(
+                        GVariantWrapper::get(sd.stream_key_),
+                        140, cover_art_url.c_str());
 
             invalidate_stream_position_information(data);
             query_seconds(gst_element_query_duration, data.pipeline,
                           data.current_time.duration_s);
 
-            emit_now_playing(dbus_get_playback_iface(), data,
-                             *data.url_fifo_LOCK_ME);
+            emit_now_playing(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                             data, *data.url_fifo_LOCK_ME);
         }
 
         break;
@@ -1980,14 +1976,14 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     switch(data.stream_buffering_state)
     {
       case BufferingState::NOT_BUFFERING:
-        tdbus_splay_playback_emit_buffer(dbus_get_playback_iface(),
-                                         percent, FALSE);
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_buffer, percent, FALSE);
         break;
 
       case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
       case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-        tdbus_splay_playback_emit_buffer(dbus_get_playback_iface(),
-                                         percent, TRUE);
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_buffer, percent, TRUE);
         break;
     }
 }
@@ -2355,9 +2351,9 @@ static bool do_set_speed(StreamerData &data, double factor)
     if(!success)
         msg_error(0, LOG_ERR, "Failed setting speed");
     else if(data.current_stream != nullptr)
-        tdbus_splay_playback_emit_speed_changed(dbus_get_playback_iface(),
-                                                data.current_stream->stream_id_,
-                                                factor);
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_speed_changed,
+            data.current_stream->stream_id_, factor);
 
     return success;
 }
@@ -2548,8 +2544,8 @@ bool Streamer::stop(const char *reason)
             []
             (PlayQueue::Queue<PlayQueue::Item> &fifo)
             {
-                emit_stopped_with_error(dbus_get_playback_iface(), streamer_data,
-                                        fifo,
+                emit_stopped_with_error(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                                        streamer_data, fifo,
                                         StoppedReasons::Reason::ALREADY_STOPPED,
                                         std::move(streamer_data.current_stream));
             });
@@ -2717,9 +2713,9 @@ bool Streamer::seek(int64_t position, const char *units)
         return false;
 
     if(streamer_data.current_stream != nullptr)
-        tdbus_splay_playback_emit_speed_changed(dbus_get_playback_iface(),
-                                                streamer_data.current_stream->stream_id_,
-                                                1.0);
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_speed_changed,
+            streamer_data.current_stream->stream_id_, 1.0);
 
     return true;
 }

@@ -117,7 +117,7 @@ class Item
      *     \c std::chrono::time_point::max(), respectively, to play the whole
      *     stream from its natural start to its natural end.
      */
-    explicit Item(stream_id_t stream_id, GVariantWrapper &&stream_key,
+    explicit Item(const stream_id_t &stream_id, GVariantWrapper &&stream_key,
                   std::string &&stream_url, std::string &&xlated_url,
                   std::string &&cover_art_url,
                   std::unordered_map<std::string, std::string> &&extra_tags,

@@ -49,6 +49,7 @@ glib_deps = [
 autorevision = find_program('autorevision')
 markdown = find_program('markdown')
 extract_docs = find_program('dbus_interfaces/extract_documentation.py')
+taddybus_codegen = find_program('dbus_interfaces/taddybus-codegen.py', 'taddybus-codegen.py', 'taddybus-codegen')
 doxygen = find_program('doxygen', required: false)
 
 doxyfile = configure_file(input: 'Doxyfile.in', output: 'Doxyfile',

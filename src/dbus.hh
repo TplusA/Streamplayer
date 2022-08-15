@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015, 2017, 2018, 2020, 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -19,26 +19,16 @@
  * MA  02110-1301, USA.
  */
 
-#ifndef DBUS_IFACE_DEEP_HH
-#define DBUS_IFACE_DEEP_HH
+#ifndef DBUS_HH
+#define DBUS_HH
 
-#include "de_tahifi_streamplayer.h"
-#include "de_tahifi_artcache.h"
-#include "de_tahifi_audiopath.h"
+namespace TDBus
+{
+    class Bus;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-tdbussplayURLFIFO *dbus_get_urlfifo_iface(void);
-tdbussplayPlayback *dbus_get_playback_iface(void);
-
-tdbusartcacheWrite *dbus_artcache_get_write_iface(void);
-
-tdbusaupathManager *dbus_audiopath_get_manager_iface(void);
-
-#ifdef __cplusplus
+    void setup(Bus &bus);
+    Bus &session_bus();
+    Bus &system_bus();
 }
-#endif
 
-#endif /* !DBUS_IFACE_DEEP_HH */
+#endif /* !DBUS_HH */
