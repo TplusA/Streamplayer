@@ -2962,8 +2962,6 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
 
 bool Streamer::remove_items_for_root_path(const char *root_path)
 {
-    const std::string PREFIX = "file://";
-
     const auto filename_from_uri = [] (const std::string &url) -> GLibString
     {
         GErrorWrapper gerror;
