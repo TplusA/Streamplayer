@@ -48,7 +48,7 @@ glib_deps = [
 ]
 
 autorevision = find_program('autorevision')
-markdown = find_program('markdown')
+markdown = find_program('pandoc', 'markdown')
 extract_docs = find_program('dbus_interfaces/extract_documentation.py')
 taddybus_codegen = find_program('dbus_interfaces/taddybus-codegen.py', 'taddybus-codegen.py', 'taddybus-codegen')
 doxygen = find_program('doxygen', required: false)
