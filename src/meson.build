@@ -29,7 +29,7 @@ config_h = declare_dependency(
 subdir('dbus')
 
 urlfifo_lib = static_library('urlfifo',
-    ['playitem.cc', 'backtrace.c'],
+    'playitem.cc',
     dependencies: [glib_deps, config_h],
 )
 
@@ -42,7 +42,7 @@ executable(
     'streamplayer',
     [
         'streamplayer.cc', 'streamer.cc', 'dbus.cc', 'debug_levels.cc',
-        'stopped_reasons.cc',
+        'stopped_reasons.cc', 'backtrace.c',
         'strbo_usb_url.cc',
         'messages.c', 'messages_glib.c', 'messages_dbus.c', 'os.c',
         version_info
