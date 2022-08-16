@@ -1147,7 +1147,7 @@ static void update_picture_for_item(PlayQueue::Item &item,
         if(!gst_tag_list_get_sample(tags, tag_and_prio.first, &sample))
             continue;
 
-        GstCaps *caps = gst_sample_get_caps(sample);
+        const GstCaps *caps = gst_sample_get_caps(sample);
 
         if(caps == nullptr)
         {
