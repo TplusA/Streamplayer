@@ -1,3 +1,24 @@
+2022-08-16  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.0 released.
+
+	* Playback: Use playbin3 from most recent GStreamer versions.
+
+	* Playback: Fix stream change behavior. The follow-up stream was stuck
+	  in the queue and wouldn't play.
+
+	* Playback: Fix stream change for very short streams, in which case
+	  GStreamer can be faster at buffering and requesting the next stream
+	  than our system can be at retrieving the next URI.
+
+	* Playback: Remove a few workarounds required for older GStreamer
+	  versions.
+
+	* D-Bus: Use upgraded C++ binding for D-Bus communication.
+
+	* Stability: Avoid leaking memory when processing images extracted
+	  from tags.
+
 2022-04-07  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 5.20 released.
