@@ -1113,7 +1113,10 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
     }
 
     if(sent_data.data == mi.data && sent_data.size == mi.size)
+    {
+        gst_memory_unmap(memory, &mi);
         return;
+    }
 
     sent_data.data = mi.data;
     sent_data.size = mi.size;
