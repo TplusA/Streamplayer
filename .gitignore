@@ -11,4 +11,5 @@
 /tags
 /types_c.taghl
 /types_py.taghl
+/.ccls
 Makefile.in
