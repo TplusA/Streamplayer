@@ -1103,6 +1103,16 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
         return;
     }
 
+    /*
+     * TODO: We can optimize this path for reduced expected CPU consumption by
+     * referencing the GstBuffer objects (gst_buffer_ref()) and moving them to
+     * a slot per image type ("big" or "preview"). The slots can be processed
+     * by an idle task with a rate limit of one shot per 1 or 2 seconds. This
+     * moves the CPU consumption taken by image processing away from this time
+     * point in a controlled manner, and also compresses multiple image updates
+     * into a single update.
+     */
+
     GstMemory *memory = gst_buffer_peek_memory(buffer, 0);
     GstMapInfo mi;
 
@@ -1112,6 +1122,15 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
         return;
     }
 
+    /*
+     * Pointer comparison should be fine (for filtering) because either we are
+     * still working with the same file---and thus, the same sample buffer---as
+     * before, or we don't. In the former case, the memory at index 0 should
+     * still be at the same location as is was before and we don't need to
+     * process the image data again. In the latter case, the address is likely
+     * to be different, so we need to read out the image data and send them
+     * around. The size comparison provides extra confidence.
+     */
     if(sent_data.data == mi.data && sent_data.size == mi.size)
     {
         gst_memory_unmap(memory, &mi);
