@@ -255,7 +255,7 @@ TEST_CASE_FIXTURE(Fixture, "Partial clear after pop from queue with multi items"
     CHECK(queue->full());
 
     CHECK(queue->clear(1) == 7);
-    const auto removed(std::move(queue->get_removed()));
+    const auto removed(queue->get_removed());
     REQUIRE(removed.size() == 7);
 
     CHECK_FALSE(queue->empty());
