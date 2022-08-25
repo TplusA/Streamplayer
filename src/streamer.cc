@@ -1310,6 +1310,13 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
             return temp;
         });
 
+    msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
+              error->code, g_quark_to_string(error->domain),
+              GST_MESSAGE_SRC_NAME(message));
+    msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
+    msg_error(0, LOG_ERR, "ERROR debug: %s", debug.get());
+    error.noticed();
+
     const auto data_lock(data.lock());
     const auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
@@ -1320,7 +1327,6 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
             g_object_get(p, "current-uri", &temp, nullptr);
             return temp;
         });
-
 
     auto which_stream_failed =
         determine_failed_stream(data, current_uri, *data.url_fifo_LOCK_ME);
@@ -1342,13 +1348,6 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
     const FailureData fdata(StoppedReasons::from_gerror(
             error, StoppedReasons::determine_is_local_error_by_url(current_uri)));
-
-    msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
-              error->code, g_quark_to_string(error->domain),
-              GST_MESSAGE_SRC_NAME(message));
-    msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
-    msg_error(0, LOG_ERR, "ERROR debug: %s", debug.get());
-    error.noticed();
 
     if(foreground_stream_failed)
     {
