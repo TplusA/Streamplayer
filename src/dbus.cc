@@ -196,20 +196,9 @@ playback_set_speed(tdbussplayPlayback *object, GDBusMethodInvocation *invocation
                    double speed_factor, gpointer)
 {
     enter_playback_handler(invocation);
-
-    const bool success =
-        (speed_factor < 0.0 ||
-         (speed_factor > 0.0 && (speed_factor < 1.0 || speed_factor > 1.0)))
-        ? Streamer::fast_winding(speed_factor)
-        : Streamer::fast_winding_stop();
-
-    if(success)
-        tdbus_splay_playback_complete_set_speed(object, invocation);
-    else
-        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
-                                              G_DBUS_ERROR_FAILED,
-                                              "Set speed failed");
-
+    g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+                                          G_DBUS_ERROR_FAILED,
+                                          "Set speed not implemented");
     return TRUE;
 }
 

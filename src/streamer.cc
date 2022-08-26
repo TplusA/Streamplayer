@@ -2334,51 +2334,6 @@ static bool do_stop(StreamerData &data, const char *context,
     return is_stream_state_unchanged;
 }
 
-static bool do_set_speed(StreamerData &data, double factor)
-{
-    if(data.pipeline == nullptr)
-    {
-        msg_error(0, LOG_NOTICE, "Cannot set speed, have no active pipeline");
-        return false;
-    }
-
-    gint64 position_ns;
-    if(!gst_element_query_position(data.pipeline,
-                                   GST_FORMAT_TIME, &position_ns) ||
-       position_ns < 0)
-    {
-        msg_error(0, LOG_ERR,
-                  "Cannot set speed, failed querying stream position");
-        return false;
-    }
-
-    static const auto seek_flags =
-        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                  GST_SEEK_FLAG_KEY_UNIT |
-                                  GST_SEEK_FLAG_SNAP_NEAREST |
-#if GST_CHECK_VERSION(1, 5, 1)
-                                  GST_SEEK_FLAG_TRICKMODE |
-                                  GST_SEEK_FLAG_TRICKMODE_KEY_UNITS |
-#else
-                                  GST_SEEK_FLAG_SKIP |
-#endif /* minimum version 1.5.1 */
-                                  0);
-
-    const bool success =
-        gst_element_seek(data.pipeline, factor, GST_FORMAT_TIME, seek_flags,
-                         GST_SEEK_TYPE_SET, position_ns,
-                         GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
-
-    if(!success)
-        msg_error(0, LOG_ERR, "Failed setting speed");
-    else if(data.current_stream != nullptr)
-        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-            tdbus_splay_playback_emit_speed_changed,
-            data.current_stream->stream_id_, factor);
-
-    return success;
-}
-
 static StreamerData streamer_data;
 
 int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
@@ -2729,30 +2684,8 @@ bool Streamer::seek(int64_t position, const char *units)
 
     msg_info("Seek to time %" PRId64 " ns", position);
 
-    if(!gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
-                                seek_flags, position))
-        return false;
-
-    if(streamer_data.current_stream != nullptr)
-        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-            tdbus_splay_playback_emit_speed_changed,
-            streamer_data.current_stream->stream_id_, 1.0);
-
-    return true;
-}
-
-bool Streamer::fast_winding(double factor)
-{
-    msg_info("Setting playback speed to %f", factor);
-    return streamer_data.locked(
-                [&factor] (StreamerData &d) { return do_set_speed(d, factor); });
-}
-
-bool Streamer::fast_winding_stop()
-{
-    msg_info("Playing at regular speed");
-    return streamer_data.locked(
-                [] (StreamerData &d) { return do_set_speed(d, 1.0); });
+    return !!gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
+                                     seek_flags, position);
 }
 
 Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,

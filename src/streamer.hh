@@ -45,8 +45,6 @@ bool start(const char *reason);
 bool stop(const char *reason);
 bool pause(const char *reason);
 bool seek(int64_t position, const char *units);
-bool fast_winding(double factor);
-bool fast_winding_stop();
 PlayStatus next(bool skip_only_if_not_stopped, uint32_t &out_skipped_id, uint32_t &out_next_id);
 void clear_queue(int keep_first_n_entries, GVariantWrapper &queued, GVariantWrapper &dropped);
 bool is_playing();
