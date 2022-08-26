@@ -2616,6 +2616,26 @@ static int64_t compute_position_from_percentage(const int64_t percentage,
     return -1;
 }
 
+static inline gint64 query_seek_duration(GstElement *pipeline)
+{
+    if(pipeline == nullptr)
+        return INT64_MIN;
+
+    GstQuery *q = gst_query_new_seeking(GST_FORMAT_TIME);
+    if(!gst_element_query(pipeline, q))
+    {
+        gst_query_unref(q);
+        return INT64_MIN;
+    }
+
+    gboolean is_seekable;
+    gint64 duration_ns;
+    gst_query_parse_seeking(q, nullptr, &is_seekable, nullptr, &duration_ns);
+    gst_query_unref(q);
+
+    return is_seekable && duration_ns > 0 ? duration_ns : INT64_MIN;
+}
+
 bool Streamer::seek(int64_t position, const char *units)
 {
     if(position < 0)
@@ -2623,8 +2643,6 @@ bool Streamer::seek(int64_t position, const char *units)
         msg_error(EINVAL, LOG_ERR, "Negative seeks not supported");
         return false;
     }
-
-    gint64 duration_ns;
 
     auto data_lock(streamer_data.lock());
 
@@ -2634,22 +2652,12 @@ bool Streamer::seek(int64_t position, const char *units)
         return false;
     }
 
-    if(streamer_data.pipeline == nullptr ||
-       !gst_element_query_duration(streamer_data.pipeline,
-                                   GST_FORMAT_TIME, &duration_ns) ||
-       duration_ns < 0)
-        duration_ns = INT64_MIN;
-
+    const gint64 duration_ns = query_seek_duration(streamer_data.pipeline);
     if(duration_ns < 0)
     {
         msg_error(EINVAL, LOG_ERR, "Cannot seek, duration unknown");
         return false;
     }
-
-    static const auto seek_flags =
-        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                  GST_SEEK_FLAG_KEY_UNIT |
-                                  GST_SEEK_FLAG_SNAP_NEAREST);
 
     if(units == std::string("%"))
         position = compute_position_from_percentage(position, duration_ns);
@@ -2684,8 +2692,13 @@ bool Streamer::seek(int64_t position, const char *units)
 
     msg_info("Seek to time %" PRId64 " ns", position);
 
-    return !!gst_element_seek_simple(streamer_data.pipeline, GST_FORMAT_TIME,
-                                     seek_flags, position);
+    auto *seek =
+        gst_event_new_seek(1.0, GST_FORMAT_TIME,
+                           static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
+                                                     GST_SEEK_FLAG_ACCURATE),
+                           GST_SEEK_TYPE_SET, position,
+                           GST_SEEK_TYPE_SET, GST_CLOCK_TIME_NONE);
+    return !!gst_element_send_event(streamer_data.pipeline, seek);
 }
 
 Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
