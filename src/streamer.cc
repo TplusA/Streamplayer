@@ -2253,7 +2253,9 @@ static int create_playbin(StreamerData &data, const char *context)
     data.bus_watch = gst_bus_add_watch(GST_ELEMENT_BUS(data.pipeline),
                                        bus_message_handler, &data);
 
-    g_object_set(data.pipeline, "flags", GST_PLAY_FLAG_AUDIO, nullptr);
+    g_object_set(data.pipeline, "flags",
+                 GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_BUFFERING,
+                 nullptr);
 
     log_assert(data.signal_handler_ids.empty());
     data.signal_handler_ids.push_back(
