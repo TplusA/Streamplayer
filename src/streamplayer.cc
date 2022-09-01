@@ -55,8 +55,6 @@ struct parameters
     gboolean run_in_foreground;
     gboolean connect_to_system_dbus;
     gint soup_http_blocksize_kb;
-    gint alsa_latency_ms;
-    gint alsa_buffer_ms;
 };
 
 static void show_version_info(void)
@@ -120,8 +118,6 @@ static int process_command_line(int argc, char *argv[],
     parameters->run_in_foreground = FALSE;
     parameters->connect_to_system_dbus = FALSE;
     parameters->soup_http_blocksize_kb = 0;
-    parameters->alsa_latency_ms = 0;
-    parameters->alsa_buffer_ms = 0;
 
     static bool show_version = false;
     gchar *verbose_level_name_raw = nullptr;
@@ -144,12 +140,6 @@ static int process_command_line(int argc, char *argv[],
         { "soup-blocksize", 0, 0,
           G_OPTION_ARG_INT, &parameters->soup_http_blocksize_kb,
           "Block size in kiB for GstSoupHTTPSrc elements", nullptr },
-        { "alsa-latency", 0, 0,
-          G_OPTION_ARG_INT, &parameters->alsa_latency_ms,
-          "ALSA latency in ms", nullptr },
-        { "alsa-buffer", 0, 0,
-          G_OPTION_ARG_INT, &parameters->alsa_buffer_ms,
-          "ALSA buffer size in ms", nullptr },
         {}
     };
 
@@ -197,20 +187,6 @@ static int process_command_line(int argc, char *argv[],
     {
         fprintf(stderr, "Invalid block size %d.\n",
                 parameters->soup_http_blocksize_kb);
-        return -1;
-    }
-
-    if(parameters->alsa_latency_ms < 0)
-    {
-        fprintf(stderr, "Invalid ALSA latency %d.\n",
-                parameters->alsa_latency_ms);
-        return -1;
-    }
-
-    if(parameters->alsa_buffer_ms < 0)
-    {
-        fprintf(stderr, "Invalid ALSA buffer size %d.\n",
-                parameters->alsa_buffer_ms);
         return -1;
     }
 
@@ -264,21 +240,10 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    if(parameters.soup_http_blocksize_kb <= 0 &&
-       parameters.alsa_latency_ms <= 0 && parameters.alsa_buffer_ms <= 0)
-        msg_vinfo(MESSAGE_LEVEL_NORMAL,
-                  "Using GStreamer default buffer settings");
-    else
-    {
-        show_buffer_parameter("SOUP block size ", "%s: %d kiB", parameters.soup_http_blocksize_kb);
-        show_buffer_parameter("ALSA latency    ", "%s: %d ms", parameters.alsa_latency_ms);
-        show_buffer_parameter("ALSA buffer size", "%s: %d ms", parameters.alsa_buffer_ms);
-    }
+    show_buffer_parameter("SOUP block size ", "%s: %d kiB", parameters.soup_http_blocksize_kb);
 
     if(Streamer::setup(globals.loop,
-                       parameters.soup_http_blocksize_kb * 1024U,
-                       parameters.alsa_latency_ms * 1000U,
-                       parameters.alsa_buffer_ms * 1000U) < 0)
+                       parameters.soup_http_blocksize_kb * 1024U) < 0)
         return EXIT_FAILURE;
 
     TDBus::setup(TDBus::session_bus());

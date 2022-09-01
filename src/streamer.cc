@@ -170,8 +170,6 @@ class StreamerData
     guint bus_watch;
     guint progress_watcher;
     guint soup_http_block_size;
-    gint64 alsa_latency_time_us;
-    gint64 alsa_buffer_time_us;
     std::vector<gulong> signal_handler_ids;
 
     std::unique_ptr<PlayQueue::Queue<PlayQueue::Item>> url_fifo_LOCK_ME;
@@ -212,8 +210,6 @@ class StreamerData
         bus_watch(0),
         progress_watcher(0),
         soup_http_block_size(0),
-        alsa_latency_time_us(0),
-        alsa_buffer_time_us(0),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
         is_failing(false),
         previous_time{},
@@ -2067,40 +2063,6 @@ static void handle_request_state_message(GstMessage *message, StreamerData &data
 }
 
 /*
- * GLib signal callback: playbin3 "element-setup".
- */
-static void setup_element(GstElement *playbin,
-                          GstElement *source, gpointer user_data)
-{
-    const auto &data = *static_cast<const StreamerData *>(user_data);
-
-    if(data.is_failing)
-        return;
-
-    static const std::string alsasink_name("GstAlsaSink");
-
-    if(G_OBJECT_TYPE_NAME(source) == alsasink_name)
-    {
-        BUG_IF(data.alsa_latency_time_us < 0, "Invalid ALSA latency time");
-        BUG_IF(data.alsa_buffer_time_us < 0, "Invalid ALSA buffer time");
-
-        if(data.alsa_latency_time_us > 0 && data.alsa_buffer_time_us > 0)
-            g_object_set(source,
-                         "latency-time", data.alsa_latency_time_us,
-                         "buffer-time", data.alsa_buffer_time_us,
-                         nullptr);
-        else if(data.alsa_latency_time_us > 0)
-            g_object_set(source,
-                         "latency-time", data.alsa_latency_time_us,
-                         nullptr);
-        else if(data.alsa_buffer_time_us > 0)
-            g_object_set(source,
-                         "buffer-time", data.alsa_buffer_time_us,
-                         nullptr);
-    }
-}
-
-/*
  * GLib signal callback: playbin3 "source-setup".
  */
 static void setup_source_element(GstElement *playbin,
@@ -2262,13 +2224,10 @@ static int create_playbin(StreamerData &data, const char *context)
         g_signal_connect(data.pipeline, "about-to-finish",
                          G_CALLBACK(queue_stream_from_url_fifo), &data));
 
-    data.signal_handler_ids.push_back(
-        g_signal_connect(data.pipeline, "source-setup",
-                         G_CALLBACK(setup_source_element), &data));
-
-    data.signal_handler_ids.push_back(
-        g_signal_connect(data.pipeline, "element-setup",
-                         G_CALLBACK(setup_element), &data));
+    if(data.soup_http_block_size > 0)
+        data.signal_handler_ids.push_back(
+            g_signal_connect(data.pipeline, "source-setup",
+                            G_CALLBACK(setup_source_element), &data));
 
     set_stream_state(data.pipeline, GST_STATE_READY, context);
 
@@ -2338,12 +2297,9 @@ static bool do_stop(StreamerData &data, const char *context,
 
 static StreamerData streamer_data;
 
-int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
-                    gint64 alsa_latency_time_us, gint64 alsa_buffer_time_us)
+int Streamer::setup(GMainLoop *loop, guint soup_http_block_size)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
-    streamer_data.alsa_latency_time_us = alsa_latency_time_us;
-    streamer_data.alsa_buffer_time_us = alsa_buffer_time_us;
 
     if(create_playbin(streamer_data, "setup") < 0)
         return -1;
