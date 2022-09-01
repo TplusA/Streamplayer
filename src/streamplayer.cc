@@ -126,20 +126,32 @@ static int process_command_line(int argc, char *argv[],
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
     GOptionEntry entries[] =
     {
-        { "version", 'V', 0, G_OPTION_ARG_NONE, &show_version,
-          "Print version information to stdout.", nullptr },
-        { "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
-          "Run in foreground, don't run as daemon.", nullptr },
-        { "verbose", 'v', 0, G_OPTION_ARG_STRING, &verbose_level_name_raw,
-          "Set verbosity level to given level.", nullptr },
-        { "quiet", 'q', 0, G_OPTION_ARG_NONE, &verbose_quiet,
-          "Short for \"--verbose quite\".", nullptr},
-        { "system-dbus", 's', 0, G_OPTION_ARG_NONE,
-          &parameters->connect_to_system_dbus,
-          "Connect to system D-Bus instead of session D-Bus.", nullptr },
-        { "soup-blocksize", 0, 0,
-          G_OPTION_ARG_INT, &parameters->soup_http_blocksize_kb,
-          "Block size in kiB for GstSoupHTTPSrc elements", nullptr },
+        {
+            "version", 'V', 0, G_OPTION_ARG_NONE, &show_version,
+            "Print version information to stdout.", nullptr
+        },
+        {
+            "fg", 'f', 0, G_OPTION_ARG_NONE, &parameters->run_in_foreground,
+            "Run in foreground, don't run as daemon.", nullptr
+        },
+        {
+            "verbose", 'v', 0, G_OPTION_ARG_STRING, &verbose_level_name_raw,
+            "Set verbosity level to given level.", nullptr
+        },
+        {
+            "quiet", 'q', 0, G_OPTION_ARG_NONE, &verbose_quiet,
+            "Short for \"--verbose quite\".", nullptr
+        },
+        {
+            "system-dbus", 's', 0, G_OPTION_ARG_NONE,
+            &parameters->connect_to_system_dbus,
+            "Connect to system D-Bus instead of session D-Bus.", nullptr
+        },
+        {
+            "soup-blocksize", 0, 0,
+            G_OPTION_ARG_INT, &parameters->soup_http_blocksize_kb,
+            "Block size in kiB for GstSoupHTTPSrc elements", nullptr
+        },
         {}
     };
 
