@@ -35,7 +35,7 @@ enum class PlayStatus
     PAUSED,
 };
 
-int setup(GMainLoop *loop, guint soup_http_block_size);
+int setup(GMainLoop *loop, guint soup_http_block_size, bool boost_streaming_thread);
 void shutdown(GMainLoop *loop);
 
 void activate();

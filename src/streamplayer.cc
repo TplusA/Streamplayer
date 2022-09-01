@@ -55,6 +55,7 @@ struct parameters
     gboolean run_in_foreground;
     gboolean connect_to_system_dbus;
     gint soup_http_blocksize_kb;
+    gboolean disable_boost_streaming_thread;
 };
 
 static void show_version_info(void)
@@ -118,6 +119,7 @@ static int process_command_line(int argc, char *argv[],
     parameters->run_in_foreground = FALSE;
     parameters->connect_to_system_dbus = FALSE;
     parameters->soup_http_blocksize_kb = 0;
+    parameters->disable_boost_streaming_thread = FALSE;
 
     static bool show_version = false;
     gchar *verbose_level_name_raw = nullptr;
@@ -151,6 +153,11 @@ static int process_command_line(int argc, char *argv[],
             "soup-blocksize", 0, 0,
             G_OPTION_ARG_INT, &parameters->soup_http_blocksize_kb,
             "Block size in kiB for GstSoupHTTPSrc elements", nullptr
+        },
+        {
+            "disable-realtime", 0, 0, G_OPTION_ARG_NONE,
+            &parameters->disable_boost_streaming_thread,
+            "Do not use realtime priority for streaming threads", nullptr
         },
         {}
     };
@@ -255,7 +262,8 @@ int main(int argc, char *argv[])
     show_buffer_parameter("SOUP block size ", "%s: %d kiB", parameters.soup_http_blocksize_kb);
 
     if(Streamer::setup(globals.loop,
-                       parameters.soup_http_blocksize_kb * 1024U) < 0)
+                       parameters.soup_http_blocksize_kb * 1024U,
+                       !parameters.disable_boost_streaming_thread) < 0)
         return EXIT_FAILURE;
 
     TDBus::setup(TDBus::session_bus());

@@ -170,6 +170,7 @@ class StreamerData
     guint bus_watch;
     guint progress_watcher;
     guint soup_http_block_size;
+    bool boost_streaming_thread;
     std::vector<gulong> signal_handler_ids;
 
     std::unique_ptr<PlayQueue::Queue<PlayQueue::Item>> url_fifo_LOCK_ME;
@@ -210,6 +211,7 @@ class StreamerData
         bus_watch(0),
         progress_watcher(0),
         soup_http_block_size(0),
+        boost_streaming_thread(true),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
         is_failing(false),
         previous_time{},
@@ -2199,6 +2201,56 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
     return G_SOURCE_CONTINUE;
 }
 
+static GstBusSyncReply
+bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
+{
+    if(GST_MESSAGE_TYPE(msg) != GST_MESSAGE_STREAM_STATUS)
+        return GST_BUS_PASS;
+
+    const GValue *val = gst_message_get_stream_status_object(msg);
+    if(G_VALUE_TYPE(val) != GST_TYPE_TASK)
+        return GST_BUS_PASS;
+
+    GstStreamStatusType status_type;
+    GstElement *owner;
+    gst_message_parse_stream_status(msg, &status_type, &owner);
+
+    switch(status_type)
+    {
+      case GST_STREAM_STATUS_TYPE_ENTER:
+        break;
+
+      case GST_STREAM_STATUS_TYPE_CREATE:
+      case GST_STREAM_STATUS_TYPE_LEAVE:
+      case GST_STREAM_STATUS_TYPE_DESTROY:
+      case GST_STREAM_STATUS_TYPE_START:
+      case GST_STREAM_STATUS_TYPE_PAUSE:
+      case GST_STREAM_STATUS_TYPE_STOP:
+        return GST_BUS_PASS;
+    }
+
+    const auto *task = static_cast<GstTask *>(g_value_get_object(val));
+
+    if(strcmp(GST_OBJECT_NAME(task), "aqueue:src") == 0 ||
+       strncmp(GST_OBJECT_NAME(task), "multiqueue", 10) == 0)
+    {
+        struct sched_param sp;
+        sp.sched_priority = sched_get_priority_max(SCHED_RR);
+
+        msg_info("Set priority of task %s [%08lx] to %d\n",
+                 GST_OBJECT_NAME(task), pthread_self(), sp.sched_priority);
+
+        const int res = pthread_setschedparam(pthread_self(), SCHED_RR, &sp);
+        if(res != 0)
+            msg_error(res, LOG_NOTICE, "pthread_setschedparam() failed");
+    }
+    else
+        msg_info("Keep priority of task %s at default [%08lx]",
+                 GST_OBJECT_NAME(task), pthread_self());
+
+    return GST_BUS_PASS;
+}
+
 static int create_playbin(StreamerData &data, const char *context)
 {
     data.pipeline = gst_element_factory_make("playbin3", "play");
@@ -2214,6 +2266,10 @@ static int create_playbin(StreamerData &data, const char *context)
 
     data.bus_watch = gst_bus_add_watch(GST_ELEMENT_BUS(data.pipeline),
                                        bus_message_handler, &data);
+
+    if(data.boost_streaming_thread)
+        gst_bus_set_sync_handler(GST_ELEMENT_BUS(data.pipeline),
+                                 bus_sync_message_handler, nullptr, nullptr);
 
     g_object_set(data.pipeline, "flags",
                  GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_BUFFERING,
@@ -2297,9 +2353,11 @@ static bool do_stop(StreamerData &data, const char *context,
 
 static StreamerData streamer_data;
 
-int Streamer::setup(GMainLoop *loop, guint soup_http_block_size)
+int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
+                    bool boost_streaming_thread)
 {
     streamer_data.soup_http_block_size = soup_http_block_size;
+    streamer_data.boost_streaming_thread = boost_streaming_thread;
 
     if(create_playbin(streamer_data, "setup") < 0)
         return -1;
