@@ -2157,7 +2157,7 @@ static int create_playbin(StreamerData &data, const char *context)
 
     if(data.pipeline == nullptr)
     {
-        msg_out_of_memory("playbin");
+        msg_out_of_memory("playbin3");
         return -1;
     }
 
