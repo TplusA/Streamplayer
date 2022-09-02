@@ -98,59 +98,6 @@ struct FailureData
     }
 };
 
-class BufferUnderrunFilter
-{
-  public:
-    enum UpdateResult
-    {
-        EVERYTHING_IS_GOING_ACCORDING_TO_PLAN,
-        UNDERRUN_DETECTED,
-        FILLING_UP,
-        RECOVERED_A_BIT,
-        RECOVERED_100,
-    };
-
-  private:
-    static constexpr unsigned int RECOVERY_COUNT = 5;
-    unsigned int recovered_count_;
-
-  public:
-    BufferUnderrunFilter(const BufferUnderrunFilter &) = delete;
-    BufferUnderrunFilter(BufferUnderrunFilter &&) = default;
-    BufferUnderrunFilter &operator=(const BufferUnderrunFilter &) = delete;
-    BufferUnderrunFilter &operator=(BufferUnderrunFilter &&) = default;
-
-    explicit BufferUnderrunFilter():
-        recovered_count_(0)
-    {}
-
-    void reset() { recovered_count_ = 0; }
-
-    UpdateResult update(uint8_t percent)
-    {
-        if(percent > 0)
-        {
-            if(percent >= 100)
-            {
-                reset();
-                return RECOVERED_100;
-            }
-
-            if(recovered_count_ == 0)
-                return EVERYTHING_IS_GOING_ACCORDING_TO_PLAN;
-
-            --recovered_count_;
-
-            return recovered_count_ == 0 ? RECOVERED_A_BIT : FILLING_UP;
-        }
-        else
-        {
-            recovered_count_ = RECOVERY_COUNT;
-            return UNDERRUN_DETECTED;
-        }
-    }
-};
-
 enum class BufferingState
 {
     NOT_BUFFERING,
@@ -196,7 +143,6 @@ class StreamerData
     GstClockTime next_allowed_tag_update_time;
 
     bool stream_has_just_started;
-    BufferUnderrunFilter stream_buffer_underrun_filter;
     BufferingState stream_buffering_state;
 
     Streamer::PlayStatus supposed_play_status;
@@ -361,6 +307,7 @@ static void emit_stopped_with_error(TDBus::Iface<tdbussplayPlayback> &playback_i
                                     std::unique_ptr<PlayQueue::Item> failed_stream)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
+    data.stream_buffering_state = BufferingState::NOT_BUFFERING;
 
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
@@ -467,7 +414,6 @@ static void do_stop_pipeline_and_recover_from_error(
                             data.fail.reason, std::move(data.current_stream));
 
     data.stream_has_just_started = false;
-    data.stream_buffer_underrun_filter.reset();
     data.is_failing = false;
     data.fail.reset();
 }
@@ -1373,7 +1319,6 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
                                     data, *data.url_fifo_LOCK_ME,
                                     fdata.reason, std::move(item));
             data.stream_has_just_started = false;
-            data.stream_buffer_underrun_filter.reset();
             data.is_failing = false;
             data.current_stream.reset();
             data.fail.reset();
@@ -1610,7 +1555,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
            pending == GST_STATE_PLAYING)
         {
             data.stream_has_just_started = true;
-            data.stream_buffer_underrun_filter.reset();
+            data.stream_buffering_state = BufferingState::NOT_BUFFERING;
         }
 
         break;
@@ -1885,16 +1830,16 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     switch(mode)
     {
       case GST_BUFFERING_STREAM:
-        mode_name = "a small amount of data is buffered";
+        mode_name = "buffering";
         break;
       case GST_BUFFERING_DOWNLOAD:
-        mode_name = "the stream is being downloaded";
+        mode_name = "downloading";
         break;
       case GST_BUFFERING_TIMESHIFT:
-        mode_name = "the stream is being downloaded in a ringbuffer";
+        mode_name = "timeshift";
         break;
       case GST_BUFFERING_LIVE:
-        mode_name = "the stream is a live stream";
+        mode_name = "buffering live";
         break;
       default:
         mode_name = "<unknown buffering mode>";
@@ -1903,68 +1848,11 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
 
     msg_vinfo(MESSAGE_LEVEL_NORMAL,
               "Buffer level: %d%%, %s, avg in/out rates %d/%d, "
-              "buffered time %" G_GINT64_FORMAT " ms",
+              "%" G_GINT64_FORMAT " ms left",
               percent, mode_name, avg_in, avg_out, buffering_left);
 
-    switch(data.stream_buffer_underrun_filter.update(percent))
+    if(percent >= 100)
     {
-      case BufferUnderrunFilter::EVERYTHING_IS_GOING_ACCORDING_TO_PLAN:
-        break;
-
-      case BufferUnderrunFilter::UNDERRUN_DETECTED:
-        {
-            msg_error(0, LOG_WARNING, "Buffer underrun detected");
-            const GstState state = GST_STATE(data.pipeline);
-
-            switch(state)
-            {
-              case GST_STATE_PLAYING:
-                msg_info("Pausing stream to fill buffer");
-                data.stream_buffering_state =
-                    set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer")
-                    ? BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING
-                    : BufferingState::NOT_BUFFERING;
-                break;
-
-              case GST_STATE_PAUSED:
-                msg_info("Stream already paused, filling buffer");
-
-                switch(data.stream_buffering_state)
-                {
-                  case BufferingState::NOT_BUFFERING:
-                    data.stream_buffering_state = BufferingState::JOINED_PAUSE_FOR_BUFFERING;
-                    break;
-
-                  case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-                  case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-                    break;
-                }
-
-                break;
-
-              case GST_STATE_READY:
-                data.stream_buffering_state = BufferingState::NOT_BUFFERING;
-                break;
-
-              case GST_STATE_NULL:
-              case GST_STATE_VOID_PENDING:
-                BUG("Unexpected stream state %s while hitting buffer underrun",
-                    gst_element_state_get_name(state));
-                break;
-            }
-        }
-
-        break;
-
-      case BufferUnderrunFilter::FILLING_UP:
-        msg_info("Buffer filling up (%d%%)", percent);
-        break;
-
-      case BufferUnderrunFilter::RECOVERED_A_BIT:
-        msg_info("Buffer recovered (%d%%)", percent);
-        break;
-
-      case BufferUnderrunFilter::RECOVERED_100:
         msg_info("Buffer filled");
 
         switch(data.stream_buffering_state)
@@ -1989,7 +1877,25 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
         }
 
         data.stream_buffering_state = BufferingState::NOT_BUFFERING;
-        break;
+    }
+    else
+    {
+        switch(data.stream_buffering_state)
+        {
+          case BufferingState::NOT_BUFFERING:
+            msg_error(0, LOG_WARNING, "Buffer underrun detected");
+            data.stream_buffering_state =
+                set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer")
+                ? BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING
+                : BufferingState::JOINED_PAUSE_FOR_BUFFERING;
+            break;
+
+          case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+          case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+            if(percent == 0)
+                msg_info("Buffer underrun while buffering");
+            break;
+        }
     }
 
     switch(data.stream_buffering_state)
