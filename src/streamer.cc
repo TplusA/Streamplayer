@@ -1386,6 +1386,16 @@ static gboolean report_progress(gpointer user_data)
         return G_SOURCE_REMOVE;
     }
 
+    switch(data.stream_buffering_state)
+    {
+      case BufferingState::NOT_BUFFERING:
+        break;
+
+      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
+      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+        return G_SOURCE_CONTINUE;
+    }
+
     const GstState state = GST_STATE(data.pipeline);
 
     switch(state)
@@ -1394,12 +1404,15 @@ static gboolean report_progress(gpointer user_data)
       case GST_STATE_PAUSED:
         query_seconds(gst_element_query_position, data.pipeline,
                       data.current_time.position_s);
+        query_seconds(gst_element_query_duration, data.pipeline,
+                      data.current_time.duration_s);
         break;
 
       case GST_STATE_READY:
       case GST_STATE_NULL:
       case GST_STATE_VOID_PENDING:
         data.current_time.position_s = INT64_MAX;
+        data.current_time.duration_s = INT64_MAX;
         break;
     }
 
@@ -1913,18 +1926,6 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     }
 }
 
-static void handle_stream_duration(GstMessage *message, StreamerData &data)
-{
-    msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
-              __func__, GST_MESSAGE_SRC_NAME(message));
-
-    data.locked([] (StreamerData &d)
-    {
-        query_seconds(gst_element_query_duration, d.pipeline,
-                      d.current_time.duration_s);
-    });
-}
-
 static void handle_stream_duration_async(GstMessage *message, StreamerData &data)
 {
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
@@ -2020,10 +2021,6 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         handle_buffering(message, data);
         break;
 
-      case GST_MESSAGE_DURATION_CHANGED:
-        handle_stream_duration(message, data);
-        break;
-
       case GST_MESSAGE_ASYNC_DONE:
         handle_stream_duration_async(message, data);
         break;
@@ -2050,6 +2047,7 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 
       case GST_MESSAGE_NEW_CLOCK:
       case GST_MESSAGE_STREAM_STATUS:
+      case GST_MESSAGE_DURATION_CHANGED:
       case GST_MESSAGE_RESET_TIME:
       case GST_MESSAGE_ELEMENT:
       case GST_MESSAGE_NEED_CONTEXT:
