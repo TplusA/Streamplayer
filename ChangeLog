@@ -1,3 +1,23 @@
+2022-09-02  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.1 released.
+
+	* Playback: Avoid stuttering and dropouts by turning the streaming
+	  threads into real-time threads. Can be disabled with command line
+	  option --disable-realtime.
+
+	* Playback: Improve buffering.
+
+	* Playback: Improve seeking.
+
+	* Playback: Improve times stamp handling and progress reports.
+
+	* D-Bus: Drop support for setting playback speed. This feature was
+	  never used, and probably never will be.
+	
+	* Command line: Remove options for tweaking ALSA buffer parameters.
+	  These setting confuse GStreamer and are best left untouched.
+
 2022-08-16  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.0 released.
