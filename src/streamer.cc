@@ -766,9 +766,6 @@ static bool play_next_stream(StreamerData &data,
     return retval;
 }
 
-static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
-                                                 const char *context);
-
 /*
  * GLib signal callback: playbin3 "about-to-finish".
  */
@@ -780,13 +777,9 @@ static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
     if(data.is_failing)
         return;
 
-    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-    queue_stream_from_url_fifo__unlocked(data, "need next stream");
-}
+    static const char context[] = "need next stream";
 
-static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
-                                                 const char *context)
-{
+    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
     bool is_next_current;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
                                              *data.url_fifo_LOCK_ME,
@@ -794,20 +787,21 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
 
     if(data.current_stream == nullptr && next_stream == nullptr)
     {
-        BUG("Having nothing to play, have nothing in queue, "
-            "but GStreamer is asking for more");
+        BUG("Having nothing in queue, GStreamer is asking for more, "
+            "but currently playing nothing [%s]", context);
         return;
     }
 
     if(next_stream == nullptr)
     {
         /* we are done here */
+        log_assert(data.current_stream != nullptr);
         data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
-        return;
     }
-
-    play_next_stream(data, is_next_current ? nullptr : data.current_stream.get(),
-                     *next_stream, GST_STATE_NULL, false, true, context);
+    else
+        play_next_stream(data,
+                         is_next_current ? nullptr : data.current_stream.get(),
+                         *next_stream, GST_STATE_NULL, false, true, context);
 }
 
 static void handle_end_of_stream(GstMessage *message, StreamerData &data)
@@ -2831,19 +2825,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                 [&item, &keep_items]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
-                    const auto queue_now = streamer_data.current_stream != nullptr && fifo.empty();
-
-                    // cppcheck-suppress shadowVar
-                    const bool result = fifo.push(std::move(item), keep_items) != 0;
-
-                    if(queue_now)
-                    {
-                        queue_stream_from_url_fifo__unlocked(
-                                streamer_data, "immediately queued on push");
-                        set_stream_state(streamer_data.pipeline,
-                                         GST_STATE_PLAYING, "continue");
-                    }
-                    return result;
+                    return fifo.push(std::move(item), keep_items) != 0;
                 });
 }
 
