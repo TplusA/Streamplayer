@@ -1819,6 +1819,17 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    switch(data.supposed_play_status)
+    {
+      case Streamer::PlayStatus::STOPPED:
+        msg_info("Ignoring stray buffering message from GStreamr");
+        return;
+
+      case Streamer::PlayStatus::PLAYING:
+      case Streamer::PlayStatus::PAUSED:
+        break;
+    }
+
     gint percent = -1;
     gst_message_parse_buffering(message, &percent);
 
