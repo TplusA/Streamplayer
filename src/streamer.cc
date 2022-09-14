@@ -766,20 +766,9 @@ static bool play_next_stream(StreamerData &data,
     return retval;
 }
 
-/*
- * GLib signal callback: playbin3 "about-to-finish".
- */
-static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
+static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
+                                                 const char *context)
 {
-    auto &data = *static_cast<StreamerData *>(user_data);
-    auto data_lock(data.lock());
-
-    if(data.is_failing)
-        return;
-
-    static const char context[] = "need next stream";
-
-    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
     bool is_next_current;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
                                              *data.url_fifo_LOCK_ME,
@@ -802,6 +791,23 @@ static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
         play_next_stream(data,
                          is_next_current ? nullptr : data.current_stream.get(),
                          *next_stream, GST_STATE_NULL, false, true, context);
+}
+
+/*
+ * GLib signal callback: playbin3 "about-to-finish".
+ */
+static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
+{
+    MSG_TRACE_FORMAT("%s", "ABOUT-TO-FINISH");
+
+    auto &data = *static_cast<StreamerData *>(user_data);
+    auto data_lock(data.lock());
+
+    if(data.is_failing)
+        return;
+
+    auto fifo_lock(data.url_fifo_LOCK_ME->lock());
+    queue_stream_from_url_fifo__unlocked(data, "need next stream");
 }
 
 static void handle_end_of_stream(GstMessage *message, StreamerData &data)
@@ -2837,7 +2843,15 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                 [&item, &keep_items]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
-                    return fifo.push(std::move(item), keep_items) != 0;
+                    if(fifo.push(std::move(item), keep_items) == 0)
+                        return false;
+
+                    if(streamer_data.current_stream != nullptr &&
+                       streamer_data.current_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_PHASE_OUT)
+                        queue_stream_from_url_fifo__unlocked(streamer_data,
+                                                             "immediately queued on push");
+
+                    return true;
                 });
 }
 
