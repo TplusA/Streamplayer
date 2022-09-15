@@ -1,3 +1,15 @@
+2022-09-15  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.2 released.
+
+	* Playback: Handle URIs which are queued later than requested by
+	  GStreamer's gapless engine. This avoids stops after short streams,
+	  thus enhances gapless playback.
+
+	* GStreamer: Ignore buffering messages while stopped to work around a
+	  minor bug in GStreamer after stopping playback. This allows proper
+	  stop and pause modes on our side.
+
 2022-09-02  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.1 released.
