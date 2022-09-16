@@ -100,7 +100,7 @@ static int setup(const struct parameters *parameters)
     {
         openlog("streamplayer", LOG_PID, LOG_DAEMON);
 
-        if(daemon(0, 0) < 0)
+        if(daemon(0, 1) < 0)
         {
             msg_error(errno, LOG_EMERG, "Failed to run as daemon");
             return -1;
