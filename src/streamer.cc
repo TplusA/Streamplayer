@@ -1451,7 +1451,11 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
             return ActivateStreamResult::ALREADY_ACTIVE;
 
           case 2:
-            data.current_stream->set_state(PlayQueue::ItemState::ACTIVE_NOW_PLAYING);
+            if(data.url_fifo_LOCK_ME->locked_rw([] (auto &fifo) { return fifo.empty(); }))
+                data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
+            else
+                data.current_stream->set_state(PlayQueue::ItemState::ACTIVE_NOW_PLAYING);
+
             return ActivateStreamResult::ACTIVATED;
 
           default:
