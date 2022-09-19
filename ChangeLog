@@ -1,3 +1,12 @@
+2022-09-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.3 released.
+
+	* Playback: One more fix for gapless playback of short streams.
+
+	* Misc: Don't close file descriptors on fork so that GStreamer debug
+	  logs can be captured without recompiling the player.
+
 2022-09-15  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.2 released.
