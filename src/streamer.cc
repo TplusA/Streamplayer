@@ -131,6 +131,7 @@ class StreamerData
      * the item.
      */
     std::unique_ptr<PlayQueue::Item> current_stream;
+    bool is_next_stream_requested;
 
     bool is_failing;
     FailureData fail;
@@ -159,6 +160,7 @@ class StreamerData
         soup_http_block_size(0),
         boost_streaming_thread(true),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
+        is_next_stream_requested(false),
         is_failing(false),
         previous_time{},
         current_time{},
@@ -414,6 +416,7 @@ static void do_stop_pipeline_and_recover_from_error(
                             data.fail.reason, std::move(data.current_stream));
 
     data.stream_has_just_started = false;
+    data.is_next_stream_requested = false;
     data.is_failing = false;
     data.fail.reset();
 }
@@ -438,6 +441,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
 static void schedule_error_recovery(StreamerData &data,
                                     StoppedReasons::Reason reason)
 {
+    data.is_next_stream_requested = false;
     data.is_failing = true;
     data.fail.reason = reason;
     data.fail.clear_fifo_on_error = false;
@@ -754,6 +758,7 @@ static bool play_next_stream(StreamerData &data,
 
     g_object_set(data.pipeline, "uri",
                  next_stream.get_url_for_playing().c_str(), nullptr);
+    data.is_next_stream_requested = false;
 
     if(is_prefetching_for_gapless)
         return true;
@@ -769,6 +774,9 @@ static bool play_next_stream(StreamerData &data,
 static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
                                                  const char *context)
 {
+    BUG_IF(!data.is_next_stream_requested,
+           "GStreamer has not requested the next stream yet [%s]", context);
+
     bool is_next_current;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
                                              *data.url_fifo_LOCK_ME,
@@ -805,6 +813,8 @@ static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 
     if(data.is_failing)
         return;
+
+    data.is_next_stream_requested = true;
 
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
     queue_stream_from_url_fifo__unlocked(data, "need next stream");
@@ -1319,6 +1329,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
                                     data, *data.url_fifo_LOCK_ME,
                                     fdata.reason, std::move(item));
             data.stream_has_just_started = false;
+            data.is_next_stream_requested = false;
             data.is_failing = false;
             data.current_stream.reset();
             data.fail.reset();
@@ -2850,7 +2861,8 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                     if(fifo.push(std::move(item), keep_items) == 0)
                         return false;
 
-                    if(streamer_data.current_stream != nullptr &&
+                    if(streamer_data.is_next_stream_requested &&
+                       streamer_data.current_stream != nullptr &&
                        streamer_data.current_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_PHASE_OUT)
                         queue_stream_from_url_fifo__unlocked(streamer_data,
                                                              "immediately queued on push");
