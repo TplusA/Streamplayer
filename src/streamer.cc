@@ -1832,7 +1832,7 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     switch(data.supposed_play_status)
     {
       case Streamer::PlayStatus::STOPPED:
-        msg_info("Ignoring stray buffering message from GStreamr");
+        msg_info("Ignoring stray buffering message from GStreamer");
         return;
 
       case Streamer::PlayStatus::PLAYING:
