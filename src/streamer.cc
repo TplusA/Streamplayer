@@ -1965,7 +1965,7 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
 
         data.stream_buffering_state = BufferingState::NOT_BUFFERING;
     }
-    else
+    else if(percent == 0)
     {
         switch(data.stream_buffering_state)
         {
@@ -1979,8 +1979,7 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
 
           case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
           case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-            if(percent == 0)
-                msg_info("Buffer underrun while buffering");
+            msg_info("Buffer underrun while buffering");
             break;
         }
     }
