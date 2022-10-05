@@ -105,6 +105,16 @@ enum class BufferingState
     JOINED_PAUSE_FOR_BUFFERING,
 };
 
+/*!
+ * GStreamer next URI requested.
+ */
+enum class NextStreamRequestState
+{
+    NOT_REQUESTED,
+    REQUESTED,
+    REQUEST_DEFERRED,
+};
+
 class StreamerData
 {
   private:
@@ -131,7 +141,7 @@ class StreamerData
      * the item.
      */
     std::unique_ptr<PlayQueue::Item> current_stream;
-    bool is_next_stream_requested;
+    NextStreamRequestState next_stream_request;
 
     bool is_failing;
     FailureData fail;
@@ -160,7 +170,7 @@ class StreamerData
         soup_http_block_size(0),
         boost_streaming_thread(true),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
-        is_next_stream_requested(false),
+        next_stream_request(NextStreamRequestState::NOT_REQUESTED),
         is_failing(false),
         previous_time{},
         current_time{},
@@ -416,7 +426,7 @@ static void do_stop_pipeline_and_recover_from_error(
                             data.fail.reason, std::move(data.current_stream));
 
     data.stream_has_just_started = false;
-    data.is_next_stream_requested = false;
+    data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
     data.is_failing = false;
     data.fail.reset();
 }
@@ -441,7 +451,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
 static void schedule_error_recovery(StreamerData &data,
                                     StoppedReasons::Reason reason)
 {
-    data.is_next_stream_requested = false;
+    data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
     data.is_failing = true;
     data.fail.reason = reason;
     data.fail.clear_fifo_on_error = false;
@@ -745,7 +755,24 @@ static bool play_next_stream(StreamerData &data,
         break;
 
       case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
-        /* already in the making, don't be so hasty */
+        /* next stream is already in activation phase, so don't attempt to
+         * start playing it */
+        if(replaced_stream == nullptr &&
+            data.next_stream_request == NextStreamRequestState::REQUESTED)
+        {
+            /* The next stream is in FIFO and GStreamer has requested the next
+             * URI, but we cannot advance because the stream sitting at the
+             * head of our FIFO is already in activation phase. Therefore, we
+             * will wait for the activating stream to start, and push the
+             * stream following it (if any) to GStreamer when we see a
+             * \c GST_MESSAGE_STREAM_START message. */
+            data.next_stream_request = NextStreamRequestState::REQUEST_DEFERRED;
+        }
+        else
+        {
+            /* next stream is not in FIFO, or GStreamer hasn't requested one */
+        }
+
         return true;
     }
 
@@ -758,7 +785,7 @@ static bool play_next_stream(StreamerData &data,
 
     g_object_set(data.pipeline, "uri",
                  next_stream.get_url_for_playing().c_str(), nullptr);
-    data.is_next_stream_requested = false;
+    data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
 
     if(is_prefetching_for_gapless)
         return true;
@@ -774,13 +801,13 @@ static bool play_next_stream(StreamerData &data,
 static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
                                                  const char *context)
 {
-    BUG_IF(!data.is_next_stream_requested,
+    BUG_IF(data.next_stream_request == NextStreamRequestState::NOT_REQUESTED,
            "GStreamer has not requested the next stream yet [%s]", context);
 
-    bool is_next_current;
+    bool is_next_in_fifo;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
                                              *data.url_fifo_LOCK_ME,
-                                             is_next_current);
+                                             is_next_in_fifo);
 
     if(data.current_stream == nullptr && next_stream == nullptr)
     {
@@ -797,7 +824,7 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
     }
     else
         play_next_stream(data,
-                         is_next_current ? nullptr : data.current_stream.get(),
+                         is_next_in_fifo ? nullptr : data.current_stream.get(),
                          *next_stream, GST_STATE_NULL, false, true, context);
 }
 
@@ -814,7 +841,7 @@ static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
     if(data.is_failing)
         return;
 
-    data.is_next_stream_requested = true;
+    data.next_stream_request = NextStreamRequestState::REQUESTED;
 
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
     queue_stream_from_url_fifo__unlocked(data, "need next stream");
@@ -1329,7 +1356,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
                                     data, *data.url_fifo_LOCK_ME,
                                     fdata.reason, std::move(item));
             data.stream_has_just_started = false;
-            data.is_next_stream_requested = false;
+            data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
             data.is_failing = false;
             data.current_stream.reset();
             data.fail.reset();
@@ -1712,6 +1739,7 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     bool failed = false;
     bool with_bug = false;
     bool need_activation = true;
+    bool need_push_next_stream = false;
 
     bool next_stream_is_in_fifo;
     const PlayQueue::Item *picked_stream =
@@ -1739,6 +1767,20 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
             /* fall-through */
 
           case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
+            switch(data.next_stream_request)
+            {
+              case NextStreamRequestState::REQUEST_DEFERRED:
+                /* GStreamer was very fast at requesting the next URI, so we'll
+                 * try to set the next stream URI after having treated the
+                 * current stream which has just started to play */
+                need_push_next_stream = true;
+                break;
+
+              case NextStreamRequestState::NOT_REQUESTED:
+              case NextStreamRequestState::REQUESTED:
+                break;
+            }
+
             break;
 
           case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
@@ -1832,6 +1874,12 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
         }
 
         break;
+    }
+
+    if(need_push_next_stream)
+    {
+        data.next_stream_request = NextStreamRequestState::REQUESTED;
+        queue_stream_from_url_fifo__unlocked(data, "deferred set uri");
     }
 }
 
@@ -2861,11 +2909,19 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                     if(fifo.push(std::move(item), keep_items) == 0)
                         return false;
 
-                    if(streamer_data.is_next_stream_requested &&
-                       streamer_data.current_stream != nullptr &&
-                       streamer_data.current_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_PHASE_OUT)
-                        queue_stream_from_url_fifo__unlocked(streamer_data,
-                                                             "immediately queued on push");
+                    switch(streamer_data.next_stream_request)
+                    {
+                      case NextStreamRequestState::REQUESTED:
+                        if(streamer_data.current_stream != nullptr &&
+                           streamer_data.current_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_PHASE_OUT)
+                            queue_stream_from_url_fifo__unlocked(streamer_data,
+                                                                 "immediately queued on push");
+                        break;
+
+                      case NextStreamRequestState::REQUEST_DEFERRED:
+                      case NextStreamRequestState::NOT_REQUESTED:
+                        break;
+                    }
 
                     return true;
                 });
