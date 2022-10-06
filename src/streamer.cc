@@ -37,6 +37,7 @@
 #include "strbo_usb_url.hh"
 #include "urlfifo.hh"
 #include "playitem.hh"
+#include "buffering.hh"
 #include "stopped_reasons.hh"
 #include "gstringwrapper.hh"
 #include "gerrorwrapper.hh"
@@ -98,13 +99,6 @@ struct FailureData
     }
 };
 
-enum class BufferingState
-{
-    NOT_BUFFERING,
-    ACTIVELY_PAUSED_FOR_BUFFERING,
-    JOINED_PAUSE_FOR_BUFFERING,
-};
-
 /*!
  * GStreamer next URI requested.
  */
@@ -154,7 +148,7 @@ class StreamerData
     GstClockTime next_allowed_tag_update_time;
 
     bool stream_has_just_started;
-    BufferingState stream_buffering_state;
+    Buffering::Data stream_buffering_data;
 
     Streamer::PlayStatus supposed_play_status;
 
@@ -178,7 +172,6 @@ class StreamerData
         is_tag_update_scheduled(false),
         next_allowed_tag_update_time(0),
         stream_has_just_started(false),
-        stream_buffering_state(BufferingState::NOT_BUFFERING),
         supposed_play_status(Streamer::PlayStatus::STOPPED)
     {}
 
@@ -235,15 +228,14 @@ static bool set_stream_state(GstElement *pipeline, GstState next_state,
       case GST_STATE_CHANGE_ASYNC:
         return true;
 
+      case GST_STATE_CHANGE_NO_PREROLL:
+        msg_info("[%s] State change OK, no preroll (gst_element_set_state())",
+                 context);
+        return true;
+
       case GST_STATE_CHANGE_FAILURE:
         msg_error(0, LOG_ERR,
                   "[%s] Failed changing state (gst_element_set_state())",
-                  context);
-        break;
-
-      case GST_STATE_CHANGE_NO_PREROLL:
-        msg_error(0, LOG_ERR,
-                  "[%s] Failed prerolling (gst_element_set_state())",
                   context);
         break;
     }
@@ -296,7 +288,7 @@ static void emit_stopped(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                          StreamerData &data)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
-    data.stream_buffering_state = BufferingState::NOT_BUFFERING;
+    data.stream_buffering_data.reset();
 
     auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
@@ -319,7 +311,7 @@ static void emit_stopped_with_error(TDBus::Iface<tdbussplayPlayback> &playback_i
                                     std::unique_ptr<PlayQueue::Item> failed_stream)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
-    data.stream_buffering_state = BufferingState::NOT_BUFFERING;
+    data.stream_buffering_data.reset();
 
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
@@ -1424,15 +1416,8 @@ static gboolean report_progress(gpointer user_data)
         return G_SOURCE_REMOVE;
     }
 
-    switch(data.stream_buffering_state)
-    {
-      case BufferingState::NOT_BUFFERING:
-        break;
-
-      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
+    if(data.stream_buffering_data.is_buffering())
         return G_SOURCE_CONTINUE;
-    }
 
     const GstState state = GST_STATE(data.pipeline);
 
@@ -1550,6 +1535,59 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
     return ActivateStreamResult::INVALID_STATE;
 }
 
+static void try_leave_buffering_state(StreamerData &data)
+{
+    switch(data.stream_buffering_data.try_leave_buffering_state())
+    {
+      case Buffering::LeaveBufferingResult::PLEASE_RESUME:
+        switch(data.supposed_play_status)
+        {
+          case Streamer::PlayStatus::PLAYING:
+            set_stream_state(data.pipeline, GST_STATE_PLAYING, "buffer filled");
+            break;
+
+          case Streamer::PlayStatus::STOPPED:
+          case Streamer::PlayStatus::PAUSED:
+            BUG("Keep paused after buffering because supposed play status is %d",
+                int(data.supposed_play_status));
+            break;
+        }
+
+        break;
+
+      case Buffering::LeaveBufferingResult::PLEASE_KEEP_PAUSED:
+        BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
+               "Keep paused after buffering, but supposed play status is %d",
+               int(data.supposed_play_status));
+        break;
+
+      case Buffering::LeaveBufferingResult::STILL_BUFFERING:
+      case Buffering::LeaveBufferingResult::NOT_BUFFERING:
+        break;
+    }
+}
+
+static void activate_stream_and_emit_pause_state(const StreamerData &data,
+                                                 GstState pipeline_state,
+                                                 gboolean is_paused)
+{
+    switch(activate_stream(data, pipeline_state, 0))
+    {
+      case ActivateStreamResult::INVALID_ITEM:
+      case ActivateStreamResult::INVALID_STATE:
+        break;
+
+      case ActivateStreamResult::ALREADY_ACTIVE:
+      case ActivateStreamResult::ACTIVATED:
+        if(!data.stream_buffering_data.is_buffering())
+            TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+                tdbus_splay_playback_emit_pause_state,
+                data.current_stream->stream_id_, is_paused);
+
+        break;
+    }
+}
+
 static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 {
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
@@ -1610,7 +1648,10 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
            pending == GST_STATE_PLAYING)
         {
             data.stream_has_just_started = true;
-            data.stream_buffering_state = BufferingState::NOT_BUFFERING;
+            BUG_IF(data.stream_buffering_data.is_buffering(),
+                   "Stream just started, buffering state %d",
+                   int(data.stream_buffering_data.get_state()));
+            data.stream_buffering_data.reset();
         }
 
         break;
@@ -1653,29 +1694,10 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
         }
 
-        switch(activate_stream(data, state, 0))
-        {
-          case ActivateStreamResult::INVALID_ITEM:
-          case ActivateStreamResult::INVALID_STATE:
-            break;
+        activate_stream_and_emit_pause_state(data, state, TRUE);
 
-          case ActivateStreamResult::ALREADY_ACTIVE:
-          case ActivateStreamResult::ACTIVATED:
-            switch(data.stream_buffering_state)
-            {
-              case BufferingState::NOT_BUFFERING:
-                TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-                    tdbus_splay_playback_emit_pause_state,
-                    data.current_stream->stream_id_, TRUE);
-                break;
-
-              case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-              case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-                break;
-            }
-
-            break;
-        }
+        if(data.stream_buffering_data.entered_pause())
+            try_leave_buffering_state(data);
 
         break;
 
@@ -1687,31 +1709,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         }
 
         if(!data.stream_has_just_started)
-        {
-            switch(activate_stream(data, state, 0))
-            {
-              case ActivateStreamResult::INVALID_ITEM:
-              case ActivateStreamResult::INVALID_STATE:
-                break;
-
-              case ActivateStreamResult::ALREADY_ACTIVE:
-              case ActivateStreamResult::ACTIVATED:
-                switch(data.stream_buffering_state)
-                {
-                  case BufferingState::NOT_BUFFERING:
-                    TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-                        tdbus_splay_playback_emit_pause_state,
-                        data.current_stream->stream_id_, FALSE);
-                    break;
-
-                  case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-                  case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-                    break;
-                }
-
-                break;
-            }
-        }
+            activate_stream_and_emit_pause_state(data, state, FALSE);
 
         data.stream_has_just_started = false;
 
@@ -1883,6 +1881,69 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     }
 }
 
+static void handle_buffer_underrun(StreamerData &data)
+{
+    if(data.stream_buffering_data.is_buffering())
+    {
+        msg_vinfo(MESSAGE_LEVEL_BAD_NEWS, "Buffer underrun while buffering");
+        return;
+    }
+
+    msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Buffer underrun detected");
+    GstState current_state;
+    GstState pending_state;
+    const auto result =
+        gst_element_get_state(data.pipeline, &current_state, &pending_state, 0);
+
+    GstState next_state;
+
+    switch(result)
+    {
+      case GST_STATE_CHANGE_SUCCESS:
+      case GST_STATE_CHANGE_NO_PREROLL:
+        next_state = current_state;
+        BUG_IF(pending_state != GST_STATE_VOID_PENDING,
+               "Expected no pending pipeline state transition, but have %s",
+               gst_element_state_get_name(pending_state));
+        break;
+
+      case GST_STATE_CHANGE_ASYNC:
+        next_state = pending_state;
+        break;
+
+      case GST_STATE_CHANGE_FAILURE:
+      default:  // suppress pointless gcc -Wmaybe-uninitialized warning
+        next_state = GST_STATE_NULL;
+        break;
+    }
+
+    switch(next_state)
+    {
+      case GST_STATE_PLAYING:
+        BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PLAYING,
+               "Pipeline playing, but supposed status is %d",
+               int(data.supposed_play_status));
+        if(set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer"))
+            data.stream_buffering_data.start_buffering(true);
+        else
+            MSG_NOT_IMPLEMENTED();
+        break;
+
+      case GST_STATE_PAUSED:
+        BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
+               "Pipeline paused, but supposed status is %d",
+               int(data.supposed_play_status));
+        data.stream_buffering_data.start_buffering(false);
+        break;
+
+      case GST_STATE_VOID_PENDING:
+      case GST_STATE_NULL:
+      case GST_STATE_READY:
+        MSG_UNREACHABLE();
+        break;
+    }
+}
+
 static void handle_buffering(GstMessage *message, StreamerData &data)
 {
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
@@ -1933,70 +1994,28 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
         break;
     }
 
-    msg_vinfo(MESSAGE_LEVEL_NORMAL,
-              "Buffer level: %d%%, %s, avg in/out rates %d/%d, "
-              "%" G_GINT64_FORMAT " ms left",
-              percent, mode_name, avg_in, avg_out, buffering_left);
+    msg_info("Buffer level: %d%%, %s, avg in/out rates %d/%d, "
+             "%" G_GINT64_FORMAT " ms left",
+             percent, mode_name, avg_in, avg_out, buffering_left);
 
-    if(percent >= 100)
+    switch(data.stream_buffering_data.set_buffer_level(percent))
     {
+      case Buffering::LevelChange::FULL_DETECTED:
         msg_info("Buffer filled");
-
-        switch(data.stream_buffering_state)
-        {
-          case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-            switch(data.supposed_play_status)
-            {
-              case Streamer::PlayStatus::PLAYING:
-                set_stream_state(data.pipeline, GST_STATE_PLAYING, "buffer filled");
-                break;
-
-              case Streamer::PlayStatus::STOPPED:
-              case Streamer::PlayStatus::PAUSED:
-                break;
-            }
-
-            break;
-
-          case BufferingState::NOT_BUFFERING:
-          case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-            break;
-        }
-
-        data.stream_buffering_state = BufferingState::NOT_BUFFERING;
-    }
-    else if(percent == 0)
-    {
-        switch(data.stream_buffering_state)
-        {
-          case BufferingState::NOT_BUFFERING:
-            msg_error(0, LOG_WARNING, "Buffer underrun detected");
-            data.stream_buffering_state =
-                set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer")
-                ? BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING
-                : BufferingState::JOINED_PAUSE_FOR_BUFFERING;
-            break;
-
-          case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-          case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-            msg_info("Buffer underrun while buffering");
-            break;
-        }
-    }
-
-    switch(data.stream_buffering_state)
-    {
-      case BufferingState::NOT_BUFFERING:
-        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-            tdbus_splay_playback_emit_buffer, percent, FALSE);
+        try_leave_buffering_state(data);
         break;
 
-      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
-        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-            tdbus_splay_playback_emit_buffer, percent, TRUE);
+      case Buffering::LevelChange::UNDERRUN_DETECTED:
+        handle_buffer_underrun(data);
+        break;
+
+      case Buffering::LevelChange::NONE:
         break;
     }
+
+    TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+        tdbus_splay_playback_emit_buffer, percent,
+        data.stream_buffering_data.is_buffering() ? TRUE : FALSE);
 }
 
 static void handle_stream_duration_async(GstMessage *message, StreamerData &data)
@@ -2026,8 +2045,8 @@ static void handle_clock_lost_message(GstMessage *message, StreamerData &data)
 
     static const char context[] = "clock lost";
 
-    if(set_stream_state(data.pipeline, GST_STATE_PAUSED, context))
-        set_stream_state(data.pipeline, GST_STATE_PLAYING, context);
+    set_stream_state(data.pipeline, GST_STATE_PAUSED, context);
+    set_stream_state(data.pipeline, GST_STATE_PLAYING, context);
 }
 
 static void handle_request_state_message(GstMessage *message, StreamerData &data)
@@ -2425,13 +2444,8 @@ bool Streamer::start(const char *reason)
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PLAYING;
 
-    switch(streamer_data.stream_buffering_state)
+    if(streamer_data.stream_buffering_data.is_buffering())
     {
-      case BufferingState::NOT_BUFFERING:
-        break;
-
-      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
         msg_info("Play request deferred, we are buffering");
         return true;
     }
@@ -2549,13 +2563,8 @@ bool Streamer::pause(const char *reason)
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PAUSED;
 
-    switch(streamer_data.stream_buffering_state)
+    if(streamer_data.stream_buffering_data.is_buffering())
     {
-      case BufferingState::NOT_BUFFERING:
-        break;
-
-      case BufferingState::ACTIVELY_PAUSED_FOR_BUFFERING:
-      case BufferingState::JOINED_PAUSE_FOR_BUFFERING:
         msg_info("Pause request deferred, we are buffering");
         return true;
     }
