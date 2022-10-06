@@ -1,3 +1,12 @@
+2022-10-06  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.4 released.
+
+	* Playback: Give next URI to GStreamer only when or after it has
+	  requested it, not earlier.
+
+	* Playback: Further improve buffering.
+
 2022-09-19  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.3 released.
