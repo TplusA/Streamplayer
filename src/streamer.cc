@@ -1486,6 +1486,7 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
         break;
 
       case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
+      case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
         switch(phase)
         {
           case 0:
@@ -1507,7 +1508,6 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
 
         /* fall-through */
 
-      case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
       case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
         break;
 
