@@ -825,8 +825,6 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
  */
 static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 {
-    MSG_TRACE_FORMAT("%s", "ABOUT-TO-FINISH");
-
     auto &data = *static_cast<StreamerData *>(user_data);
     auto data_lock(data.lock());
 
