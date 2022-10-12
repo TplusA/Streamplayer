@@ -1599,6 +1599,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
     if(!is_ours && !msg_is_verbose(MESSAGE_LEVEL_TRACE))
         return;
 
+    const GstState target_state = GST_STATE_TARGET(data.pipeline);
     GstState oldstate, state, pending;
     gst_message_parse_state_changed(message, &oldstate, &state, &pending);
 
@@ -1609,7 +1610,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
               gst_element_state_get_name(oldstate),
               gst_element_state_get_name(state),
               gst_element_state_get_name(pending),
-              gst_element_state_get_name(GST_STATE_TARGET(data.pipeline)),
+              gst_element_state_get_name(target_state),
               is_ours ? "" : "not ");
 
     /* leave now if we came here only for the trace */
@@ -1646,10 +1647,12 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
            pending == GST_STATE_PLAYING)
         {
             data.stream_has_just_started = true;
-            BUG_IF(data.stream_buffering_data.is_buffering(),
+            BUG_IF(target_state != GST_STATE_PAUSED &&
+                   data.stream_buffering_data.is_buffering(),
                    "Stream just started, buffering state %d",
                    int(data.stream_buffering_data.get_state()));
-            data.stream_buffering_data.reset();
+            if(target_state != GST_STATE_PAUSED)
+                data.stream_buffering_data.reset();
         }
 
         break;
@@ -1659,8 +1662,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         break;
     }
 
-
-    switch(GST_STATE_TARGET(data.pipeline))
+    switch(target_state)
     {
       case GST_STATE_READY:
         if(pending != GST_STATE_VOID_PENDING)
@@ -1719,7 +1721,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
       case GST_STATE_VOID_PENDING:
       case GST_STATE_NULL:
         BUG("Ignoring state transition for bogus pipeline target %s",
-            gst_element_state_get_name(GST_STATE_TARGET(data.pipeline)));
+            gst_element_state_get_name(target_state));
         break;
     }
 }
@@ -1890,30 +1892,20 @@ static void handle_buffer_underrun(StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_IMPORTANT, "Buffer underrun detected");
     GstState current_state;
     GstState pending_state;
-    const auto result =
-        gst_element_get_state(data.pipeline, &current_state, &pending_state, 0);
 
-    GstState next_state;
-
-    switch(result)
+    switch(gst_element_get_state(data.pipeline, &current_state, &pending_state, 0))
     {
       case GST_STATE_CHANGE_SUCCESS:
       case GST_STATE_CHANGE_NO_PREROLL:
-        next_state = current_state;
-        BUG_IF(pending_state != GST_STATE_VOID_PENDING,
-               "Expected no pending pipeline state transition, but have %s",
-               gst_element_state_get_name(pending_state));
-        break;
-
       case GST_STATE_CHANGE_ASYNC:
-        next_state = pending_state;
         break;
 
       case GST_STATE_CHANGE_FAILURE:
-      default:  // suppress pointless gcc -Wmaybe-uninitialized warning
-        next_state = GST_STATE_NULL;
+        MSG_NOT_IMPLEMENTED();
         break;
     }
+
+    const GstState next_state = GST_STATE_TARGET(data.pipeline);
 
     switch(next_state)
     {
