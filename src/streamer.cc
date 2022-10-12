@@ -1395,6 +1395,8 @@ static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
     seconds = t_ns / (1000LL * 1000LL * 1000LL);
 }
 
+static gboolean report_progress__unlocked(StreamerData &data);
+
 /*!
  * GLib callback: timer function, GSourceFunc.
  *
@@ -1407,7 +1409,11 @@ static gboolean report_progress(gpointer user_data)
 {
     auto &data = *static_cast<StreamerData *>(user_data);
     auto data_lock(data.lock());
+    return report_progress__unlocked(data);
+}
 
+static gboolean report_progress__unlocked(StreamerData &data)
+{
     if(data.current_stream == nullptr)
     {
         data.progress_watcher = 0;
@@ -1698,6 +1704,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
         if(data.stream_buffering_data.entered_pause())
             try_leave_buffering_state(data);
+
+        if(data.progress_watcher == 0)
+            report_progress__unlocked(data);
 
         break;
 
