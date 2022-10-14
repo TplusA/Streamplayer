@@ -1,3 +1,17 @@
+2022-10-14  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.5 released.
+
+	* Playback: Fix handling of pipeline state changes so that
+	  play/pause/stop states are detected more reliably and work together
+	  with buffering.
+
+	* Playback: Emit stream times while in pause mode when appropriate.
+	  This avoids progress being stuck at the previous time when skipping
+	  while in pause mode.
+
+	* D-Bus: Fix propagation of pause state.
+
 2022-10-06  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.4 released.
