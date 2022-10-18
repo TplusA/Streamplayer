@@ -136,11 +136,11 @@ class Data
         return result;
     }
 
-    void start_buffering(bool need_wait_for_pause)
+    void start_buffering(State start_state)
     {
         BUG_IF(state_ != State::NOT_BUFFERING,
                "Bad buffering state %d on start", int(state_));
-        state_ = need_wait_for_pause ? State::PAUSED_PENDING : State::PAUSED_PIGGYBACK;
+        state_ = start_state;
     }
 
     bool entered_pause()

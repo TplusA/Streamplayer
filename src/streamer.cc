@@ -1924,17 +1924,21 @@ static void handle_buffer_underrun(StreamerData &data)
         BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PLAYING,
                "Pipeline playing, but supposed status is %d",
                int(data.supposed_play_status));
-        if(set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer"))
-            data.stream_buffering_data.start_buffering(true);
-        else
-            MSG_NOT_IMPLEMENTED();
+        if(current_state != GST_STATE_PAUSED)
+            set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer");
+
+        data.stream_buffering_data.start_buffering(current_state == GST_STATE_PAUSED
+                                                   ? Buffering::State::PAUSED_FOR_BUFFERING
+                                                   : Buffering::State::PAUSED_PENDING);
         break;
 
       case GST_STATE_PAUSED:
         BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
                "Pipeline paused, but supposed status is %d",
                int(data.supposed_play_status));
-        data.stream_buffering_data.start_buffering(false);
+        data.stream_buffering_data.start_buffering(current_state == GST_STATE_PAUSED
+                                                   ? Buffering::State::PAUSED_PIGGYBACK
+                                                   : Buffering::State::PAUSED_PENDING);
         break;
 
       case GST_STATE_VOID_PENDING:
