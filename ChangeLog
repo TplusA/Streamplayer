@@ -1,3 +1,24 @@
+2022-10-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.6 released.
+
+	* Playback: Leave buffering state under certain pause mode conditions.
+
+	* Playback: Entering buffering state depends on pause state so that
+	  resume after buffering works correctly.
+
+	* Playback: More robust maintainance of intended play status after
+	  buffering.
+
+	* Playback: Emit stream times after buffering in pause mode.
+
+	* GStreamer: Work around a few bugs by rebuilding the pipeline when
+	  starting a new stream afresh.
+
+	* GStreamer: Recognize video streams (including pictures) and error
+	  out on them before attempting to actually play them. The controlling
+	  process is responsible for taking action (such as skipping).
+
 2022-10-14  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.5 released.

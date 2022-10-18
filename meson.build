@@ -20,7 +20,7 @@
 #
 
 project('Streamplayer', ['cpp', 'c'],
-    version: '6.5',
+    version: '6.6',
     default_options: ['warning_level=3', 'cpp_std=c++14', 'buildtype=plain'])
 
 PACKAGE = 'streamplayer'
