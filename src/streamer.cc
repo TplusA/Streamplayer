@@ -1659,6 +1659,8 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
                    int(data.stream_buffering_data.get_state()));
             if(target_state != GST_STATE_PAUSED)
                 data.stream_buffering_data.reset();
+            else if(data.stream_buffering_data.entered_pause())
+                try_leave_buffering_state(data);
         }
 
         break;
