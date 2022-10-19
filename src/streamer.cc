@@ -460,6 +460,20 @@ static void recover_from_error_now_or_later(StreamerData &data,
         data.fail = fdata;
 }
 
+static void rebuild_playbin_for_workarounds(StreamerData &data,
+                                            std::unique_lock<std::recursive_mutex> &data_lock,
+                                            const char *context)
+{
+    rebuild_playbin(data, data_lock, context);
+    data.stream_has_just_started = false;
+    data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
+    data.is_failing = false;
+    data.fail.reset();
+    data.stream_buffering_data.reset();
+    invalidate_position_information(data.current_time);
+    invalidate_position_information(data.previous_time);
+}
+
 /*!
  * Find out which item is going to be played next.
  *
@@ -2469,6 +2483,8 @@ bool Streamer::start(const char *reason)
 
           case GST_STATE_READY:
           case GST_STATE_NULL:
+            rebuild_playbin_for_workarounds(streamer_data, data_lock, context);
+
             streamer_data.url_fifo_LOCK_ME->locked_rw(
                 [] (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
