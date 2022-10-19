@@ -206,15 +206,15 @@ typedef enum
 }
 GstPlayFlags;
 
-static void invalidate_position_information(struct time_data *data)
+static void invalidate_position_information(struct time_data &data)
 {
-    data->position_s = INT64_MAX;
-    data->duration_s = INT64_MAX;
+    data.position_s = INT64_MAX;
+    data.duration_s = INT64_MAX;
 }
 
 static inline void invalidate_stream_position_information(StreamerData &data)
 {
-    invalidate_position_information(&data.previous_time);
+    invalidate_position_information(data.previous_time);
 }
 
 static bool set_stream_state(GstElement *pipeline, GstState next_state,
