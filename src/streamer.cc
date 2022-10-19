@@ -1543,7 +1543,7 @@ static void try_leave_buffering_state(StreamerData &data)
 {
     switch(data.stream_buffering_data.try_leave_buffering_state())
     {
-      case Buffering::LeaveBufferingResult::PLEASE_RESUME:
+      case Buffering::LeaveBufferingResult::BUFFER_FILLED:
         switch(data.supposed_play_status)
         {
           case Streamer::PlayStatus::PLAYING:
@@ -1552,17 +1552,9 @@ static void try_leave_buffering_state(StreamerData &data)
 
           case Streamer::PlayStatus::STOPPED:
           case Streamer::PlayStatus::PAUSED:
-            BUG("Keep paused after buffering because supposed play status is %d",
-                int(data.supposed_play_status));
             break;
         }
 
-        break;
-
-      case Buffering::LeaveBufferingResult::PLEASE_KEEP_PAUSED:
-        BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
-               "Keep paused after buffering, but supposed play status is %d",
-               int(data.supposed_play_status));
         break;
 
       case Buffering::LeaveBufferingResult::STILL_BUFFERING:
@@ -1653,10 +1645,7 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
            pending == GST_STATE_PLAYING)
         {
             data.stream_has_just_started = true;
-            BUG_IF(target_state != GST_STATE_PAUSED &&
-                   data.stream_buffering_data.is_buffering(),
-                   "Stream just started, buffering state %d",
-                   int(data.stream_buffering_data.get_state()));
+
             if(target_state != GST_STATE_PAUSED)
                 data.stream_buffering_data.reset();
             else if(data.stream_buffering_data.entered_pause())

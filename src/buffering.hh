@@ -82,8 +82,7 @@ enum class LevelChange
  */
 enum class LeaveBufferingResult
 {
-    PLEASE_RESUME,
-    PLEASE_KEEP_PAUSED,
+    BUFFER_FILLED,
     STILL_BUFFERING,
     NOT_BUFFERING,
 };
@@ -176,11 +175,8 @@ class Data
           case State::PAUSED_PIGGYBACK:
             if(level_ == Level::FULL)
             {
-                const auto result = state_ == State::PAUSED_FOR_BUFFERING
-                    ? LeaveBufferingResult::PLEASE_RESUME
-                    : LeaveBufferingResult::PLEASE_KEEP_PAUSED;
                 state_ = State::NOT_BUFFERING;
-                return result;
+                return LeaveBufferingResult::BUFFER_FILLED;
             }
 
             break;
