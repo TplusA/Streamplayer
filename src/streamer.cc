@@ -407,7 +407,7 @@ static void do_stop_pipeline_and_recover_from_error(
      */
     rebuild_playbin(data, data_lock, context);
 
-    msg_info("Stop reason is %d", int(data.fail.reason));
+    msg_info("Stop reason is %s", as_string(data.fail.reason));
 
     if(data.fail.clear_fifo_on_error)
         url_fifo.clear(0);
@@ -1336,16 +1336,16 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
     if(foreground_stream_failed)
     {
-        msg_error(0, LOG_ERR, "ERROR mapped to stop reason %d, reporting %s",
-                  int(fdata.reason),
+        msg_error(0, LOG_ERR, "ERROR mapped to stop reason %s, reporting %s",
+                  as_string(fdata.reason),
                   fdata.report_on_stream_stop ? "on stop" : "now");
         if(data.current_stream->fail())
             recover_from_error_now_or_later(data, fdata);
     }
     else
     {
-        msg_error(0, LOG_ERR, "ERROR prefetching for gapless failed for reason %d",
-                  int(fdata.reason));
+        msg_error(0, LOG_ERR, "ERROR prefetching for gapless failed for reason %s",
+                  as_string(fdata.reason));
         std::unique_ptr<PlayQueue::Item> item;
         data.url_fifo_LOCK_ME->pop(item, "prefetched stream failed");
 
