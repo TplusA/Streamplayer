@@ -59,7 +59,9 @@ enum class WhichStreamFailed
 {
     UNKNOWN,
     CURRENT,
+    CURRENT_WITH_PREFAIL_REASON,
     GAPLESS_NEXT,
+    GAPLESS_NEXT_WITH_PREFAIL_REASON,
 };
 
 struct time_data
@@ -1267,6 +1269,11 @@ static WhichStreamFailed
 determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
                         const PlayQueue::Queue<PlayQueue::Item> &fifo)
 {
+    if(data.current_stream != nullptr && data.current_stream->has_prefailed())
+        return current_uri.empty()
+            ? WhichStreamFailed::GAPLESS_NEXT_WITH_PREFAIL_REASON
+            : WhichStreamFailed::CURRENT_WITH_PREFAIL_REASON;
+
     if(current_uri.empty())
         return WhichStreamFailed::UNKNOWN;
 
@@ -1316,7 +1323,8 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
     auto which_stream_failed =
         determine_failed_stream(data, current_uri, *data.url_fifo_LOCK_ME);
-    bool foreground_stream_failed = true;
+    StoppedReasons::Reason failure_reason;
+    std::unique_ptr<PlayQueue::Item> failed_item;
 
     switch(which_stream_failed)
     {
@@ -1324,48 +1332,68 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
         BUG("Supposed to handle error, but have no item");
         return;
 
+      case WhichStreamFailed::GAPLESS_NEXT:
+        data.url_fifo_LOCK_ME->pop(failed_item, "prefetched stream failed");
+
+        /* fall-through */
+
       case WhichStreamFailed::CURRENT:
+        failure_reason =
+            StoppedReasons::from_gerror(
+                error, StoppedReasons::determine_is_local_error_by_url(current_uri));
         break;
 
-      case WhichStreamFailed::GAPLESS_NEXT:
-        foreground_stream_failed = false;
+      case WhichStreamFailed::CURRENT_WITH_PREFAIL_REASON:
+        failure_reason = data.current_stream->get_prefail_reason();
+        break;
+
+      case WhichStreamFailed::GAPLESS_NEXT_WITH_PREFAIL_REASON:
+        data.url_fifo_LOCK_ME->pop(failed_item, "prefetched stream failed with reason");
+        failure_reason = failed_item->get_prefail_reason();
         break;
     }
 
-    const FailureData fdata(StoppedReasons::from_gerror(
-            error, StoppedReasons::determine_is_local_error_by_url(current_uri)));
+    const FailureData fdata(failure_reason);
 
-    if(foreground_stream_failed)
+    switch(which_stream_failed)
     {
+      case WhichStreamFailed::UNKNOWN:
+        MSG_UNREACHABLE();
+        break;
+
+      case WhichStreamFailed::CURRENT:
+      case WhichStreamFailed::CURRENT_WITH_PREFAIL_REASON:
         msg_error(0, LOG_ERR, "ERROR mapped to stop reason %s, reporting %s",
                   as_string(fdata.reason),
                   fdata.report_on_stream_stop ? "on stop" : "now");
         if(data.current_stream->fail())
             recover_from_error_now_or_later(data, fdata);
-    }
-    else
-    {
+
+        break;
+
+      case WhichStreamFailed::GAPLESS_NEXT:
+      case WhichStreamFailed::GAPLESS_NEXT_WITH_PREFAIL_REASON:
         msg_error(0, LOG_ERR, "ERROR prefetching for gapless failed for reason %s",
                   as_string(fdata.reason));
-        std::unique_ptr<PlayQueue::Item> item;
-        data.url_fifo_LOCK_ME->pop(item, "prefetched stream failed");
 
         if(data.current_stream != nullptr)
             data.url_fifo_LOCK_ME->mark_as_dropped(data.current_stream->stream_id_);
 
-        if(item->fail())
+        if(failed_item->fail())
         {
             set_stream_state(data.pipeline, GST_STATE_NULL, "stop on bad stream");
             invalidate_stream_position_information(data);
             emit_stopped_with_error(TDBus::get_exported_iface<tdbussplayPlayback>(),
                                     data, *data.url_fifo_LOCK_ME,
-                                    fdata.reason, std::move(item));
+                                    fdata.reason, std::move(failed_item));
             data.stream_has_just_started = false;
             data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
             data.is_failing = false;
             data.current_stream.reset();
             data.fail.reset();
         }
+
+        break;
     }
 }
 
@@ -1636,7 +1664,11 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
         {
           case GST_STATE_PAUSED:
           case GST_STATE_PLAYING:
+          case GST_STATE_READY:
             if(data.current_stream == nullptr)
+                break;
+
+            if(!data.current_stream->prefail(StoppedReasons::Reason::WRONG_TYPE))
                 break;
 
             switch(data.current_stream->get_state())
@@ -1644,12 +1676,12 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
               case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
               case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
               case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
+              case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
                 GST_ELEMENT_ERROR(data.pipeline, STREAM, WRONG_TYPE,
                                   ("blocked video content"), ("blocked video content"));
                 break;
 
               case PlayQueue::ItemState::IN_QUEUE:
-              case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
               case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
                 break;
             }
@@ -1657,7 +1689,6 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
             break;
 
           case GST_STATE_NULL:
-          case GST_STATE_READY:
           case GST_STATE_VOID_PENDING:
             break;
         }

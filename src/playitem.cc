@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020, 2022  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -25,6 +25,32 @@
 
 #include "playitem.hh"
 #include "messages.h"
+
+bool PlayQueue::Item::prefail(StoppedReasons::Reason reason)
+{
+    log_assert(reason != StoppedReasons::Reason::UNKNOWN);
+    if(prefail_reason_ != StoppedReasons::Reason::UNKNOWN)
+    {
+        msg_error(0, LOG_NOTICE,
+                  "Detected extra pre-failure %s for stream ID %u, "
+                  "keeping the first one (%s)",
+                  as_string(reason), stream_id_, as_string(prefail_reason_));
+        return false;
+    }
+
+    prefail_reason_ = reason;
+    return true;
+}
+
+bool PlayQueue::Item::has_prefailed() const
+{
+    return prefail_reason_ != StoppedReasons::Reason::UNKNOWN;
+}
+
+StoppedReasons::Reason PlayQueue::Item::get_prefail_reason() const
+{
+    return prefail_reason_;
+}
 
 bool PlayQueue::Item::fail()
 {

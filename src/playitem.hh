@@ -29,6 +29,7 @@
 
 #include "streamdata.hh"
 #include "stream_id.h"
+#include "stopped_reasons.hh"
 
 namespace PlayQueue
 {
@@ -74,6 +75,7 @@ class Item
   private:
     ItemState state_;
     FailState fail_state_;
+    StoppedReasons::Reason prefail_reason_;
 
   public:
     const stream_id_t stream_id_;
@@ -126,6 +128,7 @@ class Item
                   std::chrono::time_point<std::chrono::nanoseconds> &&end_time):
         state_(ItemState::IN_QUEUE),
         fail_state_(FailState::NOT_FAILED),
+        prefail_reason_(StoppedReasons::Reason::UNKNOWN),
         stream_id_(stream_id),
         original_url_(std::move(stream_url)),
         xlated_url_(std::move(xlated_url)),
@@ -137,6 +140,13 @@ class Item
 
     void set_state(ItemState state) { state_ = state; }
     ItemState get_state() const { return state_; }
+
+    /*!
+     * Failure detected outside of GStreamer error message handler.
+     */
+    bool prefail(StoppedReasons::Reason reason);
+    bool has_prefailed() const;
+    StoppedReasons::Reason get_prefail_reason() const;
 
     /*!
      * Set failure.

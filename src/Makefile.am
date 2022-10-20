@@ -37,7 +37,6 @@ streamplayer_SOURCES = \
     dbus.cc dbus.hh \
     strbo_usb_url.cc strbo_usb_url.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh buffering.hh \
-    stopped_reasons.cc stopped_reasons.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     gstringwrapper.hh gerrorwrapper.hh \
     os.c os.h
@@ -45,11 +44,16 @@ streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) $(noinst_LTLIBRARIES)
 
 noinst_LTLIBRARIES = \
     liburlfifo.la \
+    libstopped_reasons.la \
     libgvariantwrapper.la
 
 liburlfifo_la_SOURCES = playitem.cc playitem.hh streamdata.hh urlfifo.hh
 liburlfifo_la_CFLAGS = $(AM_CFLAGS)
 liburlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
+
+libstopped_reasons_la_SOURCES = stopped_reasons.cc stopped_reasons.hh
+libstopped_reasons_la_CFLAGS = $(AM_CFLAGS)
+libstopped_reasons_la_CXXFLAGS = $(AM_CXXFLAGS)
 
 libgvariantwrapper_la_SOURCES = gvariantwrapper.hh gvariantwrapper.cc
 libgvariantwrapper_la_CFLAGS = $(AM_CFLAGS)

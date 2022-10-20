@@ -33,6 +33,11 @@ urlfifo_lib = static_library('urlfifo',
     dependencies: [glib_deps, config_h],
 )
 
+stopped_reasons_lib = static_library('stopped_reasons',
+    'stopped_reasons.cc',
+    dependencies: [glib_deps, config_h],
+)
+
 gvariantwrapper_lib = static_library('gvariantwrapper',
     'gvariantwrapper.cc',
     dependencies: [glib_deps, config_h],
@@ -42,8 +47,7 @@ executable(
     'streamplayer',
     [
         'streamplayer.cc', 'streamer.cc', 'dbus.cc', 'debug_levels.cc',
-        'stopped_reasons.cc', 'backtrace.c',
-        'strbo_usb_url.cc',
+        'backtrace.c', 'strbo_usb_url.cc',
         'messages.c', 'messages_glib.c', 'messages_dbus.c', 'os.c',
         version_info
     ],
@@ -55,6 +59,7 @@ executable(
     ],
     link_with: [
         urlfifo_lib,
+        stopped_reasons_lib,
         gvariantwrapper_lib,
         taddybus_lib,
     ],

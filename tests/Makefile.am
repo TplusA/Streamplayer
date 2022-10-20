@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015, 2018, 2020  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2015, 2018, 2020, 2022  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -64,6 +64,7 @@ test_playitem_SOURCES = \
 test_playitem_LDADD = \
     libtestrunner.la \
     $(top_builddir)/src/liburlfifo.la \
+    $(top_builddir)/src/libstopped_reasons.la \
     $(top_builddir)/src/libgvariantwrapper.la \
     $(STREAMPLAYER_DEPENDENCIES_LIBS)
 test_playitem_CPPFLAGS = $(AM_CPPFLAGS) $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
