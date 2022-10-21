@@ -158,12 +158,12 @@ class Item
 
     bool empty() const { return original_url_.empty(); }
 
-    const std::string get_url_for_playing() const
+    const std::string &get_url_for_playing() const
     {
         return xlated_url_.empty() ? original_url_ : xlated_url_;
     }
 
-    const std::string get_url_for_reporting() const { return original_url_; }
+    const std::string &get_url_for_reporting() const { return original_url_; }
 };
 
 }
