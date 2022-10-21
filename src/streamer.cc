@@ -1595,6 +1595,9 @@ static void try_leave_buffering_state(StreamerData &data)
 
           case Streamer::PlayStatus::STOPPED:
           case Streamer::PlayStatus::PAUSED:
+            if(data.progress_watcher == 0)
+                report_progress__unlocked(data);
+
             break;
         }
 
