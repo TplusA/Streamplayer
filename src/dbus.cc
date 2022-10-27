@@ -31,6 +31,7 @@
 #include "de_tahifi_mounta.hh"
 #include "de_tahifi_artcache.hh"
 #include "de_tahifi_audiopath.hh"
+#include "de_tahifi_airable.hh"
 #include "dbus/de_tahifi_debug.hh"
 #include "streamer.hh"
 #include "messages.h"
@@ -45,6 +46,14 @@ Proxy<tdbusartcacheWrite> &get_singleton()
 {
     static auto proxy(Proxy<tdbusartcacheWrite>::make_proxy(
                       "de.tahifi.TACAMan", "/de/tahifi/TACAMan"));
+    return proxy;
+}
+
+template <>
+Proxy<tdbusAirable> &get_singleton()
+{
+    static auto proxy(Proxy<tdbusAirable>::make_proxy(
+                      "de.tahifi.TuneInBroker", "/de/tahifi/TuneInBroker"));
     return proxy;
 }
 
@@ -249,7 +258,7 @@ static gboolean fifo_next(tdbussplayURLFIFO *object,
 
 static gboolean fifo_push(tdbussplayURLFIFO *object,
                           GDBusMethodInvocation *invocation,
-                          guint16 stream_id, const gchar *stream_url,
+                          guint16 stream_id, GVariant *stream_urls,
                           GVariant *stream_key,
                           gint64 start_position, const gchar *start_units,
                           gint64 stop_position, const gchar *stop_units,
@@ -258,8 +267,17 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
 {
     enter_urlfifo_handler(invocation);
 
-    msg_info("Received stream %u \"%s\", keep %d",
-             stream_id, stream_url, keep_first_n_entries);
+    auto urls = URLCollection::StreamURLs(GVariantWrapper(stream_urls));
+    if(urls.empty())
+        MSG_BUG("Received stream %u without any URL", stream_id);
+    else if(urls.size() == 1)
+        msg_info("Received stream %u \"%s\", keep %d",
+                 stream_id, urls[0].get_original_url_string().c_str(),
+                 keep_first_n_entries);
+    else
+        msg_info("Received stream %u \"%s\" and %zu more URLs, keep %d",
+                 stream_id, urls[0].get_original_url_string().c_str(),
+                 urls.size() - 1, keep_first_n_entries);
 
     /*
      * The values of keep_first_n_entries:
@@ -275,10 +293,12 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
            ? 0
            : SIZE_MAX)
         : (size_t)keep_first_n_entries;
+    GVariantWrapper dropped_ids_before;
+    GVariantWrapper dropped_ids_now;
     const bool failed =
         !Streamer::push_item(stream_id, GVariantWrapper(stream_key),
-                             stream_url, GVariantWrapper(meta_data),
-                             keep);
+                             std::move(urls), GVariantWrapper(meta_data), keep,
+                             dropped_ids_before, dropped_ids_now);
 
     uint32_t dummy_skipped;
     uint32_t dummy_next = 0;
@@ -286,7 +306,9 @@ static gboolean fifo_push(tdbussplayURLFIFO *object,
         ? Streamer::next(true, dummy_skipped, dummy_next) == Streamer::PlayStatus::PLAYING
         : Streamer::is_playing();
 
-    tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing);
+    tdbus_splay_urlfifo_complete_push(object, invocation, failed, is_playing,
+                                      GVariantWrapper::move(dropped_ids_before),
+                                      GVariantWrapper::move(dropped_ids_now));
 
     return TRUE;
 }
@@ -399,12 +421,36 @@ static void mounta_watch(TDBus::Bus &bus)
     );
 }
 
+static void airable_list_broker(TDBus::Bus &bus)
+{
+    bus.add_watcher("de.tahifi.TuneInBroker",
+        [] (GDBusConnection *connection, const char *name)
+        {
+            msg_vinfo(MESSAGE_LEVEL_DEBUG, "Connecting to Airable service");
+            TDBus::get_singleton<tdbusAirable>().connect_proxy(connection,
+                [] (TDBus::Proxy<tdbusAirable> &proxy, bool succeeded)
+                {
+                    if(succeeded)
+                    {
+                        proxy.connect_default_signal_handler<TDBus::AirableDataAvailable>();
+                        proxy.connect_default_signal_handler<TDBus::AirableDataError>();
+                    }
+                });
+        },
+        [] (GDBusConnection *connection, const char *name)
+        {
+            msg_vinfo(MESSAGE_LEVEL_DEBUG, "Lost Airable service");
+        }
+    );
+}
+
 void TDBus::setup(TDBus::Bus &bus)
 {
     player_ifaces(bus);
     debugging_and_logging(bus);
     audio_player(bus);
     mounta_watch(bus);
+    airable_list_broker(bus);
 
     bus.connect(
         [] (GDBusConnection *connection)

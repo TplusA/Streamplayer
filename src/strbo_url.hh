@@ -22,7 +22,7 @@
 #ifndef STRBO_URL_HH
 #define STRBO_URL_HH
 
-#include <string>
+#include "url_collection.hh"
 
 enum StreamType
 {
@@ -37,7 +37,7 @@ enum StreamType
 namespace StrBoURL
 {
 
-StreamType determine_stream_type_from_url(const std::string &url);
+StreamType determine_stream_type_from_url(const URLCollection::URL &url);
 
 }
 

@@ -24,6 +24,7 @@
 
 #include "urlfifo.hh"
 #include "playitem.hh"
+#include "url_collection.hh"
 
 namespace Streamer
 {
@@ -50,8 +51,9 @@ void clear_queue(int keep_first_n_entries, GVariantWrapper &queued, GVariantWrap
 bool is_playing();
 bool get_current_stream_id(stream_id_t &id);
 bool push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
-               const char *stream_url, GVariantWrapper &&meta_data,
-               size_t keep_items);
+               URLCollection::StreamURLs &&stream_urls, GVariantWrapper &&meta_data,
+               size_t keep_items, GVariantWrapper &out_dropped_ids_before,
+               GVariantWrapper &out_dropped_ids_now);
 bool remove_items_for_root_path(const char *root_path);
 void inject_stream_failure(const char *domain, unsigned int code);
 

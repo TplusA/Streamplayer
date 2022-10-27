@@ -45,6 +45,10 @@ dbus_iface_data = {
         'de.tahifi.',               'tdbus',          '',
         'T+A mount daemon'
     ],
+    'de_tahifi_airable': [
+        'de.tahifi.',               'tdbus',          '',
+        'Airable'
+    ],
 }
 
 dbus_deps = []

@@ -23,9 +23,13 @@ SUBDIRS = dbus
 
 ACLOCAL_AMFLAGS = -I ../m4
 
+DBUS_IFACES = $(top_srcdir)/dbus_interfaces
+
 AM_CFLAGS = $(CWARNINGS)
 AM_CXXFLAGS = $(CXXWARNINGS)
 AM_CPPFLAGS = $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
+AM_CPPFLAGS += -I$(DBUS_IFACES)
+AM_CPPFLAGS += -I$(srcdir)/dbus
 AM_CPPFLAGS += -Idbus
 
 bin_PROGRAMS = streamplayer
@@ -38,9 +42,12 @@ streamplayer_SOURCES = \
     boosted_threads.cc boosted_threads.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh buffering.hh \
     stream_logging.cc stream_logging.hh \
+    cookie_manager_impl.cc cookie_manager_impl.hh cookie_manager.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     gstringwrapper.hh gerrorwrapper.hh \
-    os.c os.h
+    os.c os.h \
+    $(DBUS_IFACES)/de_tahifi_lists_errors.h \
+    $(DBUS_IFACES)/de_tahifi_lists_errors.hh
 streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) $(noinst_LTLIBRARIES)
 
 noinst_LTLIBRARIES = \
@@ -50,7 +57,13 @@ noinst_LTLIBRARIES = \
     libgvariantwrapper.la
 
 liburlfifo_la_SOURCES = \
-    playitem.cc playitem.hh streamdata.hh urlfifo.hh dump_enum_value.hh
+    playitem.cc playitem.hh streamdata.hh urlfifo.hh dump_enum_value.hh \
+    url_collection.cc url_collection.hh \
+    strbo_usb_url.cc strbo_usb_url.hh \
+    dbuslist_exception.hh \
+    rnfcall.cc rnfcall.hh rnfcall_cookiecall.hh rnfcall_state.hh \
+    rnfcall_resolve_airable_redirect.hh \
+    timebase.hh
 liburlfifo_la_CFLAGS = $(AM_CFLAGS)
 liburlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
 
@@ -74,4 +87,5 @@ LIBS += \
     dbus/libartcache_dbus.la \
     dbus/libstreamplayer_dbus.la \
     dbus/libaudiopath_dbus.la \
+    dbus/libairable_dbus.la \
     dbus/libdebug_dbus.la

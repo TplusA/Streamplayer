@@ -25,6 +25,32 @@ if not compiler.has_header('doctest.h')
     subdir_done()
 endif
 
+dbus_mock_data = {
+    'MockDBusAirable': [
+        'de_tahifi_airable', 'de.tahifi.Airable',
+        '0xa112ab1e',
+    ],
+}
+
+mock_files = {}
+
+foreach name, d : dbus_mock_data
+    outname = 'mock_dbus_' + d[1].replace('.', '_').to_lower()
+    mock_files += {
+        name: custom_target(name,
+            input: dbus_iface_dir / d[0] + '.xml',
+            output: [outname + '.hh', outname + '.cc'],
+            command: [
+                taddybus_mockgen, '-o', '@OUTPUT0@', '-O', '@OUTPUT1@',
+                '--interface-prefix', dbus_iface_data[d[0]][0],
+                '--c-namespace', dbus_iface_data[d[0]][1],
+                '--cpp-namespace', name, '--interface', d[1],
+                '--pointer-pattern', d[2], '@INPUT@'
+            ]
+        )
+    }
+endforeach
+
 testrunner_lib = static_library('testrunner', 'testrunner.cc',
     cpp_args: '-DDOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING',
     include_directories: '../src'
@@ -32,7 +58,10 @@ testrunner_lib = static_library('testrunner', 'testrunner.cc',
 
 test('Play item queue',
     executable('test_urlfifo',
-        ['test_urlfifo.cc', 'mock_os.cc', 'mock_messages.cc', 'mock_backtrace.cc'],
+        [
+            'test_urlfifo.cc',
+            'mock_os.cc', 'mock_messages.cc', 'mock_backtrace.cc',
+        ],
         include_directories: '../src',
         link_with: [testrunner_lib, urlfifo_lib],
         build_by_default: false
@@ -43,11 +72,19 @@ test('Play item queue',
 
 test('Play items',
     executable('test_playitem',
-        ['test_playitem.cc', 'mock_os.cc', 'mock_messages.cc', 'mock_backtrace.cc'],
-        include_directories: '../src',
+        [
+            'test_playitem.cc',
+            'mock_os.cc', 'mock_messages.cc', 'mock_backtrace.cc',
+            mock_files['MockDBusAirable'],
+        ],
+        include_directories: [
+            dbus_iface_defs_includes,
+            include_directories('../src'),
+            include_directories('../src/dbus'),
+        ],
         link_with: [
             testrunner_lib, urlfifo_lib, strbo_url_lib, stopped_reasons_lib,
-            gvariantwrapper_lib
+            gvariantwrapper_lib, taddybus_lib,
         ],
         dependencies: glib_deps,
         build_by_default: false

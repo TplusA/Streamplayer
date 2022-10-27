@@ -52,6 +52,7 @@ autorevision = find_program('autorevision')
 markdown = find_program('pandoc', 'markdown')
 extract_docs = find_program('dbus_interfaces/extract_documentation.py')
 taddybus_codegen = find_program('dbus_interfaces/taddybus-codegen.py', 'taddybus-codegen.py', 'taddybus-codegen')
+taddybus_mockgen = find_program('dbus_interfaces/taddybus-mockgen.py', 'taddybus-mockgen.py', 'taddybus-mockgen')
 doxygen = find_program('doxygen', required: false)
 
 doxyfile = configure_file(input: 'Doxyfile.in', output: 'Doxyfile',

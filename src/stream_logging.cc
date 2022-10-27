@@ -129,11 +129,7 @@ static void log_error_or_warning(const char *prefix, const GLibString &debug,
     error.noticed();
 }
 
-#ifdef __DOXYGEN__
-using GstMessage = struct _GstMessage;
-#endif /* __DOXYGEN__ */
-
-GErrorWrapper Streamer::log_error_message(GstMessage *message)
+GErrorWrapper Streamer::log_error_message(struct _GstMessage *message)
 {
     GErrorWrapper error;
     const GLibString debug(
@@ -148,7 +144,7 @@ GErrorWrapper Streamer::log_error_message(GstMessage *message)
     return error;
 }
 
-GErrorWrapper Streamer::log_warning_message(GstMessage *message)
+GErrorWrapper Streamer::log_warning_message(struct _GstMessage *message)
 {
     GErrorWrapper error;
     const GLibString debug(

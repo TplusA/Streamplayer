@@ -29,8 +29,10 @@
 
 #include "streamdata.hh"
 #include "stream_id.h"
+#include "url_collection.hh"
 #include "stopped_reasons.hh"
 #include "strbo_url.hh"
+#include "rnfcall_resolve_airable_redirect.hh"
 
 namespace PlayQueue
 {
@@ -55,6 +57,17 @@ enum class FailState
     LAST_VALUE = FAILURE_DETECTED,
 };
 
+enum class URLState
+{
+    KNOWN_DIRECT_URL,   /*!< Regular, direct URL for the stream */
+    KNOWN_AIRABLE_LINK, /*!< Airable link */
+    RESOLVING_LINK,     /*!< Currently resolving Airable link */
+    KNOWN_RESOLVED_URL, /*!< Direct URL retrieved from Airable */
+    BROKEN,             /*!< Unrecoverable error */
+
+    LAST_VALUE = BROKEN,
+};
+
 /*!
  * Convert enum to printable string for diagnostic purposes.
  */
@@ -64,6 +77,11 @@ const char *item_state_name(ItemState state);
  * Convert enum to printable string for diagnostic purposes.
  */
 const char *fail_state_name(FailState state);
+
+/*!
+ * Convert enum to printable string for diagnostic purposes.
+ */
+const char *url_state_name(URLState state);
 
 /*!
  * URL FIFO item data.
@@ -82,8 +100,9 @@ class Item
     const stream_id_t stream_id_;
 
   private:
-    const std::string original_url_;
-    const std::string xlated_url_;
+    URLCollection::StreamURLs stream_urls_;
+    std::shared_ptr<DBusRNF::ResolveAirableRedirectCall> resolver_;
+    bool pipeline_start_required_after_resolve_;
     bool enable_realtime_processing_;
     const StreamType stream_type_;
 
@@ -93,6 +112,7 @@ class Item
 
   private:
     StreamData stream_data_;
+    const Timebase &timebase_;
 
   public:
     Item(const Item &) = delete;
@@ -104,11 +124,8 @@ class Item
      * \param stream_key
      *     Opaque key identifying th stream, passed on to the cover art caching
      *     daemon whenever cover arts are discovered.
-     * \param stream_url
-     *     The stream URL requested to play.
-     * \param xlated_url
-     *     The translated stream URL which can be handled by GStreamer. Leave
-     *     empty if \p stream_url can be handled by GStreamer anyway.
+     * \param stream_urls
+     *     The stream URLs requested to play.
      * \param enable_realtime_processing
      *     Enable real-time priorities of streaming threads for this stream.
      * \param cover_art_url
@@ -123,27 +140,33 @@ class Item
      *     \c std::chrono::time_point::min() and
      *     \c std::chrono::time_point::max(), respectively, to play the whole
      *     stream from its natural start to its natural end.
+     * \param timebase
+     *     How to get the current time.
      */
     explicit Item(const stream_id_t &stream_id, GVariantWrapper &&stream_key,
-                  std::string &&stream_url, std::string &&xlated_url,
+                  URLCollection::StreamURLs &&stream_urls,
                   bool enable_realtime_processing,
                   std::string &&cover_art_url,
                   std::unordered_map<std::string, std::string> &&extra_tags,
                   GstTagList *preset_tag_list,
                   std::chrono::time_point<std::chrono::nanoseconds> &&start_time,
-                  std::chrono::time_point<std::chrono::nanoseconds> &&end_time):
+                  std::chrono::time_point<std::chrono::nanoseconds> &&end_time,
+                  const Timebase &timebase):
         state_(ItemState::IN_QUEUE),
         fail_state_(FailState::NOT_FAILED),
         prefail_reason_(StoppedReasons::Reason::UNKNOWN),
         stream_id_(stream_id),
-        original_url_(std::move(stream_url)),
-        xlated_url_(std::move(xlated_url)),
+        stream_urls_(std::move(stream_urls)),
+        pipeline_start_required_after_resolve_(false),
         enable_realtime_processing_(enable_realtime_processing),
-        stream_type_(StrBoURL::determine_stream_type_from_url(original_url_)),
+        stream_type_(stream_urls_.empty()
+                     ? StreamType::EMPTY
+                     : StrBoURL::determine_stream_type_from_url(stream_urls_[0])),
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
         stream_data_(preset_tag_list, std::move(cover_art_url),
-                     std::move(extra_tags), std::move(stream_key))
+                     std::move(extra_tags), std::move(stream_key)),
+        timebase_(timebase)
     {}
 
     void set_state(ItemState state) { state_ = state; }
@@ -167,16 +190,52 @@ class Item
     const StreamData &get_stream_data() const { return stream_data_; }
     StreamData &get_stream_data() { return stream_data_; }
 
-    bool empty() const { return original_url_.empty(); }
+    URLState get_selected_url_state() const;
+    bool select_next_url();
+
+    bool empty() const { return stream_urls_.empty(); }
 
     const std::string &get_url_for_playing() const
     {
-        return xlated_url_.empty() ? original_url_ : xlated_url_;
+        bool dummy;
+        return stream_urls_.get_selected().get_stream_uri(dummy);
     }
 
-    const std::string &get_url_for_reporting() const { return original_url_; }
+    const std::string &get_url_for_reporting() const
+    {
+        return stream_urls_.get_selected().get_original_url_string();
+    }
 
     bool is_network_stream() const { return stream_type_ != StreamType::LOCAL_FILE; }
+
+    bool is_pipeline_start_required()
+    {
+        const bool result = pipeline_start_required_after_resolve_;
+        pipeline_start_required_after_resolve_ = false;
+        return result;
+    }
+
+    enum class PipelineStartRequired
+    {
+        NOT_REQUIRED,
+        START_NOW,
+        WHEN_READY,
+    };
+
+    PipelineStartRequired pipeline_start_required_when_ready();
+
+    enum class ResolverResult
+    {
+        RESOLVED,
+        HAVE_MORE_URLS,
+        FAILED,
+    };
+
+    void resolver_begin(DBusRNF::CookieManagerIface &cm,
+                        std::unique_ptr<DBusRNF::ContextData> context_data);
+    ResolverResult resolver_finish(std::string &&uri,
+                                   std::chrono::seconds &&expected_valid);
+    ResolverResult resolver_finish(PlayQueue::URLState url_state);
 };
 
 }

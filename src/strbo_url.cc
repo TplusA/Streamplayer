@@ -31,13 +31,13 @@
 #include <algorithm>
 #include <cstring>
 
-StreamType StrBoURL::determine_stream_type_from_url(const std::string &url)
+StreamType StrBoURL::determine_stream_type_from_url(const URLCollection::URL &url)
 {
-    if(url.empty())
+    if(url.get_original_url_string().empty())
         return StreamType::EMPTY;
 
 #if GST_CHECK_VERSION(1, 5, 1)
-    GstUri *uri = gst_uri_from_string(url.c_str());
+    GstUri *uri = gst_uri_from_string(url.get_original_url_string().c_str());
 
     if(uri == nullptr)
         return StreamType::UNKNOWN;
@@ -63,7 +63,8 @@ StreamType StrBoURL::determine_stream_type_from_url(const std::string &url)
     static const std::array<const std::string, 2> protocol_prefixes { "file://", "strbo-usb:/" };
 
     if(std::any_of(protocol_prefixes.begin(), protocol_prefixes.end(),
-                   [u = url.c_str()] (const auto &it) { return strncmp(u, it.c_str(), it.length()) == 0; }))
+                   [u = url.get_original_url_string().c_str()] (const auto &it)
+                   { return strncmp(u, it.c_str(), it.length()) == 0; }))
         return StreamType::LOCAL_FILE;
 
     return StreamType::GENERIC_NETWORK;

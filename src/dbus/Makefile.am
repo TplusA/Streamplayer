@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -29,6 +29,7 @@ noinst_LTLIBRARIES = \
     libartcache_dbus.la \
     libstreamplayer_dbus.la \
     libaudiopath_dbus.la \
+    libairable_dbus.la \
     libdebug_dbus.la
 
 AM_CFLAGS = $(CRELAXEDWARNINGS)
@@ -58,6 +59,11 @@ libaudiopath_dbus_la_CPPFLAGS = $(AM_CPPFLAGS)
 libaudiopath_dbus_la_CFLAGS = $(AM_CFLAGS)
 libaudiopath_dbus_la_CXXFLAGS = $(AM_CXXFLAGS)
 
+nodist_libairable_dbus_la_SOURCES = de_tahifi_airable.c de_tahifi_airable.h de_tahifi_airable.hh
+libairable_dbus_la_CPPFLAGS = $(AM_CPPFLAGS)
+libairable_dbus_la_CFLAGS = $(AM_CFLAGS)
+libairable_dbus_la_CXXFLAGS = $(AM_CXXFLAGS)
+
 nodist_libdebug_dbus_la_SOURCES = de_tahifi_debug.c de_tahifi_debug.h de_tahifi_debug.hh
 libdebug_dbus_la_CPPFLAGS = $(AM_CPPFLAGS)
 libdebug_dbus_la_CFLAGS = $(AM_CFLAGS)
@@ -80,6 +86,10 @@ BUILT_SOURCES = \
     de_tahifi_audiopath-doc.h \
     de_tahifi_audiopath-doc.md \
     de_tahifi_audiopath.stamp \
+    $(nodist_libairable_dbus_la_SOURCES) \
+    de_tahifi_airable-doc.h \
+    de_tahifi_airable-doc.md \
+    de_tahifi_airable.stamp \
     $(nodist_libdebug_dbus_la_SOURCES) \
     de_tahifi_debug-doc.h \
     de_tahifi_debug-doc.md \
@@ -129,6 +139,17 @@ de_tahifi_artcache.stamp: $(DBUS_IFACES)/de_tahifi_artcache.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_artcache --c-namespace tdbus_artcache --interface-prefix de.tahifi.ArtCache. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus_artcache --interface-prefix de.tahifi.ArtCache. --cpp-traits-prefix ArtCache -o de_tahifi_artcache.hh $<
 	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_artcache-doc.md -H de_tahifi_artcache-doc.h -c tdbus_artcache -s de.tahifi.ArtCache. -n "$(PACKAGE_NAME) (cover art)"
+	touch $@
+
+de_tahifi_airable-doc.h: de_tahifi_airable.stamp
+de_tahifi_airable-doc.md: de_tahifi_airable.stamp
+de_tahifi_airable.c: de_tahifi_airable.stamp
+de_tahifi_airable.h: de_tahifi_airable.stamp
+de_tahifi_airable.hh: de_tahifi_airable.stamp
+de_tahifi_airable.stamp: $(DBUS_IFACES)/de_tahifi_airable.xml
+	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_airable --c-namespace tdbus --interface-prefix de.tahifi. $<
+	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus --interface-prefix de.tahifi. -o de_tahifi_airable.hh $<
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_airable-doc.md -H de_tahifi_airable-doc.h -c tdbus -s de.tahifi. -n 'Airable'
 	touch $@
 
 de_tahifi_debug-doc.h: de_tahifi_debug.stamp
