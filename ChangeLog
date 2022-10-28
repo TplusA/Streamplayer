@@ -1,3 +1,10 @@
+2022-10-28  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.7 released.
+
+	* Playback: Improve management of thread priorities to avoid a
+	  performance problem on stream change.
+
 2022-10-21  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.6 released.
