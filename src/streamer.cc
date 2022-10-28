@@ -39,6 +39,7 @@
 #include "urlfifo.hh"
 #include "playitem.hh"
 #include "buffering.hh"
+#include "boosted_threads.hh"
 #include "stopped_reasons.hh"
 #include "gstringwrapper.hh"
 #include "gerrorwrapper.hh"
@@ -46,6 +47,10 @@
 #include "dbus.hh"
 #include "dbus/de_tahifi_streamplayer.hh"
 #include "dbus/de_tahifi_artcache.hh"
+
+#if BOOSTED_THREADS_DEBUG
+static BoostedThreads::ThreadObserver thread_observer;
+#endif /* BOOSTED_THREADS_DEBUG */
 
 enum class ActivateStreamResult
 {
@@ -125,6 +130,7 @@ class StreamerData
     guint progress_watcher;
     guint soup_http_block_size;
     bool boost_streaming_thread;
+    BoostedThreads::Threads boosted_threads_;
     std::vector<gulong> signal_handler_ids;
 
     std::unique_ptr<PlayQueue::Queue<PlayQueue::Item>> url_fifo_LOCK_ME;
@@ -292,6 +298,7 @@ static void emit_stopped(TDBus::Iface<tdbussplayPlayback> &playback_iface,
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     data.stream_buffering_data.reset();
+    data.boosted_threads_.throttle("stopped");
 
     auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
@@ -315,6 +322,7 @@ static void emit_stopped_with_error(TDBus::Iface<tdbussplayPlayback> &playback_i
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     data.stream_buffering_data.reset();
+    data.boosted_threads_.throttle("stopped with error");
 
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
@@ -369,6 +377,7 @@ static int rebuild_playbin(StreamerData &data,
                            std::unique_lock<std::recursive_mutex> &data_lock,
                            const char *context)
 {
+    data.boosted_threads_.throttle(context);
     disconnect_playbin_signals(data);
 
     /* allow signal handlers already waiting for the lock to pass */
@@ -1587,6 +1596,10 @@ static void try_leave_buffering_state(StreamerData &data)
     switch(data.stream_buffering_data.try_leave_buffering_state())
     {
       case Buffering::LeaveBufferingResult::BUFFER_FILLED:
+        BOOSTED_THREADS_DEBUG_CODE(thread_observer.dump("buffer filled (before boost)"));
+        data.boosted_threads_.boost("buffer filled");
+        BOOSTED_THREADS_DEBUG_CODE(thread_observer.dump("buffer filled (after boost)"));
+
         switch(data.supposed_play_status)
         {
           case Streamer::PlayStatus::PLAYING:
@@ -1613,6 +1626,8 @@ static void activate_stream_and_emit_pause_state(const StreamerData &data,
                                                  GstState pipeline_state,
                                                  gboolean is_paused)
 {
+    BOOSTED_THREADS_DEBUG_CODE(thread_observer.dump("activate stream"));
+
     switch(activate_stream(data, pipeline_state, 0))
     {
       case ActivateStreamResult::INVALID_ITEM:
@@ -1820,6 +1835,9 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     auto data_lock(data.lock());
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
+    if(!data.stream_buffering_data.is_buffering())
+        data.boosted_threads_.boost("stream started");
+
     bool failed = false;
     bool with_bug = false;
     bool need_activation = true;
@@ -2002,6 +2020,7 @@ static void handle_buffer_underrun(StreamerData &data)
         if(current_state != GST_STATE_PAUSED)
             set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer");
 
+        data.boosted_threads_.throttle("buffering playing");
         data.stream_buffering_data.start_buffering(current_state == GST_STATE_PAUSED
                                                    ? Buffering::State::PAUSED_FOR_BUFFERING
                                                    : Buffering::State::PAUSED_PENDING);
@@ -2011,6 +2030,7 @@ static void handle_buffer_underrun(StreamerData &data)
         BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
                "Pipeline paused, but supposed status is %d",
                int(data.supposed_play_status));
+        data.boosted_threads_.throttle("buffering paused");
         data.stream_buffering_data.start_buffering(current_state == GST_STATE_PAUSED
                                                    ? Buffering::State::PAUSED_PIGGYBACK
                                                    : Buffering::State::PAUSED_PENDING);
@@ -2295,11 +2315,19 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
     switch(status_type)
     {
       case GST_STREAM_STATUS_TYPE_ENTER:
+        BOOSTED_THREADS_DEBUG_CODE(thread_observer.add(GST_OBJECT_NAME(task),
+                                                       static_cast<const void *>(task)));
         break;
 
-      case GST_STREAM_STATUS_TYPE_CREATE:
       case GST_STREAM_STATUS_TYPE_LEAVE:
+        BOOSTED_THREADS_DEBUG_CODE(thread_observer.leave());
+        break;
+
       case GST_STREAM_STATUS_TYPE_DESTROY:
+        BOOSTED_THREADS_DEBUG_CODE(thread_observer.destroy());
+        return GST_BUS_PASS;
+
+      case GST_STREAM_STATUS_TYPE_CREATE:
       case GST_STREAM_STATUS_TYPE_START:
       case GST_STREAM_STATUS_TYPE_PAUSE:
       case GST_STREAM_STATUS_TYPE_STOP:
@@ -2309,21 +2337,19 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
     const auto *task = static_cast<GstTask *>(g_value_get_object(val));
 
     if(strcmp(GST_OBJECT_NAME(task), "aqueue:src") == 0 ||
+       strncmp(GST_OBJECT_NAME(task), "queue2-", 7) == 0 ||
        strncmp(GST_OBJECT_NAME(task), "multiqueue", 10) == 0)
     {
-        struct sched_param sp;
-        sp.sched_priority = sched_get_priority_max(SCHED_RR);
-
-        msg_info("Set priority of task %s [%08lx] to %d\n",
-                 GST_OBJECT_NAME(task), pthread_self(), sp.sched_priority);
-
-        const int res = pthread_setschedparam(pthread_self(), SCHED_RR, &sp);
-        if(res != 0)
-            msg_error(res, LOG_NOTICE, "pthread_setschedparam() failed");
+        /*
+         * Threads are coming from a thread pool, so we need to avoid that
+         * reused threads inherit realtime priorities by leaking them here.
+         */
+        auto &data = *static_cast<StreamerData *>(user_data);
+        if(status_type == GST_STREAM_STATUS_TYPE_ENTER)
+            data.boosted_threads_.add_self(GST_OBJECT_NAME(task));
+        else
+            data.boosted_threads_.remove_self();
     }
-    else
-        msg_info("Keep priority of task %s at default [%08lx]",
-                 GST_OBJECT_NAME(task), pthread_self());
 
     return GST_BUS_PASS;
 }
@@ -2346,7 +2372,7 @@ static int create_playbin(StreamerData &data, const char *context)
 
     if(data.boost_streaming_thread)
         gst_bus_set_sync_handler(GST_ELEMENT_BUS(data.pipeline),
-                                 bus_sync_message_handler, nullptr, nullptr);
+                                 bus_sync_message_handler, &data, nullptr);
 
     g_object_set(data.pipeline, "flags",
                  GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_BUFFERING,
@@ -2433,10 +2459,20 @@ static StreamerData streamer_data;
 int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
                     bool boost_streaming_thread)
 {
+    static const char context[] = "setup";
+
+    BOOSTED_THREADS_DEBUG_CODE({
+        thread_observer.add("Main", nullptr);
+        thread_observer.dump(context);
+    });
+
     streamer_data.soup_http_block_size = soup_http_block_size;
     streamer_data.boost_streaming_thread = boost_streaming_thread;
 
-    if(create_playbin(streamer_data, "setup") < 0)
+    if(boost_streaming_thread)
+        streamer_data.boosted_threads_.boost(context);
+
+    if(create_playbin(streamer_data, context) < 0)
         return -1;
 
     streamer_data.system_clock = gst_system_clock_obtain();

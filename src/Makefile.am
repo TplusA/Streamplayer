@@ -36,6 +36,7 @@ streamplayer_SOURCES = \
     backtrace.c backtrace.h \
     dbus.cc dbus.hh \
     strbo_usb_url.cc strbo_usb_url.hh \
+    boosted_threads.cc boosted_threads.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh buffering.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
     gstringwrapper.hh gerrorwrapper.hh \
