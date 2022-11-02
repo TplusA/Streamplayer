@@ -2300,6 +2300,20 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
     return G_SOURCE_CONTINUE;
 }
 
+static inline BoostedThreads::Priority task_name_to_priority(const char *name)
+{
+    if(strncmp(name, "queue2-", 7) == 0)
+        return BoostedThreads::Priority::MODERATE;
+
+    if(strncmp(name, "multiqueue", 10) == 0)
+        return BoostedThreads::Priority::HIGH;
+
+    if(strcmp(name, "aqueue:src") == 0)
+        return BoostedThreads::Priority::HIGHEST;
+
+    return BoostedThreads::Priority::NONE;
+}
+
 static GstBusSyncReply
 bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
 {
@@ -2342,10 +2356,9 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
     }
 
     const auto *task = static_cast<GstTask *>(g_value_get_object(val));
+    const auto prio = task_name_to_priority(GST_OBJECT_NAME(task));
 
-    if(strcmp(GST_OBJECT_NAME(task), "aqueue:src") == 0 ||
-       strncmp(GST_OBJECT_NAME(task), "queue2-", 7) == 0 ||
-       strncmp(GST_OBJECT_NAME(task), "multiqueue", 10) == 0)
+    if(prio != BoostedThreads::Priority::NONE)
     {
         /*
          * Threads are coming from a thread pool, so we need to avoid that
@@ -2353,7 +2366,7 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
          */
         auto &data = *static_cast<StreamerData *>(user_data);
         if(status_type == GST_STREAM_STATUS_TYPE_ENTER)
-            data.boosted_threads_.add_self(GST_OBJECT_NAME(task));
+            data.boosted_threads_.add_self(GST_OBJECT_NAME(task), prio);
         else
             data.boosted_threads_.remove_self();
     }

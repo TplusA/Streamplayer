@@ -28,7 +28,11 @@
 
 BoostedThreads::Threads::Threads():
     boosted_sched_policy_(SCHED_RR),
-    boosted_sched_priority_(sched_get_priority_max(boosted_sched_policy_)),
+    boosted_sched_priorities_{
+        sched_get_priority_max(boosted_sched_policy_),
+        sched_get_priority_max(boosted_sched_policy_) - 1,
+        sched_get_priority_min(boosted_sched_policy_),
+    },
     is_boost_enabled_(false)
 {
     struct sched_param sp;
@@ -62,7 +66,7 @@ void BoostedThreads::Threads::boost(const char *context)
     is_boost_enabled_ = true;
 
     for(const auto &t : threads_)
-        configure_thread(t.first, t.second, true, context);
+        configure_thread(t.first, t.second.first, t.second.second, context);
 }
 
 void BoostedThreads::Threads::throttle(const char *context)
@@ -84,15 +88,18 @@ void BoostedThreads::Threads::throttle(const char *context)
     is_boost_enabled_ = false;
 
     for(const auto &t : threads_)
-        configure_thread(t.first, t.second, false, context);
+        configure_thread(t.first, t.second.first, Priority::NONE, context);
 }
 
-void BoostedThreads::Threads::add_self(std::string &&name)
+void BoostedThreads::Threads::add_self(std::string &&name,  Priority prio)
 {
+    log_assert(prio != Priority::NONE);
+
     const pthread_t tid = pthread_self();
 
     std::lock_guard<std::mutex> lock(lock_);
-    configure_thread(tid, name, is_boost_enabled_, "entered thread");
+    configure_thread(tid, name, is_boost_enabled_ ? prio : Priority::NONE,
+                     "entered thread");
 
 #if BOOSTED_THREADS_DEBUG
     auto it(threads_.find(tid));
@@ -100,16 +107,16 @@ void BoostedThreads::Threads::add_self(std::string &&name)
     if(it == threads_.end())
     {
         msg_info("BoostedThreads: Added %s [%08lx]", name.c_str(), tid);
-        threads_[tid] = std::move(name);
+        threads_[tid] = std::make_pair(std::move(name), prio);
     }
     else
     {
         BUG("BoostedThreads: Added %s [%08lx] (thread ID already registered)",
             name.c_str(), tid);
-        it->second = std::move(name);
+        it->second = std::make_pair(std::move(name) ,prio);
     }
 #else /* !BOOSTED_THREADS_DEBUG */
-    threads_[tid] = std::move(name);
+    threads_[tid] = std::make_pair(std::move(name), prio);
 #endif /* BOOSTED_THREADS_DEBUG  */
 }
 
@@ -124,39 +131,42 @@ void BoostedThreads::Threads::remove_self()
     {
         BUG("BoostedThreads: Removed unknown thread %08lx", tid);
         static const std::string unknown("unknown");
-        configure_thread(tid, unknown, false, "left thread");
+        configure_thread(tid, unknown, Priority::NONE, "left thread");
     }
     else
     {
 #if BOOSTED_THREADS_DEBUG
-        msg_info("BoostedThreads: Removed %s [%08lx]", it->second.c_str(), tid);
+        msg_info("BoostedThreads: Removed %s [%08lx]",
+                 it->second.first.c_str(), tid);
 #endif /* BOOSTED_THREADS_DEBUG  */
-        configure_thread(tid, it->second, false, "left thread");
+        configure_thread(tid, it->second.first, Priority::NONE, "left thread");
         threads_.erase(it);
     }
 }
 
 void BoostedThreads::Threads::configure_thread(pthread_t tid, const std::string &name,
-                                               bool is_boosted, const char *context) const
+                                               Priority prio, const char *context) const
 {
     int sched_policy;
     struct sched_param sp;
 
-    if(is_boosted)
+    switch(prio)
     {
+      case Priority::HIGHEST:
+      case Priority::HIGH:
+      case Priority::MODERATE:
         sched_policy = boosted_sched_policy_;
-        sp.sched_priority = boosted_sched_priority_;
-    }
-    else
-    {
+        sp.sched_priority = boosted_sched_priorities_[size_t(prio)];
+        msg_info("Boost thread %s [%s], prio %d", name.c_str(), context, sp.sched_priority);
+        break;
+
+      case Priority::NONE:
+      default:
         sched_policy = default_sched_policy_;
         sp.sched_priority = default_sched_priority_;
-    }
-
-    if(is_boosted)
-        msg_info("Boost thread %s [%s]", name.c_str(), context);
-    else
         msg_info("Throttle thread %s [%s]", name.c_str(), context);
+        break;
+    }
 
     const int res = pthread_setschedparam(tid, sched_policy, &sp);
     if(res != 0)

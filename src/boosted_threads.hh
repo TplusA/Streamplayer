@@ -39,6 +39,15 @@
 namespace BoostedThreads
 {
 
+enum class Priority
+{
+    HIGHEST,
+    HIGH,
+    MODERATE,
+    NONE,
+    LAST_PRIORITY = NONE,
+};
+
 class Threads
 {
   private:
@@ -47,9 +56,9 @@ class Threads
     int default_sched_policy_;
     int default_sched_priority_;
     int boosted_sched_policy_;
-    int boosted_sched_priority_;
+    int boosted_sched_priorities_[size_t(Priority::LAST_PRIORITY)];
 
-    std::unordered_map<pthread_t, std::string> threads_;
+    std::unordered_map<pthread_t, std::pair<std::string, Priority>> threads_;
 
     bool is_boost_enabled_;
 
@@ -62,12 +71,12 @@ class Threads
     void boost(const char *context);
     void throttle(const char *context);
 
-    void add_self(std::string &&name);
+    void add_self(std::string &&name, Priority prio);
     void remove_self();
 
   private:
     void configure_thread(pthread_t tid, const std::string &name,
-                          bool is_boosted, const char *context) const;
+                          Priority prio, const char *context) const;
 };
 
 }
