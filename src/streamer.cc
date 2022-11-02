@@ -2317,8 +2317,13 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
     switch(status_type)
     {
       case GST_STREAM_STATUS_TYPE_ENTER:
-        BOOSTED_THREADS_DEBUG_CODE(thread_observer.add(GST_OBJECT_NAME(task),
-                                                       static_cast<const void *>(task)));
+        {
+#if BOOSTED_THREADS_DEBUG
+            const auto *task = static_cast<GstTask *>(g_value_get_object(val));
+#endif /* BOOSTED_THREADS_DEBUG */
+            BOOSTED_THREADS_DEBUG_CODE(thread_observer.add(GST_OBJECT_NAME(task),
+                                                           static_cast<const void *>(task)));
+        }
         break;
 
       case GST_STREAM_STATUS_TYPE_LEAVE:
