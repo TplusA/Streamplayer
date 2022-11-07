@@ -2888,18 +2888,15 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
 
     bool is_next_current = false;
     PlayQueue::Item *next_stream = nullptr;
+    std::unique_lock<std::recursive_mutex> queue_lock;
 
     if(is_dequeuing_permitted)
-        next_stream =
-            streamer_data.url_fifo_LOCK_ME->locked_rw(
-                [&is_next_current]
-                (PlayQueue::Queue<PlayQueue::Item> &fifo)
-                {
-                    bool dummy;
-                    return try_take_next(streamer_data, fifo,
-                                         true, is_next_current, dummy,
-                                         context);
-                });
+    {
+        queue_lock = streamer_data.url_fifo_LOCK_ME->lock();
+        bool dummy;
+        next_stream = try_take_next(streamer_data, *streamer_data.url_fifo_LOCK_ME,
+                                    true, is_next_current, dummy, context);
+    }
 
     uint32_t next_id = UINT32_MAX;
 
