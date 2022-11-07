@@ -26,6 +26,8 @@
 #include <sstream>
 #include <cinttypes>
 #include <cstring>
+#include <array>
+#include <utility>
 #include <unordered_set>
 #include <vector>
 #include <algorithm>

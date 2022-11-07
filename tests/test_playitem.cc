@@ -25,6 +25,8 @@
 
 #include <doctest.h>
 
+#include <array>
+
 #include "playitem.hh"
 
 #define MOCK_EXPECTATION_WITH_EXPECTATION_SEQUENCE_SINGLETON
