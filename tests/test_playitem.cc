@@ -104,7 +104,7 @@ TEST_CASE_FIXTURE(Fixture, "Set state does not consider current state")
         PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED,
     };
 
-    static_assert(states.size() == size_t(PlayQueue::ItemState::LAST_ITEM_STATE),
+    static_assert(states.size() == size_t(PlayQueue::ItemState::LAST_VALUE),
                   "Array size mismatch");
 
     for(int i = 0; i < 2; ++i)

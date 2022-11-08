@@ -25,6 +25,7 @@
 
 #include "playitem.hh"
 #include "messages.h"
+#include "dump_enum_value.hh"
 
 bool PlayQueue::Item::prefail(StoppedReasons::Reason reason)
 {
@@ -72,40 +73,19 @@ bool PlayQueue::Item::fail()
 
 const char *PlayQueue::item_state_name(PlayQueue::ItemState state)
 {
-    switch(state)
+    static const std::array<const char *const, 6> names
     {
-      case ItemState::IN_QUEUE:
-        return "IN_QUEUE";
-
-      case ItemState::ABOUT_TO_ACTIVATE:
-        return "ABOUT_TO_ACTIVATE";
-
-      case ItemState::ACTIVE_HALF_PLAYING:
-        return "ACTIVE_HALF_PLAYING";
-
-      case ItemState::ACTIVE_NOW_PLAYING:
-        return "ACTIVE_NOW_PLAYING";
-
-      case ItemState::ABOUT_TO_PHASE_OUT:
-        return "ABOUT_TO_PHASE_OUT";
-
-      case ItemState::ABOUT_TO_BE_SKIPPED:
-        return "ABOUT_TO_BE_SKIPPED";
-    }
-
-    return "*** UNKNOWN ItemState ***";
+        "IN_QUEUE", "ABOUT_TO_ACTIVATE", "ACTIVE_HALF_PLAYING",
+        "ACTIVE_NOW_PLAYING", "ABOUT_TO_PHASE_OUT", "ABOUT_TO_BE_SKIPPED",
+    };
+    return enum_to_string(names, state);
 }
 
 const char *PlayQueue::fail_state_name(PlayQueue::FailState state)
 {
-    switch(state)
+    static const std::array<const char *const, 2> names
     {
-      case PlayQueue::FailState::NOT_FAILED:
-        return "NOT_FAILED";
-
-      case PlayQueue::FailState::FAILURE_DETECTED:
-        return "FAILURE_DETECTED";
-    }
-
-    return "*** UNKNOWN FailState ***";
+        "NOT_FAILED", "FAILURE_DETECTED",
+    };
+    return enum_to_string(names, state);
 }

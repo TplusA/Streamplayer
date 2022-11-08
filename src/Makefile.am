@@ -48,7 +48,8 @@ noinst_LTLIBRARIES = \
     libstopped_reasons.la \
     libgvariantwrapper.la
 
-liburlfifo_la_SOURCES = playitem.cc playitem.hh streamdata.hh urlfifo.hh
+liburlfifo_la_SOURCES = \
+    playitem.cc playitem.hh streamdata.hh urlfifo.hh dump_enum_value.hh
 liburlfifo_la_CFLAGS = $(AM_CFLAGS)
 liburlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
 

@@ -43,7 +43,7 @@ enum class ItemState
     ABOUT_TO_PHASE_OUT,
     ABOUT_TO_BE_SKIPPED,
 
-    LAST_ITEM_STATE = ABOUT_TO_BE_SKIPPED,
+    LAST_VALUE = ABOUT_TO_BE_SKIPPED,
 };
 
 enum class FailState
@@ -51,7 +51,7 @@ enum class FailState
     NOT_FAILED,
     FAILURE_DETECTED,
 
-    LAST_FAIL_STATE = FAILURE_DETECTED,
+    LAST_VALUE = FAILURE_DETECTED,
 };
 
 /*!
