@@ -370,10 +370,6 @@ static void audio_player(TDBus::Bus &bus)
 
 static void mounta_watch(TDBus::Bus &bus)
 {
-    static auto mounta_proxy(
-        TDBus::Proxy<tdbusMounTA>::make_proxy("de.tahifi.MounTA",
-                                              "/de/tahifi/MounTA"));
-
     bus.add_watcher("de.tahifi.MounTA",
         [] (GDBusConnection *connection, const char *name)
         {
