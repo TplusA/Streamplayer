@@ -1,3 +1,10 @@
+2022-11-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.8 released.
+
+	* Playback: Use different RT priorities for the various streaming
+	  threads to reduce some micro dropouts.
+
 2022-10-28  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.7 released.
