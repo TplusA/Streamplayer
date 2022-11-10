@@ -90,7 +90,7 @@ static StoppedReasons::Reason core_error_to_reason(GstCoreError code,
         break;
     }
 
-    BUG("Failed to convert GstCoreError code %d to reason code", code);
+    MSG_BUG("Failed to convert GstCoreError code %d to reason code", code);
 
     return StoppedReasons::Reason::UNKNOWN;
 }
@@ -98,7 +98,7 @@ static StoppedReasons::Reason core_error_to_reason(GstCoreError code,
 static StoppedReasons::Reason library_error_to_reason(GstLibraryError code,
                                                       bool is_local_error)
 {
-    BUG("Failed to convert GstLibraryError code %d to reason code", code);
+    MSG_BUG("Failed to convert GstLibraryError code %d to reason code", code);
     return StoppedReasons::Reason::UNKNOWN;
 }
 
@@ -136,7 +136,7 @@ static StoppedReasons::Reason resource_error_to_reason(GstResourceError code,
         break;
     }
 
-    BUG("Failed to convert GstResourceError code %d to reason code", code);
+    MSG_BUG("Failed to convert GstResourceError code %d to reason code", code);
 
     return StoppedReasons::Reason::UNKNOWN;
 }
@@ -175,7 +175,7 @@ static StoppedReasons::Reason stream_error_to_reason(GstStreamError code,
         break;
     }
 
-    BUG("Failed to convert GstStreamError code %d to reason code", code);
+    MSG_BUG("Failed to convert GstStreamError code %d to reason code", code);
 
     return StoppedReasons::Reason::UNKNOWN;
 }
@@ -199,8 +199,8 @@ StoppedReasons::Reason StoppedReasons::from_gerror(const GErrorWrapper &error,
         return stream_error_to_reason((GstStreamError)error->code,
                                       is_local_error);
 
-    BUG("Unknown error domain %u for error code %d",
-        error->domain, error->code);
+    MSG_BUG("Unknown error domain %u for error code %d",
+            error->domain, error->code);
 
     return Reason::UNKNOWN;
 }

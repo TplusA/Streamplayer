@@ -28,7 +28,7 @@
 
 bool PlayQueue::Item::prefail(StoppedReasons::Reason reason)
 {
-    log_assert(reason != StoppedReasons::Reason::UNKNOWN);
+    msg_log_assert(reason != StoppedReasons::Reason::UNKNOWN);
     if(prefail_reason_ != StoppedReasons::Reason::UNKNOWN)
     {
         msg_error(0, LOG_NOTICE,

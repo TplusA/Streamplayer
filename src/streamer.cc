@@ -366,7 +366,7 @@ static void teardown_playbin(StreamerData &data)
     data.bus_watch = 0;
 
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(data.pipeline));
-    log_assert(bus != nullptr);
+    msg_log_assert(bus != nullptr);
     gst_object_unref(bus);
 
     gst_object_unref(GST_OBJECT(data.pipeline));
@@ -766,8 +766,8 @@ static bool play_next_stream(StreamerData &data,
       case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
       case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
       case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
-        BUG("[%s] Unexpected stream state %s",
-            context, PlayQueue::item_state_name(next_stream.get_state()));
+        MSG_BUG("[%s] Unexpected stream state %s",
+                context, PlayQueue::item_state_name(next_stream.get_state()));
         return false;
 
       case PlayQueue::ItemState::IN_QUEUE:
@@ -821,8 +821,8 @@ static bool play_next_stream(StreamerData &data,
 static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
                                                  const char *context)
 {
-    BUG_IF(data.next_stream_request == NextStreamRequestState::NOT_REQUESTED,
-           "GStreamer has not requested the next stream yet [%s]", context);
+    MSG_BUG_IF(data.next_stream_request == NextStreamRequestState::NOT_REQUESTED,
+               "GStreamer has not requested the next stream yet [%s]", context);
 
     bool is_next_in_fifo;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
@@ -831,7 +831,7 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
 
     if(data.current_stream == nullptr && next_stream == nullptr)
     {
-        BUG("Having nothing in queue, GStreamer is asking for more, "
+        MSG_BUG("Having nothing in queue, GStreamer is asking for more, "
             "but currently playing nothing [%s]", context);
         return;
     }
@@ -839,7 +839,7 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
     if(next_stream == nullptr)
     {
         /* we are done here */
-        log_assert(data.current_stream != nullptr);
+        msg_log_assert(data.current_stream != nullptr);
         data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
     }
     else
@@ -1098,7 +1098,7 @@ static void send_image_data_to_cover_art_cache(GstSample *sample,
 
     if(gst_buffer_n_memory(buffer) != 1)
     {
-        BUG("Image data spans multiple memory regions (not implemented)");
+        MSG_BUG("Image data spans multiple memory regions (not implemented)");
         return;
     }
 
@@ -1187,7 +1187,7 @@ static void update_picture_for_item(PlayQueue::Item &item,
             break;
 
           case IMAGE_TAG_TYPE_URI:
-            BUG("Embedded image tag is URI: not implemented");
+            MSG_BUG("Embedded image tag is URI: not implemented");
             break;
         }
 
@@ -1340,7 +1340,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
     switch(which_stream_failed)
     {
       case WhichStreamFailed::UNKNOWN:
-        BUG("Supposed to handle error, but have no item");
+        MSG_BUG("Supposed to handle error, but have no item");
         return;
 
       case WhichStreamFailed::GAPLESS_NEXT:
@@ -1517,8 +1517,8 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
 {
     if(data.current_stream == nullptr)
     {
-        BUG("Current item is invalid, switched to %s",
-            gst_element_state_get_name(pipeline_state));
+        MSG_BUG("Current item is invalid, switched to %s",
+                gst_element_state_get_name(pipeline_state));
         return ActivateStreamResult::INVALID_ITEM;
     }
 
@@ -1560,9 +1560,9 @@ activate_stream(const StreamerData &data, GstState pipeline_state, int phase)
         break;
 
       case PlayQueue::ItemState::IN_QUEUE:
-        BUG("Unexpected state %s for stream switched to %s",
-            PlayQueue::item_state_name(data.current_stream->get_state()),
-            gst_element_state_get_name(pipeline_state));
+        MSG_BUG("Unexpected state %s for stream switched to %s",
+                PlayQueue::item_state_name(data.current_stream->get_state()),
+                gst_element_state_get_name(pipeline_state));
 
         data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED);
 
@@ -1823,8 +1823,8 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
       case GST_STATE_VOID_PENDING:
       case GST_STATE_NULL:
-        BUG("Ignoring state transition for bogus pipeline target %s",
-            gst_element_state_get_name(target_state));
+        MSG_BUG("Ignoring state transition for bogus pipeline target %s",
+                gst_element_state_get_name(target_state));
         break;
     }
 }
@@ -1904,8 +1904,8 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
                       case PlayQueue::ItemState::ACTIVE_NOW_PLAYING:
                       case PlayQueue::ItemState::ABOUT_TO_PHASE_OUT:
                       case PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED:
-                        BUG("Next stream %u in unexpected state %d",
-                            next_stream->stream_id_, int(next_stream->get_state()));
+                        MSG_BUG("Next stream %u in unexpected state %d",
+                                next_stream->stream_id_, int(next_stream->get_state()));
 
                         /* fall-through */
 
@@ -1927,13 +1927,13 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     if(with_bug)
     {
         if(picked_stream == nullptr)
-            BUG("Replace nullptr current by next");
+            MSG_BUG("Replace nullptr current by next");
         else
-            BUG("Replace current by next %u in unexpected state %s",
-                picked_stream->stream_id_,
-                PlayQueue::item_state_name(picked_stream->get_state()));
+            MSG_BUG("Replace current by next %u in unexpected state %s",
+                    picked_stream->stream_id_,
+                    PlayQueue::item_state_name(picked_stream->get_state()));
 
-        log_assert(!data.url_fifo_LOCK_ME->empty());
+        msg_log_assert(!data.url_fifo_LOCK_ME->empty());
     }
 
     if(next_stream_is_in_fifo &&
@@ -1950,8 +1950,8 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     {
       case ActivateStreamResult::INVALID_ITEM:
       case ActivateStreamResult::INVALID_STATE:
-        BUG("Failed activating stream %u in GStreamer handler",
-            data.current_stream->stream_id_);
+        MSG_BUG("Failed activating stream %u in GStreamer handler",
+                data.current_stream->stream_id_);
         break;
 
       case ActivateStreamResult::ALREADY_ACTIVE:
@@ -2016,9 +2016,9 @@ static void handle_buffer_underrun(StreamerData &data)
     switch(next_state)
     {
       case GST_STATE_PLAYING:
-        BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PLAYING,
-               "Pipeline playing, but supposed status is %d",
-               int(data.supposed_play_status));
+        MSG_BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PLAYING,
+                   "Pipeline playing, but supposed status is %d",
+                   int(data.supposed_play_status));
         if(current_state != GST_STATE_PAUSED)
             set_stream_state(data.pipeline, GST_STATE_PAUSED, "fill buffer");
 
@@ -2029,9 +2029,9 @@ static void handle_buffer_underrun(StreamerData &data)
         break;
 
       case GST_STATE_PAUSED:
-        BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
-               "Pipeline paused, but supposed status is %d",
-               int(data.supposed_play_status));
+        MSG_BUG_IF(data.supposed_play_status != Streamer::PlayStatus::PAUSED,
+                   "Pipeline paused, but supposed status is %d",
+                   int(data.supposed_play_status));
         data.boosted_threads_.throttle("buffering paused");
         data.stream_buffering_data.start_buffering(current_state == GST_STATE_PAUSED
                                                    ? Buffering::State::PAUSED_PIGGYBACK
@@ -2290,10 +2290,10 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 #if GST_CHECK_VERSION(1, 18, 0)
       case GST_MESSAGE_INSTANT_RATE_REQUEST:
 #endif /* v1.16 */
-        BUG("UNHANDLED MESSAGE TYPE %s (%u) from %s",
-            GST_MESSAGE_TYPE_NAME(message),
-            static_cast<unsigned int>(GST_MESSAGE_TYPE(message)),
-            GST_MESSAGE_SRC_NAME(message));
+        MSG_BUG("UNHANDLED MESSAGE TYPE %s (%u) from %s",
+                GST_MESSAGE_TYPE_NAME(message),
+                static_cast<unsigned int>(GST_MESSAGE_TYPE(message)),
+                GST_MESSAGE_SRC_NAME(message));
         break;
     }
 
@@ -2398,7 +2398,7 @@ static int create_playbin(StreamerData &data, const char *context)
                  GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_BUFFERING,
                  nullptr);
 
-    log_assert(data.signal_handler_ids.empty());
+    msg_log_assert(data.signal_handler_ids.empty());
     data.signal_handler_ids.push_back(
         g_signal_connect(data.pipeline, "about-to-finish",
                          G_CALLBACK(queue_stream_from_url_fifo), &data));
@@ -2430,7 +2430,7 @@ static void try_play_next_stream(StreamerData &data,
 static bool do_stop(StreamerData &data, const char *context,
                     const GstState pending, bool &failed_hard)
 {
-    log_assert(data.pipeline != nullptr);
+    msg_log_assert(data.pipeline != nullptr);
 
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
 
@@ -2504,7 +2504,7 @@ int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
     if(!initialized)
         initialized = true;
     else
-        log_assert(false);
+        msg_log_assert(false);
 
     g_main_loop_ref(loop);
 
@@ -2533,7 +2533,7 @@ void Streamer::activate()
     auto data_lock(streamer_data.lock());
 
     if(streamer_data.is_player_activated)
-        BUG("Already activated");
+        MSG_BUG("Already activated");
     else
     {
         msg_info("Activated");
@@ -2548,7 +2548,7 @@ void Streamer::deactivate()
     auto data_lock(streamer_data.lock());
 
     if(!streamer_data.is_player_activated)
-        BUG("Already deactivated");
+        MSG_BUG("Already deactivated");
     else
     {
         msg_info("Deactivating as requested");
@@ -2568,7 +2568,7 @@ bool Streamer::start(const char *reason)
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Start request while inactive (%s)", reason);
+        MSG_BUG("Start request while inactive (%s)", reason);
         return false;
     }
 
@@ -2576,7 +2576,7 @@ bool Streamer::start(const char *reason)
 
     msg_info("Starting as requested (%s)", reason);
 
-    log_assert(streamer_data.pipeline != nullptr);
+    msg_log_assert(streamer_data.pipeline != nullptr);
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PLAYING;
 
@@ -2644,7 +2644,7 @@ bool Streamer::stop(const char *reason)
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Stop request while inactive (%s)", reason);
+        MSG_BUG("Stop request while inactive (%s)", reason);
         return false;
     }
 
@@ -2690,14 +2690,14 @@ bool Streamer::pause(const char *reason)
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Pause request while inactive (%s)", reason);
+        MSG_BUG("Pause request while inactive (%s)", reason);
         return false;
     }
 
     static const char context[] = "pause stream";
 
     msg_info("Pausing as requested (%s)", reason);
-    log_assert(streamer_data.pipeline != nullptr);
+    msg_log_assert(streamer_data.pipeline != nullptr);
 
     streamer_data.supposed_play_status = Streamer::PlayStatus::PAUSED;
 
@@ -2789,7 +2789,7 @@ bool Streamer::seek(int64_t position, const char *units)
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Seek request while inactive");
+        MSG_BUG("Seek request while inactive");
         return false;
     }
 
@@ -2849,14 +2849,14 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
 
     if(!streamer_data.is_player_activated)
     {
-        BUG("Next request while inactive");
+        MSG_BUG("Next request while inactive");
         return Streamer::PlayStatus::STOPPED;
     }
 
     static const char context[] = "skip to next";
 
     msg_info("Next requested");
-    log_assert(streamer_data.pipeline != nullptr);
+    msg_log_assert(streamer_data.pipeline != nullptr);
 
     if(skip_only_if_not_stopped && streamer_data.current_stream != nullptr)
     {
@@ -2906,15 +2906,15 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
     if(next_stream != nullptr && !is_next_current)
     {
         if(streamer_data.current_stream == nullptr)
-            BUG("[%s] Have no current stream", context);
+            MSG_BUG("[%s] Have no current stream", context);
         else
         {
             switch(streamer_data.current_stream->get_state())
             {
               case PlayQueue::ItemState::IN_QUEUE:
-                BUG("[%s] Wrong state %s of current stream",
-                    context,
-                    PlayQueue::item_state_name(streamer_data.current_stream->get_state()));
+                MSG_BUG("[%s] Wrong state %s of current stream",
+                        context,
+                        PlayQueue::item_state_name(streamer_data.current_stream->get_state()));
                 break;
 
               case PlayQueue::ItemState::ABOUT_TO_ACTIVATE:
@@ -3018,7 +3018,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
 
     if(!is_active)
     {
-        BUG("Push request while inactive");
+        MSG_BUG("Push request while inactive");
         return false;
     }
 

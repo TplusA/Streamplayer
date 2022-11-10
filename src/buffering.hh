@@ -137,8 +137,8 @@ class Data
 
     void start_buffering(State start_state)
     {
-        BUG_IF(state_ != State::NOT_BUFFERING,
-               "Bad buffering state %d on start", int(state_));
+        MSG_BUG_IF(state_ != State::NOT_BUFFERING,
+                   "Bad buffering state %d on start", int(state_));
         state_ = start_state;
     }
 

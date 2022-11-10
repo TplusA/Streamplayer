@@ -93,7 +93,7 @@ void BoostedThreads::Threads::throttle(const char *context)
 
 void BoostedThreads::Threads::add_self(std::string &&name,  Priority prio)
 {
-    log_assert(prio != Priority::NONE);
+    msg_log_assert(prio != Priority::NONE);
 
     const pthread_t tid = pthread_self();
 
@@ -111,8 +111,8 @@ void BoostedThreads::Threads::add_self(std::string &&name,  Priority prio)
     }
     else
     {
-        BUG("BoostedThreads: Added %s [%08lx] (thread ID already registered)",
-            name.c_str(), tid);
+        MSG_BUG("BoostedThreads: Added %s [%08lx] (thread ID already registered)",
+                name.c_str(), tid);
         it->second = std::make_pair(std::move(name) ,prio);
     }
 #else /* !BOOSTED_THREADS_DEBUG */
@@ -129,7 +129,7 @@ void BoostedThreads::Threads::remove_self()
 
     if(it == threads_.end())
     {
-        BUG("BoostedThreads: Removed unknown thread %08lx", tid);
+        MSG_BUG("BoostedThreads: Removed unknown thread %08lx", tid);
         static const std::string unknown("unknown");
         configure_thread(tid, unknown, Priority::NONE, "left thread");
     }
