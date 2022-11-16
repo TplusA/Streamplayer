@@ -2071,34 +2071,7 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
         return;
     }
 
-    GstBufferingMode mode;
-    gint avg_in, avg_out;
-    gint64 buffering_left;
-    gst_message_parse_buffering_stats(message, &mode, &avg_in, &avg_out, &buffering_left);
-
-    const char *mode_name;
-    switch(mode)
-    {
-      case GST_BUFFERING_STREAM:
-        mode_name = "buffering";
-        break;
-      case GST_BUFFERING_DOWNLOAD:
-        mode_name = "downloading";
-        break;
-      case GST_BUFFERING_TIMESHIFT:
-        mode_name = "timeshift";
-        break;
-      case GST_BUFFERING_LIVE:
-        mode_name = "buffering live";
-        break;
-      default:
-        mode_name = "<unknown buffering mode>";
-        break;
-    }
-
-    msg_info("Buffer level: %d%%, %s, avg in/out rates %d/%d, "
-             "%" G_GINT64_FORMAT " ms left",
-             percent, mode_name, avg_in, avg_out, buffering_left);
+    msg_info("Buffer level: %d%%", percent);
 
     switch(data.stream_buffering_data.set_buffer_level(percent))
     {
