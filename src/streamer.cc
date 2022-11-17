@@ -2275,10 +2275,10 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
 
 static inline BoostedThreads::Priority task_name_to_priority(const char *name)
 {
-    if(strncmp(name, "queue2-", 7) == 0)
+    if(strncmp(name, "multiqueue", 10) == 0)
         return BoostedThreads::Priority::MODERATE;
 
-    if(strncmp(name, "multiqueue", 10) == 0)
+    if(strncmp(name, "dmultiqueue", 11) == 0)
         return BoostedThreads::Priority::HIGH;
 
     if(strcmp(name, "aqueue:src") == 0)
