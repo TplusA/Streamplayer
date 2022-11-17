@@ -1,3 +1,19 @@
+2022-11-17  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.9 released.
+
+	* GStreamer: Update task matches for getting RT priorities right with
+	  latest GStreamer.
+
+	* GStreamer: Don't log gst_message_parse_buffering_stats() values.
+	  These values don't mean anything anymore.
+
+	* Stability: Keep URL FIFO locked while working with an item still
+	  sitting in the FIFO.
+
+	* Misc: Avoid creating two proxies for MounTA. One of them wasn't used
+	  at all and was a pure waste of resources.
+
 2022-11-10  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.8 released.
