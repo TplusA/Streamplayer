@@ -47,6 +47,7 @@ executable(
     'streamplayer',
     [
         'streamplayer.cc', 'streamer.cc', 'dbus.cc', 'debug_levels.cc',
+        'stream_logging.cc',
         'backtrace.c', 'strbo_usb_url.cc', 'boosted_threads.cc',
         'messages.c', 'messages_glib.c', 'messages_dbus.c', 'os.c',
         version_info

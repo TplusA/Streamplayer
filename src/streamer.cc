@@ -40,12 +40,12 @@
 #include "strbo_usb_url.hh"
 #include "urlfifo.hh"
 #include "playitem.hh"
+#include "stream_logging.hh"
 #include "buffering.hh"
 #include "boosted_threads.hh"
 #include "stopped_reasons.hh"
 #include "gstringwrapper.hh"
 #include "gerrorwrapper.hh"
-#include "messages.h"
 #include "dbus.hh"
 #include "dbus/de_tahifi_streamplayer.hh"
 #include "dbus/de_tahifi_artcache.hh"
@@ -671,89 +671,6 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
     return nullptr;
 }
 
-static std::tuple<std::string, const size_t, const size_t, bool>
-tokenize_meta_data(const std::string &src)
-{
-    std::string dest;
-    dest.reserve(src.length() + 1);
-
-    size_t artist = src.length();
-    size_t album = artist;
-    size_t idx = 0;
-    bool is_single_string = true;
-
-    for(size_t i = 0; i < src.length(); ++i)
-    {
-        const char ch = src[i];
-
-        if(ch == '\x1d')
-        {
-            is_single_string = false;
-            dest.push_back('\0');
-
-            if(idx < 2)
-            {
-                if(idx == 0)
-                    artist = i + 1;
-                else
-                    album = i + 1;
-
-                ++idx;
-            }
-        }
-        else
-            dest.push_back(ch);
-    }
-
-    dest.push_back('\0');
-
-    return std::make_tuple(std::move(dest), artist, album, is_single_string);
-}
-
-static void log_next_stream_tags(const GstTagList *tag_list, const char prefix)
-{
-    if(tag_list == nullptr)
-        return;
-
-    const gchar *artist = nullptr;
-    const gchar *album = nullptr;
-    const gchar *title = nullptr;
-    gst_tag_list_peek_string_index(tag_list, GST_TAG_ARTIST, 0, &artist);
-    gst_tag_list_peek_string_index(tag_list, GST_TAG_ALBUM, 0, &album);
-    gst_tag_list_peek_string_index(tag_list, GST_TAG_TITLE, 0, &title);
-    msg_info("%c-Artist: \"%s\"", prefix, artist);
-    msg_info("%c-Album : \"%s\"", prefix, album);
-    msg_info("%c-Title : \"%s\"", prefix, title);
-}
-
-static void log_next_stream(const PlayQueue::Item &next_stream)
-{
-    msg_info("Setting stream %u URL %s",
-             next_stream.stream_id_, next_stream.get_url_for_playing().c_str());
-
-    const auto &sd = next_stream.get_stream_data();
-
-    log_next_stream_tags(sd.get_tag_list(), 'T');
-    log_next_stream_tags(sd.get_preset_tag_list(), 'P');
-
-    const auto &extra_tags(sd.get_extra_tags());
-    const auto &drcpd_title(extra_tags.find("x-drcpd-title"));
-
-    if(drcpd_title != extra_tags.end())
-    {
-        const auto &tokens(tokenize_meta_data(drcpd_title->second));
-        const char *str(std::get<0>(tokens).c_str());
-
-        if(!std::get<3>(tokens))
-        {
-            msg_info("R-Artist: \"%s\"", &str[std::get<1>(tokens)]);
-            msg_info("R-Album : \"%s\"", &str[std::get<2>(tokens)]);
-        }
-
-        msg_info("R-Title : \"%s\"", str);
-    }
-}
-
 static bool play_next_stream(StreamerData &data,
                              PlayQueue::Item *replaced_stream,
                              PlayQueue::Item &next_stream,
@@ -801,7 +718,7 @@ static bool play_next_stream(StreamerData &data,
                                    ? PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED
                                    : PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
 
-    log_next_stream(next_stream);
+    PlayQueue::log_next_stream(next_stream);
 
     g_object_set(data.pipeline, "uri",
                  next_stream.get_url_for_playing().c_str(), nullptr);
@@ -1305,21 +1222,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
-    GErrorWrapper error;
-    const GLibString debug(
-        [message, &error] ()
-        {
-            gchar *temp = nullptr;
-            gst_message_parse_error(message, error.await(), &temp);
-            return temp;
-        });
-
-    msg_error(0, LOG_ERR, "ERROR code %d, domain %s from \"%s\"",
-              error->code, g_quark_to_string(error->domain),
-              GST_MESSAGE_SRC_NAME(message));
-    msg_error(0, LOG_ERR, "ERROR message: %s", error->message);
-    msg_error(0, LOG_ERR, "ERROR debug: %s", debug.get());
-    error.noticed();
+    GErrorWrapper error(Streamer::log_error_message(message));
 
     const auto data_lock(data.lock());
     const auto fifo_lock(data.url_fifo_LOCK_ME->lock());
@@ -1412,22 +1315,7 @@ static void handle_warning_message(GstMessage *message)
 {
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
-
-    GErrorWrapper error;
-    const GLibString debug(
-        [message, &error] ()
-        {
-            gchar *temp = nullptr;
-            gst_message_parse_warning(message, error.await(), &temp);
-            return temp;
-        });
-
-    msg_error(0, LOG_ERR, "WARNING code %d, domain %s from \"%s\"",
-              error->code, g_quark_to_string(error->domain),
-              GST_MESSAGE_SRC_NAME(message));
-    msg_error(0, LOG_ERR, "WARNING message: %s", error->message);
-    msg_error(0, LOG_ERR, "WARNING debug: %s", debug.get());
-    error.noticed();
+    Streamer::log_warning_message(message);
 }
 
 static void query_seconds(gboolean (*query)(GstElement *, GstFormat, gint64 *),
