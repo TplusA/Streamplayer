@@ -223,11 +223,6 @@ static void invalidate_position_information(struct time_data &data)
     data.duration_s = INT64_MAX;
 }
 
-static inline void invalidate_stream_position_information(StreamerData &data)
-{
-    invalidate_position_information(data.previous_time);
-}
-
 static bool set_stream_state(GstElement *pipeline, GstState next_state,
                              const char *context)
 {
@@ -426,7 +421,7 @@ static void do_stop_pipeline_and_recover_from_error(
     if(data.fail.clear_fifo_on_error)
         url_fifo.clear(0);
 
-    invalidate_stream_position_information(data);
+    invalidate_position_information(data.previous_time);
     emit_stopped_with_error(TDBus::get_exported_iface<tdbussplayPlayback>(),
                             data, url_fifo,
                             data.fail.reason, std::move(data.current_stream));
@@ -730,7 +725,7 @@ static bool play_next_stream(StreamerData &data,
     const bool retval = set_stream_state(data.pipeline, next_state, "play queued");
 
     if(retval)
-        invalidate_stream_position_information(data);
+        invalidate_position_information(data.previous_time);
 
     return retval;
 }
@@ -1296,7 +1291,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
         if(failed_item->fail())
         {
             set_stream_state(data.pipeline, GST_STATE_NULL, "stop on bad stream");
-            invalidate_stream_position_information(data);
+            invalidate_position_information(data.previous_time);
             emit_stopped_with_error(TDBus::get_exported_iface<tdbussplayPlayback>(),
                                     data, *data.url_fifo_LOCK_ME,
                                     fdata.reason, std::move(failed_item));
@@ -1380,8 +1375,7 @@ static gboolean report_progress__unlocked(StreamerData &data)
       case GST_STATE_READY:
       case GST_STATE_NULL:
       case GST_STATE_VOID_PENDING:
-        data.current_time.position_s = INT64_MAX;
-        data.current_time.duration_s = INT64_MAX;
+        invalidate_position_information(data.current_time);
         break;
     }
 
@@ -1857,7 +1851,7 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
                         GVariantWrapper::get(sd.stream_key_),
                         140, cover_art_url.c_str());
 
-            invalidate_stream_position_information(data);
+            invalidate_position_information(data.previous_time);
             query_seconds(gst_element_query_duration, data.pipeline,
                           data.current_time.duration_s);
 
