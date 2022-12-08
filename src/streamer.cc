@@ -1506,6 +1506,15 @@ static void try_leave_buffering_state(StreamerData &data)
     }
 }
 
+static void emit_pause_state_if_not_buffering(const StreamerData &data,
+                                              gboolean is_paused)
+{
+    if(!data.stream_buffering_data.is_buffering())
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_pause_state,
+            data.current_stream->stream_id_, is_paused);
+}
+
 static void activate_stream_and_emit_pause_state(const StreamerData &data,
                                                  GstState pipeline_state,
                                                  gboolean is_paused)
@@ -1520,11 +1529,7 @@ static void activate_stream_and_emit_pause_state(const StreamerData &data,
 
       case ActivateStreamResult::ALREADY_ACTIVE:
       case ActivateStreamResult::ACTIVATED:
-        if(!data.stream_buffering_data.is_buffering())
-            TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-                tdbus_splay_playback_emit_pause_state,
-                data.current_stream->stream_id_, is_paused);
-
+        emit_pause_state_if_not_buffering(data, is_paused);
         break;
     }
 }
@@ -1695,6 +1700,8 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
 
         if(!data.stream_has_just_started)
             activate_stream_and_emit_pause_state(data, state, FALSE);
+        else
+            emit_pause_state_if_not_buffering(data, FALSE);
 
         data.stream_has_just_started = false;
 
