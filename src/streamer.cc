@@ -1232,7 +1232,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
     auto which_stream_failed =
         determine_failed_stream(data, current_uri, *data.url_fifo_LOCK_ME);
-    StoppedReasons::Reason failure_reason;
+    auto failure_reason = StoppedReasons::Reason::UNKNOWN;
     std::unique_ptr<PlayQueue::Item> failed_item;
 
     switch(which_stream_failed)
