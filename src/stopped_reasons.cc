@@ -147,6 +147,8 @@ static StoppedReasons::Reason stream_error_to_reason(GstStreamError code,
     switch(code)
     {
       case GST_STREAM_ERROR_FAILED:
+        return StoppedReasons::Reason::PROTOCOL;
+
       case GST_STREAM_ERROR_TYPE_NOT_FOUND:
       case GST_STREAM_ERROR_WRONG_TYPE:
         return StoppedReasons::Reason::WRONG_TYPE;
