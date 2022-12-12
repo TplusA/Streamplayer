@@ -83,6 +83,7 @@ class Item
   private:
     const std::string original_url_;
     const std::string xlated_url_;
+    bool enable_realtime_processing_;
 
   public:
     const std::chrono::time_point<std::chrono::nanoseconds> start_time_;
@@ -106,6 +107,8 @@ class Item
      * \param xlated_url
      *     The translated stream URL which can be handled by GStreamer. Leave
      *     empty if \p stream_url can be handled by GStreamer anyway.
+     * \param enable_realtime_processing
+     *     Enable real-time priorities of streaming threads for this stream.
      * \param cover_art_url
      *     URL of cover art (may be empty).
      * \param extra_tags
@@ -121,6 +124,7 @@ class Item
      */
     explicit Item(const stream_id_t &stream_id, GVariantWrapper &&stream_key,
                   std::string &&stream_url, std::string &&xlated_url,
+                  bool enable_realtime_processing,
                   std::string &&cover_art_url,
                   std::unordered_map<std::string, std::string> &&extra_tags,
                   GstTagList *preset_tag_list,
@@ -132,6 +136,7 @@ class Item
         stream_id_(stream_id),
         original_url_(std::move(stream_url)),
         xlated_url_(std::move(xlated_url)),
+        enable_realtime_processing_(enable_realtime_processing),
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
         stream_data_(preset_tag_list, std::move(cover_art_url),
@@ -140,6 +145,9 @@ class Item
 
     void set_state(ItemState state) { state_ = state; }
     ItemState get_state() const { return state_; }
+
+    void disable_realtime() { enable_realtime_processing_ = false; }
+    bool is_realtime_processing_allowed() const { return enable_realtime_processing_; }
 
     /*!
      * Failure detected outside of GStreamer error message handler.

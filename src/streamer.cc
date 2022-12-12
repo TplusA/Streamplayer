@@ -1481,7 +1481,8 @@ static void try_leave_buffering_state(StreamerData &data)
     {
       case Buffering::LeaveBufferingResult::BUFFER_FILLED:
         BOOSTED_THREADS_DEBUG_CODE(thread_observer.dump("buffer filled (before boost)"));
-        data.boosted_threads_.boost("buffer filled");
+        if(data.current_stream->is_realtime_processing_allowed())
+            data.boosted_threads_.boost("buffer filled");
         BOOSTED_THREADS_DEBUG_CODE(thread_observer.dump("buffer filled (after boost)"));
 
         switch(data.supposed_play_status)
@@ -1726,7 +1727,8 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     auto data_lock(data.lock());
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
-    if(!data.stream_buffering_data.is_buffering())
+    if(!data.stream_buffering_data.is_buffering() &&
+       data.current_stream->is_realtime_processing_allowed())
         data.boosted_threads_.boost("stream started");
 
     bool failed = false;
@@ -1998,6 +2000,12 @@ static void handle_stream_duration_async(GstMessage *message, StreamerData &data
     else
         query_seconds(gst_element_query_duration, data.pipeline,
                       data.current_time.duration_s);
+
+    if(data.current_time.duration_s < 0)
+    {
+        data.current_stream->disable_realtime();
+        data.boosted_threads_.throttle("disabled for Internet radio");
+    }
 }
 
 static void handle_clock_lost_message(GstMessage *message, StreamerData &data)
@@ -2347,9 +2355,6 @@ int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
 
     streamer_data.soup_http_block_size = soup_http_block_size;
     streamer_data.boost_streaming_thread = boost_streaming_thread;
-
-    if(boost_streaming_thread)
-        streamer_data.boosted_threads_.boost(context);
 
     if(create_playbin(streamer_data, context) < 0)
         return -1;
@@ -2894,7 +2899,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
     auto *list = g_variant_to_tag_list(std::move(meta_data), cover_art_url, extra_tags);
     auto item(std::make_unique<PlayQueue::Item>(
             stream_id, std::move(stream_key), stream_url,
-            std::move(xlated_url), std::move(cover_art_url), std::move(extra_tags), list,
+            std::move(xlated_url), true, std::move(cover_art_url), std::move(extra_tags), list,
             std::chrono::time_point<std::chrono::nanoseconds>::min(),
             std::chrono::time_point<std::chrono::nanoseconds>::max()));
 
