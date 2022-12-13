@@ -1,3 +1,15 @@
+2022-12-13  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.11 released.
+
+	* Playback: Show and use correct play/pause state after selecting a
+	  new stream in pause mode.
+
+	* Playback: Improve playback of certain FLAC Internet radio stations.
+
+	* Playback: Automatically reconnect to Internet radio streams after
+	  being disconnected.
+
 2022-12-07  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.10 released.
