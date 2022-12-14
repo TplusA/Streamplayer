@@ -120,7 +120,8 @@ class Data
             result = level_ != Level::FULL ? LevelChange::FULL_DETECTED : LevelChange::NONE;
             level_ = Level::FULL;
         }
-        else if(percent == 0)
+        else if(percent == 0 ||
+                (percent < 15 && state_ == State::NOT_BUFFERING))
         {
             result =
                 level_ != Level::UNDERRUN ? LevelChange::UNDERRUN_DETECTED : LevelChange::NONE;
@@ -188,6 +189,7 @@ class Data
     void reset()
     {
         state_ = State::NOT_BUFFERING;
+        level_ = Level::FULL;
     }
 };
 
