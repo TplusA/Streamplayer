@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -22,11 +22,10 @@
 #ifndef URLFIFO_HH
 #define URLFIFO_HH
 
-#include "messages.h"
+#include "logged_lock.hh"
 
 #include <deque>
 #include <unordered_set>
-#include <mutex>
 #include <memory>
 #include <functional>
 
@@ -72,7 +71,7 @@ class Queue
     std::deque<std::unique_ptr<T>> queue_;
     std::deque<std::unique_ptr<T>> removed_;
     std::unordered_set<typename T::stream_id_t> dropped_;
-    mutable std::recursive_mutex lock_;
+    mutable LoggedLock::RecMutex lock_;
 
   public:
     Queue(const Queue &) = delete;
@@ -85,22 +84,22 @@ class Queue
     /*!
      * Lock access to the URL FIFO.
      */
-    std::unique_lock<std::recursive_mutex> lock()
+    LoggedLock::UniqueLock<LoggedLock::RecMutex> lock()
     {
-        return std::unique_lock<std::recursive_mutex>(lock_);
+        return LoggedLock::UniqueLock<LoggedLock::RecMutex>(lock_);
     }
 
     template <typename F>
     auto locked_rw(F &&code) -> decltype(code(*this))
     {
-        std::lock_guard<std::recursive_mutex> lk(lock_);
+        std::lock_guard<LoggedLock::RecMutex> lk(lock_);
         return code(*this);
     }
 
     template <typename F>
     auto locked_ro(F &&code) -> decltype(code(*this)) const
     {
-        std::lock_guard<std::recursive_mutex> lk(lock_);
+        std::lock_guard<LoggedLock::RecMutex> lk(lock_);
         return code(*this);
     }
 

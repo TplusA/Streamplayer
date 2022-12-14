@@ -35,6 +35,8 @@ BoostedThreads::Threads::Threads():
     },
     is_boost_enabled_(false)
 {
+    LoggedLock::configure(lock_, "BoostedThreads::Threads", MESSAGE_LEVEL_DEBUG);
+
     struct sched_param sp;
     const int res = pthread_getschedparam(pthread_self(), &default_sched_policy_, &sp);
     default_sched_priority_ = sp.sched_priority;
@@ -49,7 +51,8 @@ BoostedThreads::Threads::Threads():
 
 void BoostedThreads::Threads::boost(const char *context)
 {
-    std::lock_guard<std::mutex> lock(lock_);
+    LOGGED_LOCK_CONTEXT_HINT;
+    std::lock_guard<LoggedLock::Mutex> lock(lock_);
 
 #if BOOSTED_THREADS_DEBUG
     msg_info("BoostedThreads: Boosting %zu threads", threads_.size());
@@ -71,7 +74,8 @@ void BoostedThreads::Threads::boost(const char *context)
 
 void BoostedThreads::Threads::throttle(const char *context)
 {
-    std::lock_guard<std::mutex> lock(lock_);
+    LOGGED_LOCK_CONTEXT_HINT;
+    std::lock_guard<LoggedLock::Mutex> lock(lock_);
 
 #if BOOSTED_THREADS_DEBUG
     msg_info("BoostedThreads: Throttling %zu threads", threads_.size());
@@ -97,7 +101,8 @@ void BoostedThreads::Threads::add_self(std::string &&name, Priority prio)
 
     const pthread_t tid = pthread_self();
 
-    std::lock_guard<std::mutex> lock(lock_);
+    LOGGED_LOCK_CONTEXT_HINT;
+    std::lock_guard<LoggedLock::Mutex> lock(lock_);
     configure_thread(tid, name, is_boost_enabled_ ? prio : Priority::NONE,
                      "entered thread");
 
@@ -124,7 +129,8 @@ void BoostedThreads::Threads::remove_self()
 {
     const pthread_t tid = pthread_self();
 
-    std::lock_guard<std::mutex> lock(lock_);
+    LOGGED_LOCK_CONTEXT_HINT;
+    std::lock_guard<LoggedLock::Mutex> lock(lock_);
     auto it(threads_.find(tid));
 
     if(it == threads_.end())

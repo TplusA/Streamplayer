@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -30,11 +30,12 @@
 #define BOOSTED_THREADS_DEBUG_CODE(CODE) do {} while(0)
 #endif /* BOOSTED_THREADS_DEBUG */
 
+#include "logged_lock.hh"
+
 #include <pthread.h>
 
 #include <string>
 #include <unordered_map>
-#include <mutex>
 
 namespace BoostedThreads
 {
@@ -51,7 +52,7 @@ enum class Priority
 class Threads
 {
   private:
-    std::mutex lock_;
+    LoggedLock::Mutex lock_;
 
     int default_sched_policy_;
     int default_sched_priority_;
@@ -94,7 +95,7 @@ namespace BoostedThreads
 class ThreadObserver
 {
   private:
-    std::mutex lock_;
+    LoggedLock::Mutex lock_;
     std::unordered_map<pthread_t, std::tuple<std::string, const void *, bool>> threads_;
 
   public:
@@ -104,7 +105,8 @@ class ThreadObserver
 
     void add(std::string &&name, const void *ptr)
     {
-        std::lock_guard<std::mutex> lock(lock_);
+        LOGGED_LOCK_CONTEXT_HINT;
+        std::lock_guard<LoggedLock::Mutex> lock(lock_);
 
         const auto tid = pthread_self();
         auto it(threads_.find(tid));
@@ -140,19 +142,22 @@ class ThreadObserver
 
     void leave()
     {
-        std::lock_guard<std::mutex> lock(lock_);
+        LOGGED_LOCK_CONTEXT_HINT;
+        std::lock_guard<LoggedLock::Mutex> lock(lock_);
         std::get<2>(threads_.at(pthread_self())) = false;
     }
 
     void destroy()
     {
-        std::lock_guard<std::mutex> lock(lock_);
+        LOGGED_LOCK_CONTEXT_HINT;
+        std::lock_guard<LoggedLock::Mutex> lock(lock_);
         threads_.erase(pthread_self());
     }
 
     void dump(const char *context)
     {
-        std::lock_guard<std::mutex> lock(lock_);
+        LOGGED_LOCK_CONTEXT_HINT;
+        std::lock_guard<LoggedLock::Mutex> lock(lock_);
         msg_info("Dumping known threads [%s]:", context);
 
         std::vector<pthread_t> destroyed;

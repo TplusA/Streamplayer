@@ -28,9 +28,19 @@
 #include <array>
 
 #include "playitem.hh"
+#include "logged_lock.hh"
 
 #define MOCK_EXPECTATION_WITH_EXPECTATION_SEQUENCE_SINGLETON
 #include "mock_messages.hh"
+
+#if LOGGED_LOCKS_ENABLED
+bool LoggedLock::log_messages_enabled = true;
+LoggedLock::Mutex LoggedLock::MutexTraits<LoggedLock::Mutex>::dummy_for_default_ctor_;
+LoggedLock::RecMutex LoggedLock::MutexTraits<LoggedLock::RecMutex>::dummy_for_default_ctor_;
+#if LOGGED_LOCKS_THREAD_CONTEXTS
+thread_local LoggedLock::Context LoggedLock::context;
+#endif
+#endif
 
 /*!
  * \addtogroup playitem_tests Unit tests
