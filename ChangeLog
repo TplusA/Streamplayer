@@ -1,3 +1,10 @@
+2022-12-15  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.12 released.
+
+	* Playback: Work around inaccurate buffer level reports from
+	  GStreamer. This fixes playback of a few Internet radio stations.
+
 2022-12-13  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.11 released.
