@@ -2002,7 +2002,7 @@ static void handle_stream_duration_async(GstMessage *message, StreamerData &data
     if(data.current_time.duration_s < 0)
     {
         data.current_stream->disable_realtime();
-        data.boosted_threads_.throttle("disabled for Internet radio");
+        data.boosted_threads_.throttle("RT disabled for Internet radio");
     }
 }
 
