@@ -157,14 +157,14 @@ void BoostedThreads::Threads::configure_thread(pthread_t tid, const std::string 
       case Priority::MODERATE:
         sched_policy = boosted_sched_policy_;
         sp.sched_priority = boosted_sched_priorities_[size_t(prio)];
-        msg_info("Boost thread %s [%s], prio %d", name.c_str(), context, sp.sched_priority);
+        msg_info("Boost thread %lu %s [%s], prio %d", tid, name.c_str(), context, sp.sched_priority);
         break;
 
       case Priority::NONE:
       default:
         sched_policy = default_sched_policy_;
         sp.sched_priority = default_sched_priority_;
-        msg_info("Throttle thread %s [%s]", name.c_str(), context);
+        msg_info("Throttle thread %lu %s [%s]", tid, name.c_str(), context);
         break;
     }
 
