@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -35,7 +35,8 @@ enum class PlayStatus
     PAUSED,
 };
 
-int setup(GMainLoop *loop, guint soup_http_block_size, bool boost_streaming_thread);
+int setup(GMainLoop *loop, guint soup_http_block_size,
+          bool boost_streaming_thread, const std::string &force_alsa_device);
 void shutdown(GMainLoop *loop);
 
 void activate();

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2018, 2020--2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2018, 2020--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -56,6 +56,7 @@ struct parameters
     gboolean connect_to_system_dbus;
     gint soup_http_blocksize_kb;
     gboolean disable_boost_streaming_thread;
+    std::string force_alsa_device;
 };
 
 static void show_version_info(void)
@@ -124,6 +125,7 @@ static int process_command_line(int argc, char *argv[],
     static bool show_version = false;
     gchar *verbose_level_name_raw = nullptr;
     static bool verbose_quiet = false;
+    gchar *alsa_device_raw = nullptr;
 
     GOptionContext *ctx = g_option_context_new("- T+A Streamplayer");
     GOptionEntry entries[] =
@@ -159,6 +161,10 @@ static int process_command_line(int argc, char *argv[],
             &parameters->disable_boost_streaming_thread,
             "Do not use realtime priority for streaming threads", nullptr
         },
+        {
+            "force-alsa-device", 0, 0, G_OPTION_ARG_STRING, &alsa_device_raw,
+            "Force use of ALSA (note that this may block!)", nullptr
+        },
         {}
     };
 
@@ -178,6 +184,7 @@ static int process_command_line(int argc, char *argv[],
     g_option_context_free(ctx);
 
     GLibString verbose_level_name(std::move(verbose_level_name_raw));
+    GLibString alsa_device_name(std::move(alsa_device_raw));
 
     if(show_version)
         return 1;
@@ -201,6 +208,9 @@ static int process_command_line(int argc, char *argv[],
             return -1;
         }
     }
+
+    if(alsa_device_name != nullptr)
+        parameters->force_alsa_device = alsa_device_name.get();
 
     if(parameters->soup_http_blocksize_kb < 0)
     {
@@ -263,7 +273,8 @@ int main(int argc, char *argv[])
 
     if(Streamer::setup(globals.loop,
                        parameters.soup_http_blocksize_kb * 1024U,
-                       !parameters.disable_boost_streaming_thread) < 0)
+                       !parameters.disable_boost_streaming_thread,
+                       parameters.force_alsa_device) < 0)
         return EXIT_FAILURE;
 
     TDBus::setup(TDBus::session_bus());

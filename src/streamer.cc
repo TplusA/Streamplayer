@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -132,6 +132,7 @@ class StreamerData
     guint progress_watcher;
     guint soup_http_block_size;
     bool boost_streaming_thread;
+    const std::string *force_alsa_device;
     BoostedThreads::Threads boosted_threads_;
     std::vector<gulong> signal_handler_ids;
 
@@ -174,6 +175,7 @@ class StreamerData
         progress_watcher(0),
         soup_http_block_size(0),
         boost_streaming_thread(true),
+        force_alsa_device(nullptr),
         url_fifo_LOCK_ME(std::make_unique<PlayQueue::Queue<PlayQueue::Item>>()),
         next_stream_request(NextStreamRequestState::NOT_REQUESTED),
         is_failing(false),
@@ -2265,6 +2267,16 @@ static int create_playbin(StreamerData &data, const char *context)
                  GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_BUFFERING,
                  nullptr);
 
+    if(data.force_alsa_device != nullptr)
+    {
+        GstElement *sink =
+            gst_element_factory_make_full("alsasink",
+                                          "name", "audiosink-actual-sink-alsa",
+                                          "device", data.force_alsa_device->c_str(),
+                                          nullptr);
+        g_object_set(data.pipeline, "audio-sink", sink, nullptr);
+    }
+
     msg_log_assert(data.signal_handler_ids.empty());
     data.signal_handler_ids.push_back(
         g_signal_connect(data.pipeline, "about-to-finish",
@@ -2344,7 +2356,8 @@ static bool do_stop(StreamerData &data, const char *context,
 static StreamerData streamer_data;
 
 int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
-                    bool boost_streaming_thread)
+                    bool boost_streaming_thread,
+                    const std::string &force_alsa_device)
 {
     static const char context[] = "setup";
 
@@ -2355,6 +2368,7 @@ int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
 
     streamer_data.soup_http_block_size = soup_http_block_size;
     streamer_data.boost_streaming_thread = boost_streaming_thread;
+    streamer_data.force_alsa_device = force_alsa_device.empty() ? nullptr : &force_alsa_device;
 
     if(create_playbin(streamer_data, context) < 0)
         return -1;
