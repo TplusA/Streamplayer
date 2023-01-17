@@ -362,10 +362,6 @@ static void teardown_playbin(StreamerData &data)
     g_source_remove(data.bus_watch);
     data.bus_watch = 0;
 
-    GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(data.pipeline));
-    msg_log_assert(bus != nullptr);
-    gst_object_unref(bus);
-
     gst_object_unref(GST_OBJECT(data.pipeline));
     data.pipeline = nullptr;
 }
