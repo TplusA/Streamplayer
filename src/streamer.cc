@@ -362,10 +362,6 @@ static void teardown_playbin(StreamerData &data)
     g_source_remove(data.bus_watch);
     data.bus_watch = 0;
 
-    GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(data.pipeline));
-    msg_log_assert(bus != nullptr);
-    gst_object_unref(bus);
-
     gst_object_unref(GST_OBJECT(data.pipeline));
     data.pipeline = nullptr;
 }
@@ -2253,8 +2249,6 @@ static int create_playbin(StreamerData &data, const char *context)
         msg_out_of_memory("playbin3");
         return -1;
     }
-
-    gst_object_ref(GST_OBJECT(data.pipeline));
 
     data.bus_watch = gst_bus_add_watch(GST_ELEMENT_BUS(data.pipeline),
                                        bus_message_handler, &data);
