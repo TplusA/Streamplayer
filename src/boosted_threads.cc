@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -91,7 +91,7 @@ void BoostedThreads::Threads::throttle(const char *context)
         configure_thread(t.first, t.second.first, Priority::NONE, context);
 }
 
-void BoostedThreads::Threads::add_self(std::string &&name,  Priority prio)
+void BoostedThreads::Threads::add_self(std::string &&name, Priority prio)
 {
     msg_log_assert(prio != Priority::NONE);
 
