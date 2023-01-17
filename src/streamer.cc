@@ -2254,8 +2254,6 @@ static int create_playbin(StreamerData &data, const char *context)
         return -1;
     }
 
-    gst_object_ref(GST_OBJECT(data.pipeline));
-
     data.bus_watch = gst_bus_add_watch(GST_ELEMENT_BUS(data.pipeline),
                                        bus_message_handler, &data);
 
