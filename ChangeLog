@@ -1,3 +1,28 @@
+2023-01-24  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.13 released.
+
+	* Playback: Avoid renegade threads running with RT priorities. This
+	  fixes problems with stuttering audio.
+
+	* Stability: Avoid leaking threads and other resources when rebuilding
+	  the playbin3 instance. This also fixes problems with stuttering
+	  audio.
+
+	* Stability: Avoid crash when sending pause or start command after a
+	  previously playing stream has stopped and before sending anything to
+	  the queue.
+
+	* Playback: Work around fragments being played at stream change before
+	  playbin3 has completed initial buffering. Seems like there are still
+	  issues with playbin3's reuse of internal components.
+
+	* Playback: Option for forcing use of ALSA device. This useful for
+	  debugging ALSA-specific problems on PC which would often default to
+	  PulseAudio.
+
+	* Logging: Improved a few messages.
+
 2022-12-15  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.12 released.
@@ -679,4 +704,4 @@
 	* First release for testing.
 
 
-Copyright 2015--2022 T+A elektroakustik GmbH & Co. KG
+Copyright 2015--2023 T+A elektroakustik GmbH & Co. KG
