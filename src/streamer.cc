@@ -2835,6 +2835,8 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
         streamer_data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     else
     {
+        rebuild_playbin_for_workarounds(streamer_data, data_lock, "skip to next");
+
         GstState next_state = GST_STATE_READY;
 
         if(set_stream_state(streamer_data.pipeline, next_state, context))
