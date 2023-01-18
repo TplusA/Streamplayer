@@ -2176,7 +2176,22 @@ static inline BoostedThreads::Priority task_name_to_priority(const char *name)
     if(strcmp(name, "aqueue:src") == 0)
         return BoostedThreads::Priority::HIGHEST;
 
+    if(strcmp(name, "audiosink-actual-sink-alsa") == 0)
+        return BoostedThreads::Priority::HIGHEST;
+
     return BoostedThreads::Priority::NONE;
+}
+
+static inline const char *
+determine_thread_name(const GValue *val, GstElement *owner, bool is_task)
+{
+    if(is_task)
+    {
+        const auto *task = static_cast<GstTask *>(g_value_get_object(val));
+        return GST_OBJECT_NAME(task);
+    }
+    else
+        return GST_ELEMENT_NAME(owner);
 }
 
 static GstBusSyncReply
@@ -2186,7 +2201,12 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
         return GST_BUS_PASS;
 
     const GValue *val = gst_message_get_stream_status_object(msg);
-    if(G_VALUE_TYPE(val) != GST_TYPE_TASK)
+    bool is_task;
+    if(G_VALUE_TYPE(val) == GST_TYPE_TASK)
+        is_task = true;
+    else if(G_VALUE_TYPE(val) == GST_TYPE_G_THREAD)
+        is_task = false;
+    else
         return GST_BUS_PASS;
 
     GstStreamStatusType status_type;
@@ -2197,11 +2217,13 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
     {
       case GST_STREAM_STATUS_TYPE_ENTER:
         {
-#if BOOSTED_THREADS_DEBUG
-            const auto *task = static_cast<GstTask *>(g_value_get_object(val));
-#endif /* BOOSTED_THREADS_DEBUG */
-            BOOSTED_THREADS_DEBUG_CODE(thread_observer.add(GST_OBJECT_NAME(task),
-                                                           static_cast<const void *>(task)));
+            BOOSTED_THREADS_DEBUG_CODE({
+                const char *const thread_name = determine_thread_name(val, owner, is_task);
+                thread_observer.add(thread_name,
+                                    is_task
+                                    ? static_cast<const void *>(g_value_get_object(val))
+                                    : static_cast<const void *>(owner));
+            });
         }
         break;
 
@@ -2220,8 +2242,12 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
         return GST_BUS_PASS;
     }
 
-    const auto *task = static_cast<GstTask *>(g_value_get_object(val));
-    const auto prio = task_name_to_priority(GST_OBJECT_NAME(task));
+    const char *const thread_name = determine_thread_name(val, owner, is_task);
+
+    if(thread_name == nullptr)
+        return GST_BUS_PASS;
+
+    const auto prio = task_name_to_priority(thread_name);
 
     if(prio != BoostedThreads::Priority::NONE)
     {
@@ -2231,7 +2257,7 @@ bus_sync_message_handler(GstBus *bus, GstMessage *msg, gpointer user_data)
          */
         auto &data = *static_cast<StreamerData *>(user_data);
         if(status_type == GST_STREAM_STATUS_TYPE_ENTER)
-            data.boosted_threads_.add_self(GST_OBJECT_NAME(task), prio);
+            data.boosted_threads_.add_self(thread_name, prio);
         else
             data.boosted_threads_.remove_self();
     }
@@ -2809,6 +2835,8 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
         streamer_data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     else
     {
+        rebuild_playbin_for_workarounds(streamer_data, data_lock, "skip to next");
+
         GstState next_state = GST_STATE_READY;
 
         if(set_stream_state(streamer_data.pipeline, next_state, context))
