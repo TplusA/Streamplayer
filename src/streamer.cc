@@ -791,6 +791,7 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
                 emit_stopped(TDBus::get_exported_iface<tdbussplayPlayback>(),
                              data);
             });
+        g_object_set(data.pipeline, "uri", "", nullptr);
         data.current_stream.reset();
     }
 }
