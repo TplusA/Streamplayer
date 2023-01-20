@@ -292,12 +292,20 @@ mk_id_array_from_dropped_items(PlayQueue::Queue<PlayQueue::Item> &url_fifo)
     return mk_id_array(url_fifo.get_removed(), url_fifo.get_dropped());
 }
 
+static void wipe_out_uri(StreamerData &data, const char *context)
+{
+    msg_vinfo(MESSAGE_LEVEL_DEBUG,
+              "Wiping out pipeline's uri property [%s]", context);
+    g_object_set(data.pipeline, "uri", "", nullptr);
+}
+
 static void emit_stopped(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                          StreamerData &data)
 {
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     data.stream_buffering_data.reset();
     data.boosted_threads_.throttle("stopped");
+    wipe_out_uri(data, __func__);
 
     auto dropped_ids(mk_id_array_from_dropped_items(*data.url_fifo_LOCK_ME));
 
@@ -322,6 +330,7 @@ static void emit_stopped_with_error(TDBus::Iface<tdbussplayPlayback> &playback_i
     data.supposed_play_status = Streamer::PlayStatus::STOPPED;
     data.stream_buffering_data.reset();
     data.boosted_threads_.throttle("stopped with error");
+    wipe_out_uri(data, __func__);
 
     auto dropped_ids(mk_id_array_from_dropped_items(url_fifo));
 
@@ -791,9 +800,10 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
                 emit_stopped(TDBus::get_exported_iface<tdbussplayPlayback>(),
                              data);
             });
-        g_object_set(data.pipeline, "uri", "", nullptr);
         data.current_stream.reset();
     }
+
+    wipe_out_uri(data, "EOS");
 }
 
 static void add_tuple_to_tags_variant_builder(const GstTagList *list,
