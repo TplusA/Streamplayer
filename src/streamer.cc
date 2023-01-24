@@ -2300,11 +2300,17 @@ static int create_playbin(StreamerData &data, const char *context)
 
     if(data.force_alsa_device != nullptr)
     {
-        GstElement *sink =
-            gst_element_factory_make_full("alsasink",
-                                          "name", "audiosink-actual-sink-alsa",
-                                          "device", data.force_alsa_device->c_str(),
-                                          nullptr);
+        GstElement *sink;
+#if GST_CHECK_VERSION(1, 20, 0)
+        sink = gst_element_factory_make_full("alsasink",
+                                             "name", "audiosink-actual-sink-alsa",
+                                             "device", data.force_alsa_device->c_str(),
+                                             nullptr);
+#else
+        sink = gst_element_factory_make("alsasink", "audiosink-actual-sink-alsa");
+        g_object_set(sink, "device", data.force_alsa_device->c_str(), nullptr);
+#endif /* v1.20 */
+
         g_object_set(data.pipeline, "audio-sink", sink, nullptr);
     }
 
