@@ -2572,6 +2572,15 @@ bool Streamer::start(const char *reason)
     return true;
 }
 
+static bool is_pipeline_uri_empty(GstElement *pipeline)
+{
+    gchar *temp = nullptr;
+    g_object_get(pipeline, "uri", &temp, nullptr);
+    const bool result = (temp == nullptr || temp[0] == '\0');
+    g_free(temp);
+    return result;
+}
+
 bool Streamer::stop(const char *reason)
 {
     auto data_lock(streamer_data.lock());
@@ -2579,6 +2588,12 @@ bool Streamer::stop(const char *reason)
     if(!streamer_data.is_player_activated)
     {
         MSG_BUG("Stop request while inactive (%s)", reason);
+        return false;
+    }
+
+    if(is_pipeline_uri_empty(streamer_data.pipeline))
+    {
+        msg_info("Ignored stop request with uri property (%s)", reason);
         return false;
     }
 
@@ -2625,6 +2640,12 @@ bool Streamer::pause(const char *reason)
     if(!streamer_data.is_player_activated)
     {
         MSG_BUG("Pause request while inactive (%s)", reason);
+        return false;
+    }
+
+    if(is_pipeline_uri_empty(streamer_data.pipeline))
+    {
+        msg_info("Ignored pause request with uri property (%s)", reason);
         return false;
     }
 
