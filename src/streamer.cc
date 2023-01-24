@@ -69,6 +69,7 @@ enum class WhichStreamFailed
     CURRENT_WITH_PREFAIL_REASON,
     GAPLESS_NEXT,
     GAPLESS_NEXT_WITH_PREFAIL_REASON,
+    ALREADY_GONE,
 };
 
 struct time_data
@@ -1207,7 +1208,14 @@ determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
             : WhichStreamFailed::CURRENT_WITH_PREFAIL_REASON;
 
     if(current_uri.empty())
+    {
+        if(data.current_stream == nullptr)
+            return WhichStreamFailed::ALREADY_GONE;
+
+        MSG_BUG("Have current stream with URI %s, stored URI is empty",
+                data.current_stream->get_url_for_playing().c_str());
         return WhichStreamFailed::UNKNOWN;
+    }
 
     if(data.current_stream != nullptr &&
        data.current_stream->get_url_for_playing() == current_uri.get())
@@ -1217,6 +1225,13 @@ determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
 
     if(next != nullptr && next->get_url_for_playing() == current_uri.get())
         return WhichStreamFailed::GAPLESS_NEXT;
+
+    if(data.current_stream == nullptr)
+        MSG_BUG("Have no current stream, stored URI is %s", current_uri.get());
+    else
+        MSG_BUG("Have current stream with URI %s, stored URI is %s",
+                data.current_stream->get_url_for_playing().c_str(),
+                current_uri.get());
 
     return WhichStreamFailed::UNKNOWN;
 }
@@ -1246,6 +1261,9 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
     switch(which_stream_failed)
     {
+      case WhichStreamFailed::ALREADY_GONE:
+        return;
+
       case WhichStreamFailed::UNKNOWN:
         MSG_BUG("Supposed to handle error, but have no item");
         return;
@@ -1275,6 +1293,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
     switch(which_stream_failed)
     {
+      case WhichStreamFailed::ALREADY_GONE:
       case WhichStreamFailed::UNKNOWN:
         MSG_UNREACHABLE();
         break;
