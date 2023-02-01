@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015--2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2015--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -202,6 +202,16 @@ playback_set_speed(tdbussplayPlayback *object, GDBusMethodInvocation *invocation
     return TRUE;
 }
 
+static gboolean
+playback_inject_failure(tdbussplayPlayback *object, GDBusMethodInvocation *invocation,
+                        const gchar *domain, guint code, gpointer)
+{
+    enter_playback_handler(invocation);
+    Streamer::inject_stream_failure(domain, code);
+    tdbus_splay_playback_complete_inject_stream_failure(object, invocation);
+    return TRUE;
+}
+
 static gboolean fifo_clear(tdbussplayURLFIFO *object,
                            GDBusMethodInvocation *invocation,
                            gint16 keep_first_n_entries, void *user_data)
@@ -327,7 +337,8 @@ static void player_ifaces(TDBus::Bus &bus)
         .connect_method_handler<TDBus::StreamplayerPlaybackStop>(playback_stop)
         .connect_method_handler<TDBus::StreamplayerPlaybackPause>(playback_pause)
         .connect_method_handler<TDBus::StreamplayerPlaybackSeek>(playback_seek)
-        .connect_method_handler<TDBus::StreamplayerPlaybackSetSpeed>(playback_set_speed);
+        .connect_method_handler<TDBus::StreamplayerPlaybackSetSpeed>(playback_set_speed)
+        .connect_method_handler<TDBus::StreamplayerPlaybackInjectStreamFailure>(playback_inject_failure);
     bus.add_auto_exported_interface(pb_iface);
 
     auto &uf_iface(TDBus::get_exported_iface<tdbussplayURLFIFO>());

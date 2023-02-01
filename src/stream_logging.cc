@@ -119,9 +119,11 @@ void PlayQueue::log_next_stream(const PlayQueue::Item &next_stream,
 static void log_error_or_warning(const char *prefix, const GLibString &debug,
                                  GErrorWrapper &error, const GstMessage *message)
 {
-    msg_error(0, LOG_ERR, "%s code %d, domain %s from \"%s\"",
+    gchar *generic_message = gst_error_get_message(error->domain, error->code);
+    msg_error(0, LOG_ERR, "%s code %d, domain %s from \"%s\": %s",
               prefix, error->code, g_quark_to_string(error->domain),
-              GST_MESSAGE_SRC_NAME(message));
+              GST_MESSAGE_SRC_NAME(message), generic_message);
+    g_free(generic_message);
     msg_error(0, LOG_ERR, "%s message: %s", prefix, error->message);
     msg_error(0, LOG_ERR, "%s debug: %s", prefix, debug.get());
     error.noticed();

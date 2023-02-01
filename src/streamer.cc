@@ -3161,3 +3161,70 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
     return true;
 }
+
+static gboolean post_injected_failure(gpointer user_data)
+{
+    auto *msg = static_cast<GstMessage *>(user_data);
+
+    LOGGED_LOCK_CONTEXT_HINT;
+    auto data_lock(streamer_data.lock());
+    GstElement *pipeline = streamer_data.pipeline;
+
+    if(pipeline == nullptr)
+    {
+        msg_error(0, LOG_NOTICE,
+                  "Failed posting stream error message: pipeline is NULL");
+        gst_message_unref(msg);
+        return G_SOURCE_REMOVE;
+    }
+
+    g_object_ref(pipeline);
+    data_lock.unlock();
+
+    /* don't want to hold any locks, just to be completely safe... */
+    gst_element_post_message(pipeline, msg);
+    g_object_unref(pipeline);
+
+    return G_SOURCE_REMOVE;
+}
+
+void Streamer::inject_stream_failure(const char *domain, unsigned int code)
+{
+    GQuark equark;
+
+    if(strcmp(domain, "core") == 0)
+        equark = GST_CORE_ERROR;
+    else if(strcmp(domain, "library") == 0)
+        equark = GST_LIBRARY_ERROR;
+    else if(strcmp(domain, "resource") == 0)
+        equark = GST_RESOURCE_ERROR;
+    else if(strcmp(domain, "stream") == 0)
+        equark = GST_STREAM_ERROR;
+    else
+    {
+        msg_error(EINVAL, LOG_NOTICE, "Unknown domain name %s", domain);
+        return;
+    }
+
+    LOGGED_LOCK_CONTEXT_HINT;
+    auto data_lock(streamer_data.lock());
+
+    if(streamer_data.pipeline == nullptr)
+    {
+        msg_error(0, LOG_NOTICE,
+                  "Failed injecting stream failure: pipeline is NULL");
+        return;
+    }
+
+    GError *error = g_error_new(equark, code, "Injected stream failure");
+    GstElement *failing_element = nullptr;
+    g_object_get(GST_OBJECT(streamer_data.pipeline),
+                 "audio-sink", &failing_element, nullptr);
+    GstMessage *msg = gst_message_new_error(GST_OBJECT(failing_element),
+                                            error, "Artificially generated error");
+    g_object_unref(failing_element);
+    g_error_free(error);
+
+    /* let's be extra careful and not post from here */
+    g_idle_add(post_injected_failure, msg);
+}

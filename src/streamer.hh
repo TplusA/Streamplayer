@@ -53,6 +53,7 @@ bool push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                const char *stream_url, GVariantWrapper &&meta_data,
                size_t keep_items);
 bool remove_items_for_root_path(const char *root_path);
+void inject_stream_failure(const char *domain, unsigned int code);
 
 }
 
