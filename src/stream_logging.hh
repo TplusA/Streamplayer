@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -31,7 +31,7 @@ namespace PlayQueue
 
 class Item;
 
-void log_next_stream(const PlayQueue::Item &next_stream);
+void log_next_stream(const PlayQueue::Item &next_stream, const char *context);
 
 }
 

@@ -721,7 +721,7 @@ static bool play_next_stream(StreamerData &data,
                                    ? PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED
                                    : PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
 
-    PlayQueue::log_next_stream(next_stream);
+    PlayQueue::log_next_stream(next_stream, context);
 
     g_object_set(data.pipeline, "uri",
                  next_stream.get_url_for_playing().c_str(), nullptr);

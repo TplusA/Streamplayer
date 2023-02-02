@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -86,10 +86,12 @@ tokenize_meta_data(const std::string &src)
     return std::make_tuple(std::move(dest), artist, album, is_single_string);
 }
 
-void PlayQueue::log_next_stream(const PlayQueue::Item &next_stream)
+void PlayQueue::log_next_stream(const PlayQueue::Item &next_stream,
+                                const char *context)
 {
-    msg_info("Setting stream %u URL %s",
-             next_stream.stream_id_, next_stream.get_url_for_playing().c_str());
+    msg_info("Setting stream %u URL %s [%s]",
+             next_stream.stream_id_, next_stream.get_url_for_playing().c_str(),
+             context);
 
     const auto &sd = next_stream.get_stream_data();
 
