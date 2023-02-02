@@ -1,3 +1,17 @@
+2023-02-02  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 6.14 released.
+
+	* Playback: Avoid stuttering at beginning of hires streams.
+
+	* Playback: Reduce (and sometimes eliminate) stuttering after seeking
+	  in the stream.
+
+	* Playback: Remove one instance of rebuild-playbin3-workaround, and
+	  improve that workaround a little bit.
+
+	* Logging: Minor changes.
+
 2023-01-24  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.13 released.

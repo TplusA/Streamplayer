@@ -18,7 +18,7 @@ dnl Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 dnl MA  02110-1301, USA.
 
 AC_PREREQ([2.69])
-AC_INIT([Streamplayer], [6.13], [r.tiemann@ta-hifi.com])
+AC_INIT([Streamplayer], [6.14], [r.tiemann@ta-hifi.com])
 AC_CONFIG_AUX_DIR([config])
 AM_INIT_AUTOMAKE([1.11 -Wall -Werror foreign])
 AM_SILENT_RULES([yes])
