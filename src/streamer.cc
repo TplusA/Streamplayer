@@ -387,7 +387,8 @@ static int rebuild_playbin(StreamerData &data,
 
     /* allow signal handlers already waiting for the lock to pass */
     data_lock.unlock();
-    g_usleep(500000);
+    while(g_main_context_iteration(nullptr, FALSE))
+        ;
     data_lock.lock();
 
     set_stream_state(data.pipeline, GST_STATE_NULL, "rebuild");
