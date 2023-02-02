@@ -674,6 +674,8 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
     return nullptr;
 }
 
+static void handle_buffer_underrun(StreamerData &data);
+
 static bool play_next_stream(StreamerData &data,
                              PlayQueue::Item *replaced_stream,
                              PlayQueue::Item &next_stream,
@@ -733,7 +735,12 @@ static bool play_next_stream(StreamerData &data,
     const bool retval = set_stream_state(data.pipeline, next_state, "play queued");
 
     if(retval)
+    {
         invalidate_position_information(data.previous_time);
+
+        data.stream_buffering_data.set_buffer_level(0);
+        handle_buffer_underrun(data);
+    }
 
     return retval;
 }
