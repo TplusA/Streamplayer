@@ -2802,7 +2802,12 @@ bool Streamer::seek(int64_t position, const char *units)
                                                      GST_SEEK_FLAG_ACCURATE),
                            GST_SEEK_TYPE_SET, position,
                            GST_SEEK_TYPE_SET, GST_CLOCK_TIME_NONE);
-    return !!gst_element_send_event(streamer_data.pipeline, seek);
+    if(!gst_element_send_event(streamer_data.pipeline, seek))
+        return false;
+
+    streamer_data.stream_buffering_data.set_buffer_level(0);
+    handle_buffer_underrun(streamer_data);
+    return true;
 }
 
 Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
