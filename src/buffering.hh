@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -68,7 +68,7 @@ enum class Level
 };
 
 /*!
- * If an how the buffer level has changed, given a new fill level.
+ * If and how the buffer level has changed, given a new fill level.
  */
 enum class LevelChange
 {
