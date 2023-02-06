@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -86,8 +86,6 @@ enum class Reason
 
 const char *as_string(Reason reason);
 Reason from_gerror(const GErrorWrapper &error, bool is_local_error);
-bool determine_is_local_error_by_url(const GLibString &url);
-bool determine_is_local_error_by_url(const std::string &url);
 
 }
 

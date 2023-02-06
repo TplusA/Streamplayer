@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2020, 2021, 2022, 2023  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -38,6 +38,11 @@ stopped_reasons_lib = static_library('stopped_reasons',
     dependencies: [glib_deps, config_h],
 )
 
+strbo_url_lib = static_library('strbo_url',
+    ['strbo_url.cc', 'strbo_usb_url.cc'],
+    dependencies: [glib_deps, config_h],
+)
+
 gvariantwrapper_lib = static_library('gvariantwrapper',
     'gvariantwrapper.cc',
     dependencies: [glib_deps, config_h],
@@ -48,7 +53,7 @@ executable(
     [
         'streamplayer.cc', 'streamer.cc', 'dbus.cc', 'debug_levels.cc',
         'stream_logging.cc',
-        'backtrace.c', 'strbo_usb_url.cc', 'boosted_threads.cc',
+        'backtrace.c', 'boosted_threads.cc',
         'messages.c', 'messages_glib.c', 'messages_dbus.c', 'os.c',
         version_info
     ],
@@ -60,6 +65,7 @@ executable(
     ],
     link_with: [
         urlfifo_lib,
+        strbo_url_lib,
         stopped_reasons_lib,
         gvariantwrapper_lib,
         taddybus_lib,

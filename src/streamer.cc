@@ -739,8 +739,11 @@ static bool play_next_stream(StreamerData &data,
     {
         invalidate_position_information(data.previous_time);
 
-        data.stream_buffering_data.set_buffer_level(0);
-        handle_buffer_underrun(data);
+        if(next_stream.is_network_stream())
+        {
+            data.stream_buffering_data.set_buffer_level(0);
+            handle_buffer_underrun(data);
+        }
     }
 
     return retval;
@@ -1283,8 +1286,8 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
 
       case WhichStreamFailed::CURRENT:
         failure_reason =
-            StoppedReasons::from_gerror(
-                error, StoppedReasons::determine_is_local_error_by_url(current_uri));
+            StoppedReasons::from_gerror(error,
+                                        !data.current_stream->is_network_stream());
         break;
 
       case WhichStreamFailed::CURRENT_WITH_PREFAIL_REASON:
@@ -2805,8 +2808,12 @@ bool Streamer::seek(int64_t position, const char *units)
     if(!gst_element_send_event(streamer_data.pipeline, seek))
         return false;
 
-    streamer_data.stream_buffering_data.set_buffer_level(0);
-    handle_buffer_underrun(streamer_data);
+    if(streamer_data.current_stream->is_network_stream())
+    {
+        streamer_data.stream_buffering_data.set_buffer_level(0);
+        handle_buffer_underrun(streamer_data);
+    }
+
     return true;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -54,6 +54,7 @@ class Fixture
     explicit Fixture():
         mock_messages(std::make_unique<MockMessages::Mock>())
     {
+        gst_init(nullptr, nullptr);
         mock_expectation_sequence_singleton->reset();
         MockMessages::singleton = mock_messages.get();
     }

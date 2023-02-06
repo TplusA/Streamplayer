@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, 2020, 2021, 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2018, 2020--2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -30,6 +30,7 @@
 #include "streamdata.hh"
 #include "stream_id.h"
 #include "stopped_reasons.hh"
+#include "strbo_url.hh"
 
 namespace PlayQueue
 {
@@ -84,6 +85,7 @@ class Item
     const std::string original_url_;
     const std::string xlated_url_;
     bool enable_realtime_processing_;
+    const StreamType stream_type_;
 
   public:
     const std::chrono::time_point<std::chrono::nanoseconds> start_time_;
@@ -137,6 +139,7 @@ class Item
         original_url_(std::move(stream_url)),
         xlated_url_(std::move(xlated_url)),
         enable_realtime_processing_(enable_realtime_processing),
+        stream_type_(StrBoURL::determine_stream_type_from_url(original_url_)),
         start_time_(std::move(start_time)),
         end_time_(std::move(end_time)),
         stream_data_(preset_tag_list, std::move(cover_art_url),
@@ -172,6 +175,8 @@ class Item
     }
 
     const std::string &get_url_for_reporting() const { return original_url_; }
+
+    bool is_network_stream() const { return stream_type_ != StreamType::LOCAL_FILE; }
 };
 
 }

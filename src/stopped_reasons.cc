@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -205,37 +205,4 @@ StoppedReasons::Reason StoppedReasons::from_gerror(const GErrorWrapper &error,
             error->domain, error->code);
 
     return Reason::UNKNOWN;
-}
-
-static bool is_local_error_by_url(const char *url)
-{
-#if GST_CHECK_VERSION(1, 5, 1)
-    GstUri *uri = gst_uri_from_string(url);
-
-    if(uri == nullptr)
-        return true;
-
-    static const std::string file_scheme("file");
-
-    const char *scheme = gst_uri_get_scheme(uri);
-    const bool retval = (scheme == nullptr || scheme == file_scheme);
-
-    gst_uri_unref(uri);
-
-    return retval;
-#else /* pre 1.5.1 */
-    static const char protocol_prefix[] = "file://";
-
-    return strncmp(url, protocol_prefix, sizeof(protocol_prefix) - 1) == 0;
-#endif /* use GstUri if not older than v1.5.1 */
-}
-
-bool StoppedReasons::determine_is_local_error_by_url(const GLibString &url)
-{
-    return url.empty() || is_local_error_by_url(url.get());
-}
-
-bool StoppedReasons::determine_is_local_error_by_url(const std::string &url)
-{
-    return url.empty() || is_local_error_by_url(url.c_str());
 }

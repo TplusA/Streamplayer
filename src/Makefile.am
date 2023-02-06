@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2018--2022  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2018--2023  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -35,7 +35,6 @@ streamplayer_SOURCES = \
     messages_dbus.c messages_dbus.h debug_levels.cc \
     backtrace.c backtrace.h \
     dbus.cc dbus.hh \
-    strbo_usb_url.cc strbo_usb_url.hh \
     boosted_threads.cc boosted_threads.hh \
     streamer.cc streamer.hh stream_id.h stream_id.hh buffering.hh \
     stream_logging.cc stream_logging.hh \
@@ -46,6 +45,7 @@ streamplayer_LDADD = $(STREAMPLAYER_DEPENDENCIES_LIBS) $(noinst_LTLIBRARIES)
 
 noinst_LTLIBRARIES = \
     liburlfifo.la \
+    libstrbo_url.la \
     libstopped_reasons.la \
     libgvariantwrapper.la
 
@@ -57,6 +57,12 @@ liburlfifo_la_CXXFLAGS = $(AM_CXXFLAGS)
 libstopped_reasons_la_SOURCES = stopped_reasons.cc stopped_reasons.hh
 libstopped_reasons_la_CFLAGS = $(AM_CFLAGS)
 libstopped_reasons_la_CXXFLAGS = $(AM_CXXFLAGS)
+
+libstrbo_url_la_SOURCES = \
+    strbo_url.cc strbo_url.hh \
+    strbo_usb_url.cc strbo_usb_url.hh
+libstrbo_url_la_CFLAGS = $(AM_CFLAGS)
+libstrbo_url_la_CXXFLAGS = $(AM_CXXFLAGS)
 
 libgvariantwrapper_la_SOURCES = gvariantwrapper.hh gvariantwrapper.cc
 libgvariantwrapper_la_CFLAGS = $(AM_CFLAGS)
