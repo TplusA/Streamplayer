@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2021, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -164,7 +164,7 @@ static std::string translate(const char *uuid, const GList *path_segments)
     return tempstring;
 }
 
-std::string StrBo::translate_url_to_regular_url(const char *url, bool &failed)
+std::string StrBoURL::USB::translate_url_to_regular_url(const char *url, bool &failed)
 {
     GstUri *uri = gst_uri_from_string(url);
 

@@ -2995,8 +2995,8 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
     }
 
     bool translation_failed;
-    auto xlated_url(StrBo::translate_url_to_regular_url(stream_url,
-                                                        translation_failed));
+    auto xlated_url(StrBoURL::USB::translate_url_to_regular_url(stream_url,
+                                                                translation_failed));
 
     if(translation_failed)
     {

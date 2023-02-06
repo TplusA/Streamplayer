@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021  T+A elektroakustik GmbH & Co. KG
+ * Copyright (C) 2021, 2023  T+A elektroakustik GmbH & Co. KG
  *
  * This file is part of T+A Streamplayer.
  *
@@ -19,16 +19,19 @@
  * MA  02110-1301, USA.
  */
 
-#ifndef STRBO_USB_SRC_HH
-#define STRBO_USB_SRC_HH
+#ifndef STRBO_USB_URL_HH
+#define STRBO_USB_URL_HH
 
 #include <string>
 
-namespace StrBo
+namespace StrBoURL
+{
+namespace USB
 {
 
 std::string translate_url_to_regular_url(const char *url, bool &failed);
 
 }
+}
 
-#endif /* !STRBO_USB_SRC_HH */
+#endif /* !STRBO_USB_URL_HH */
