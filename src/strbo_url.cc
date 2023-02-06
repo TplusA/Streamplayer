@@ -24,9 +24,11 @@
 #endif /* HAVE_CONFIG_H */
 
 #include "strbo_url.hh"
-#include "messages.h"
 
 #include <gst/gst.h>
+
+#include <array>
+#include <algorithm>
 #include <cstring>
 
 StreamType StrBoURL::determine_stream_type_from_url(const std::string &url)
@@ -40,23 +42,30 @@ StreamType StrBoURL::determine_stream_type_from_url(const std::string &url)
     if(uri == nullptr)
         return StreamType::UNKNOWN;
 
-    static const std::string file_scheme("file");
-
+    static const std::array<const std::string, 2> local_file_schemes { "file", "strbo-usb" };
     const char *scheme = gst_uri_get_scheme(uri);
-    const auto retval = (scheme == nullptr
-                         ? StreamType::EMPTY
-                         : (scheme == file_scheme
-                            ? StreamType::LOCAL_FILE
-                            : StreamType::GENERIC_NETWORK));
+    StreamType retval;
+
+    if(scheme == nullptr)
+        retval = StreamType::UNKNOWN;
+    else
+    {
+        retval = StreamType::GENERIC_NETWORK;
+        if(std::any_of(local_file_schemes.begin(), local_file_schemes.end(),
+                       [scheme] (const auto &it) { return it == scheme; }))
+            retval = StreamType::LOCAL_FILE;
+    }
 
     gst_uri_unref(uri);
 
     return retval;
 #else /* pre 1.5.1 */
-    static const char protocol_prefix[] = "file://";
+    static const std::array<const std::string, 2> protocol_prefixes { "file://", "strbo-usb:/" };
 
-    return strncmp(url.c_str(), protocol_prefix, sizeof(protocol_prefix) - 1) == 0
-        ? StreamType::LOCAL_FILE
-        : StreamType::GENERIC_NETWORK;
+    if(std::any_of(protocol_prefixes.begin(), protocol_prefixes.end(),
+                   [u = url.c_str()] (const auto &it) { return strncmp(u, it.c_str(), it.length()) == 0; }))
+        return StreamType::LOCAL_FILE;
+
+    return StreamType::GENERIC_NETWORK;
 #endif /* use GstUri if not older than v1.5.1 */
 }
