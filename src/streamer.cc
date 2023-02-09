@@ -905,24 +905,9 @@ static void add_tuple_to_tags_variant_builder(const GstTagList *list,
                   tag, G_VALUE_TYPE_NAME(value));
 }
 
-/*!
- * \todo Check embedded comment. How should we go about the GVariant format
- *     string(s)?
- */
 static GVariant *tag_list_to_g_variant(const GstTagList *list,
                                        const std::unordered_map<std::string, std::string> &extra_tags)
 {
-    /*
-     * The proper way to get at the GVariant format string would be to call
-     * #tdbus_splay_playback_interface_info() and inspect the
-     * \c GDBusInterfaceInfo introspection data to find the string deeply
-     * buried inside the signal description.
-     *
-     * I think this is too much work just for retrieving a known value. Maybe a
-     * unit test should be written to ensure that the hard-coded string here is
-     * indeed correct. Maybe the retrieval should really be implemented in
-     * production code, but only be done in the startup code.
-     */
     GVariantBuilder builder;
 
     g_variant_builder_init(&builder, G_VARIANT_TYPE("a(ss)"));
