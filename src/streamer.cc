@@ -2828,7 +2828,7 @@ bool Streamer::seek(int64_t position, const char *units)
     auto *seek =
         gst_event_new_seek(1.0, GST_FORMAT_TIME,
                            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                                     GST_SEEK_FLAG_ACCURATE),
+                                                     GST_SEEK_FLAG_KEY_UNIT),
                            GST_SEEK_TYPE_SET, position,
                            GST_SEEK_TYPE_SET, GST_CLOCK_TIME_NONE);
     if(!gst_element_send_event(streamer_data.pipeline, seek))
