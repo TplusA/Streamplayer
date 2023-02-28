@@ -1525,6 +1525,7 @@ static bool try_refresh_uri_or_resolve_alternative_uri(
 
     data.is_failing = false;
     data.fail.reset();
+    data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_ACTIVATE);
     data.current_stream_protected_once = true;
     rebuild_playbin(data, data_lock, context);
 
