@@ -46,7 +46,8 @@ foreach name, d : dbus_mock_data
                 '--c-namespace', dbus_iface_data[d[0]][1],
                 '--cpp-namespace', name, '--interface', d[1],
                 '--pointer-pattern', d[2], '@INPUT@'
-            ]
+            ],
+            depends: [dbus_headers, tdbus_headers]
         )
     }
 endforeach

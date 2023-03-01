@@ -21,8 +21,8 @@
 
 gnome = import('gnome')
 
-dbus_iface_dir = '../../dbus_interfaces'
-dbus_iface_defs_includes = include_directories(dbus_iface_dir)
+dbus_iface_dir = meson.project_source_root() / 'dbus_interfaces'
+dbus_iface_defs_includes = include_directories('../../dbus_interfaces')
 
 dbus_iface_data = {
     'de_tahifi_debug': [
@@ -52,23 +52,26 @@ dbus_iface_data = {
 }
 
 dbus_deps = []
+dbus_headers = []
 dbus_docs = []
 dbus_toc_inputs = []
 tdbus_headers = []
 
 foreach name, d : dbus_iface_data
+    codegen = gnome.gdbus_codegen(name,
+                                  sources: dbus_iface_dir / name + '.xml',
+                                  interface_prefix: d[0],
+                                  namespace: d[1])
+    dbus_headers += codegen[1]
     dbus_deps += declare_dependency(
         link_with: static_library(
-            name.split('_')[-1] + '_dbus',
-            gnome.gdbus_codegen(name,
-                                sources: dbus_iface_dir / name + '.xml',
-                                interface_prefix: d[0],
-                                namespace: d[1]),
+            name.split('_')[-1] + '_dbus', codegen,
             dependencies: [glib_deps, config_h],
             c_args: relaxed_dbus_warnings
         ),
         include_directories: dbus_iface_defs_includes
     )
+    codegen = []
 
     doc_target = custom_target(name + '_docs',
         input: dbus_iface_dir / name + '.xml',

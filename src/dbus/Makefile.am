@@ -36,7 +36,7 @@ AM_CFLAGS = $(CRELAXEDWARNINGS)
 AM_CXXFLAGS = $(CXXRELAXEDWARNINGS)
 AM_CPPFLAGS = $(STREAMPLAYER_DEPENDENCIES_CFLAGS)
 
-libtaddybus_la_SOURCES = taddybus.cc taddybus.hh
+libtaddybus_la_SOURCES = taddybus.cc taddybus.hh ../gerrorwrapper.hh
 libtaddybus_la_CPPFLAGS = -I$(srcdir)/.. $(AM_CPPFLAGS)
 
 nodist_libstreamplayer_dbus_la_SOURCES = de_tahifi_streamplayer.c de_tahifi_streamplayer.h de_tahifi_streamplayer.hh
