@@ -69,96 +69,107 @@ libdebug_dbus_la_CPPFLAGS = $(AM_CPPFLAGS)
 libdebug_dbus_la_CFLAGS = $(AM_CFLAGS)
 libdebug_dbus_la_CXXFLAGS = $(AM_CXXFLAGS)
 
+DBUS_IFACE_PAGES = \
+    de_tahifi_streamplayer-doc.mdp \
+    de_tahifi_mounta-doc.mdp \
+    de_tahifi_artcache-doc.mdp \
+    de_tahifi_audiopath-doc.mdp \
+    de_tahifi_airable-doc.mdp \
+    de_tahifi_debug-doc.mdp
+
 BUILT_SOURCES = \
+    all_interfaces_toc.md \
+    all_interfaces.md \
+    all_interfaces.stamp \
+    $(DBUS_IFACE_PAGES) \
     $(nodist_libstreamplayer_dbus_la_SOURCES) \
     de_tahifi_streamplayer-doc.h \
-    de_tahifi_streamplayer-doc.md \
     de_tahifi_streamplayer.stamp \
     $(nodist_libmounta_dbus_la_SOURCES) \
     de_tahifi_mounta-doc.h \
-    de_tahifi_mounta-doc.md \
     de_tahifi_mounta.stamp \
     $(nodist_libartcache_dbus_la_SOURCES) \
     de_tahifi_artcache-doc.h \
-    de_tahifi_artcache-doc.md \
     de_tahifi_artcache.stamp \
     $(nodist_libaudiopath_dbus_la_SOURCES) \
     de_tahifi_audiopath-doc.h \
-    de_tahifi_audiopath-doc.md \
     de_tahifi_audiopath.stamp \
     $(nodist_libairable_dbus_la_SOURCES) \
     de_tahifi_airable-doc.h \
-    de_tahifi_airable-doc.md \
     de_tahifi_airable.stamp \
     $(nodist_libdebug_dbus_la_SOURCES) \
     de_tahifi_debug-doc.h \
-    de_tahifi_debug-doc.md \
     de_tahifi_debug.stamp
 
 CLEANFILES = $(BUILT_SOURCES)
 
 de_tahifi_streamplayer-doc.h: de_tahifi_streamplayer.stamp
-de_tahifi_streamplayer-doc.md: de_tahifi_streamplayer.stamp
+de_tahifi_streamplayer-doc.mdp: de_tahifi_streamplayer.stamp
 de_tahifi_streamplayer.c: de_tahifi_streamplayer.stamp
 de_tahifi_streamplayer.h: de_tahifi_streamplayer.stamp
 de_tahifi_streamplayer.hh: de_tahifi_streamplayer.stamp
 de_tahifi_streamplayer.stamp: $(DBUS_IFACES)/de_tahifi_streamplayer.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_streamplayer --c-namespace tdbus_splay --interface-prefix de.tahifi.Streamplayer. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus_splay --interface-prefix de.tahifi.Streamplayer. --cpp-traits-prefix Streamplayer -o de_tahifi_streamplayer.hh $<
-	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_streamplayer-doc.md -H de_tahifi_streamplayer-doc.h -c tdbus_splay -s de.tahifi.Streamplayer. -n "$(PACKAGE_NAME)"
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_streamplayer-doc.mdp -H de_tahifi_streamplayer-doc.h -c tdbus_splay -s de.tahifi.Streamplayer. -n "$(PACKAGE_NAME)"
 	touch $@
 
 de_tahifi_audiopath-doc.h: de_tahifi_audiopath.stamp
-de_tahifi_audiopath-doc.md: de_tahifi_audiopath.stamp
+de_tahifi_audiopath-doc.mdp: de_tahifi_audiopath.stamp
 de_tahifi_audiopath.c: de_tahifi_audiopath.stamp
 de_tahifi_audiopath.h: de_tahifi_audiopath.stamp
 de_tahifi_audiopath.hh: de_tahifi_audiopath.stamp
 de_tahifi_audiopath.stamp: $(DBUS_IFACES)/de_tahifi_audiopath.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_audiopath --c-namespace tdbus_aupath --interface-prefix de.tahifi.AudioPath. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus_aupath --interface-prefix de.tahifi.AudioPath. --cpp-traits-prefix AudioPath -o de_tahifi_audiopath.hh $<
-	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_audiopath-doc.md -H de_tahifi_audiopath-doc.h -c tdbus_aupath -s de.tahifi.AudioPath. -n 'Audio Paths'
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_audiopath-doc.mdp -H de_tahifi_audiopath-doc.h -c tdbus_aupath -s de.tahifi.AudioPath. -n 'Audio Paths'
 	touch $@
 
 de_tahifi_mounta-doc.h: de_tahifi_mounta.stamp
-de_tahifi_mounta-doc.md: de_tahifi_mounta.stamp
+de_tahifi_mounta-doc.mdp: de_tahifi_mounta.stamp
 de_tahifi_mounta.c: de_tahifi_mounta.stamp
 de_tahifi_mounta.h: de_tahifi_mounta.stamp
 de_tahifi_mounta.hh: de_tahifi_mounta.stamp
 de_tahifi_mounta.stamp: $(DBUS_IFACES)/de_tahifi_mounta.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_mounta --c-namespace tdbus --interface-prefix de.tahifi. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus --interface-prefix de.tahifi. -o de_tahifi_mounta.hh $<
-	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_mounta-doc.md -H de_tahifi_mounta-doc.h -c tdbus -s de.tahifi. -n "MounTA"
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_mounta-doc.mdp -H de_tahifi_mounta-doc.h -c tdbus -s de.tahifi. -n "MounTA"
 	touch $@
 
 de_tahifi_artcache-doc.h: de_tahifi_artcache.stamp
-de_tahifi_artcache-doc.md: de_tahifi_artcache.stamp
+de_tahifi_artcache-doc.mdp: de_tahifi_artcache.stamp
 de_tahifi_artcache.c: de_tahifi_artcache.stamp
 de_tahifi_artcache.h: de_tahifi_artcache.stamp
 de_tahifi_artcache.hh: de_tahifi_artcache.stamp
 de_tahifi_artcache.stamp: $(DBUS_IFACES)/de_tahifi_artcache.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_artcache --c-namespace tdbus_artcache --interface-prefix de.tahifi.ArtCache. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus_artcache --interface-prefix de.tahifi.ArtCache. --cpp-traits-prefix ArtCache -o de_tahifi_artcache.hh $<
-	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_artcache-doc.md -H de_tahifi_artcache-doc.h -c tdbus_artcache -s de.tahifi.ArtCache. -n "$(PACKAGE_NAME) (cover art)"
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_artcache-doc.mdp -H de_tahifi_artcache-doc.h -c tdbus_artcache -s de.tahifi.ArtCache. -n "$(PACKAGE_NAME) (cover art)"
 	touch $@
 
 de_tahifi_airable-doc.h: de_tahifi_airable.stamp
-de_tahifi_airable-doc.md: de_tahifi_airable.stamp
+de_tahifi_airable-doc.mdp: de_tahifi_airable.stamp
 de_tahifi_airable.c: de_tahifi_airable.stamp
 de_tahifi_airable.h: de_tahifi_airable.stamp
 de_tahifi_airable.hh: de_tahifi_airable.stamp
 de_tahifi_airable.stamp: $(DBUS_IFACES)/de_tahifi_airable.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_airable --c-namespace tdbus --interface-prefix de.tahifi. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus --interface-prefix de.tahifi. -o de_tahifi_airable.hh $<
-	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_airable-doc.md -H de_tahifi_airable-doc.h -c tdbus -s de.tahifi. -n 'Airable'
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_airable-doc.mdp -H de_tahifi_airable-doc.h -c tdbus -s de.tahifi. -n 'Airable'
 	touch $@
 
 de_tahifi_debug-doc.h: de_tahifi_debug.stamp
-de_tahifi_debug-doc.md: de_tahifi_debug.stamp
+de_tahifi_debug-doc.mdp: de_tahifi_debug.stamp
 de_tahifi_debug.c: de_tahifi_debug.stamp
 de_tahifi_debug.h: de_tahifi_debug.stamp
 de_tahifi_debug.hh: de_tahifi_debug.stamp
 de_tahifi_debug.stamp: $(DBUS_IFACES)/de_tahifi_debug.xml
 	$(GDBUS_CODEGEN) --generate-c-code=de_tahifi_debug --c-namespace tdbus_debug --interface-prefix de.tahifi.Debug. $<
 	PYTHONHOME= $(DBUS_IFACES)/taddybus-codegen.py --c-namespace tdbus_debug --interface-prefix de.tahifi.Debug. --cpp-traits-prefix Debug -o de_tahifi_debug.hh $<
-	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_debug-doc.md -H de_tahifi_debug-doc.h -c tdbus_debug -s de.tahifi.Debug. -n "Introspection"
+	$(DBUS_IFACES)/extract_documentation.py -i $< -o de_tahifi_debug-doc.mdp -H de_tahifi_debug-doc.h -c tdbus_debug -s de.tahifi.Debug. -n "Introspection"
 	touch $@
+
+all_interfaces_toc.md: all_interfaces.stamp
+all_interfaces.md: all_interfaces.stamp
+all_interfaces.stamp: $(DBUS_IFACE_PAGES)
+	$(DBUS_IFACES)/combine_iface_pages.sh -toc all_interfaces_toc.md -ifaces all_interfaces.md $(DBUS_IFACE_PAGES)

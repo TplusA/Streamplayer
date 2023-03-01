@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2022  T+A elektroakustik GmbH & Co. KG
+# Copyright (C) 2022, 2023  T+A elektroakustik GmbH & Co. KG
 #
 # This file is part of T+A Streamplayer.
 #
@@ -53,6 +53,7 @@ dbus_iface_data = {
 
 dbus_deps = []
 dbus_docs = []
+dbus_toc_inputs = []
 tdbus_headers = []
 
 foreach name, d : dbus_iface_data
@@ -69,14 +70,17 @@ foreach name, d : dbus_iface_data
         include_directories: dbus_iface_defs_includes
     )
 
-    dbus_docs += custom_target(name + '_docs',
+    doc_target = custom_target(name + '_docs',
         input: dbus_iface_dir / name + '.xml',
-        output: ['@BASENAME@-doc.md', '@BASENAME@-doc.h'],
+        output: ['@BASENAME@-doc.mdp', '@BASENAME@-doc.h'],
         command: [
             extract_docs, '-i', '@INPUT@', '-o', '@OUTPUT0@', '-H', '@OUTPUT1@',
             '-c', d[1], '-s', d[0], '-n', d[3]
         ]
     )
+    dbus_toc_inputs += doc_target[0]
+    dbus_docs += doc_target
+    doc_target = []
 
     tdbus_headers += custom_target(name + '_tdbus',
         input: dbus_iface_dir / name + '.xml',
@@ -87,6 +91,14 @@ foreach name, d : dbus_iface_data
         ]
     )
 endforeach
+
+dbus_docs += custom_target('all_interfaces_toc.md',
+    input: dbus_toc_inputs,
+    output: ['all_interfaces_toc.md', 'all_interfaces.md'],
+    command: [
+        combine_iface_pages, '-toc', '@OUTPUT0@', '-ifaces', '@OUTPUT1@', '@INPUT@'
+    ]
+)
 
 taddybus_lib = static_library('taddybus',
     ['taddybus.cc', tdbus_headers, dbus_docs],
