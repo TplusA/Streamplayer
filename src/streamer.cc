@@ -716,6 +716,15 @@ static PlayQueue::Item *try_take_next(StreamerData &data,
 
 static void handle_buffer_underrun(StreamerData &data);
 
+static void do_encourage_buffering(StreamerData &locked_data)
+{
+    if(locked_data.current_stream->is_network_stream())
+    {
+        locked_data.stream_buffering_data.set_buffer_level(0);
+        handle_buffer_underrun(locked_data);
+    }
+}
+
 static bool on_link_resolved(StreamerData &locked_data, PlayQueue::Item &stream,
                              GstState next_state, bool is_prefetching_for_gapless)
 {
@@ -738,12 +747,7 @@ static bool on_link_resolved(StreamerData &locked_data, PlayQueue::Item &stream,
     if(retval)
     {
         invalidate_position_information(locked_data.previous_time);
-
-        if(stream.is_network_stream())
-        {
-            locked_data.stream_buffering_data.set_buffer_level(0);
-            handle_buffer_underrun(locked_data);
-        }
+        do_encourage_buffering(locked_data);
     }
 
     return retval;
@@ -3214,12 +3218,7 @@ bool Streamer::seek(int64_t position, const char *units)
     if(!do_seek(streamer_data.pipeline, position))
         return false;
 
-    if(streamer_data.current_stream->is_network_stream())
-    {
-        streamer_data.stream_buffering_data.set_buffer_level(0);
-        handle_buffer_underrun(streamer_data);
-    }
-
+    do_encourage_buffering(streamer_data);
     return true;
 }
 
