@@ -49,6 +49,7 @@
 #include "dbus.hh"
 #include "dbus/de_tahifi_streamplayer.hh"
 #include "dbus/de_tahifi_artcache.hh"
+#include "maybe.hh"
 
 #if LOGGED_LOCKS_ENABLED
 bool LoggedLock::log_messages_enabled = true;
@@ -162,6 +163,7 @@ class StreamerData
 
     bool is_failing;
     FailureData fail;
+    Maybe<int64_t> initial_seek_position_ns;
 
     struct time_data previous_time;
     struct time_data current_time;
@@ -1529,6 +1531,9 @@ static bool try_refresh_uri_or_resolve_alternative_uri(
     data.fail.reset();
     data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_ACTIVATE);
     data.current_stream_protected_once = true;
+    if(data.current_time.position_s > 0 &&
+       data.current_time.position_s < INT64_MAX / GST_SECOND)
+        data.initial_seek_position_ns = data.current_time.position_s * GST_SECOND;
     rebuild_playbin(data, data_lock, context);
 
     return resolve_selected_url_or_play_uri(
@@ -1550,6 +1555,8 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
     auto data_lock(data.lock());
     LOGGED_LOCK_CONTEXT_HINT;
     const auto fifo_lock(data.url_fifo_LOCK_ME->lock());
+
+    data.initial_seek_position_ns.set_unknown();
 
     const GLibString current_uri(
         [p = data.pipeline] ()
@@ -2395,6 +2402,19 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
         data.stream_buffering_data.is_buffering() ? TRUE : FALSE);
 }
 
+static bool do_seek(GstElement *pipeline, int64_t position)
+{
+    msg_info("Seek to time %" PRId64 " ns", position);
+
+    auto *seek =
+        gst_event_new_seek(1.0, GST_FORMAT_TIME,
+                           static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
+                                                     GST_SEEK_FLAG_KEY_UNIT),
+                           GST_SEEK_TYPE_SET, position,
+                           GST_SEEK_TYPE_SET, GST_CLOCK_TIME_NONE);
+    return !!gst_element_send_event(pipeline, seek);
+}
+
 static void handle_stream_duration_async(GstMessage *message, StreamerData &data)
 {
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
@@ -2417,6 +2437,12 @@ static void handle_stream_duration_async(GstMessage *message, StreamerData &data
     {
         data.current_stream->disable_realtime();
         data.boosted_threads_.throttle("RT disabled for Internet radio");
+    }
+
+    if(data.initial_seek_position_ns.is_known())
+    {
+        do_seek(data.pipeline, data.initial_seek_position_ns.get());
+        data.initial_seek_position_ns.set_unknown();
     }
 }
 
@@ -3185,15 +3211,7 @@ bool Streamer::seek(int64_t position, const char *units)
         return false;
     }
 
-    msg_info("Seek to time %" PRId64 " ns", position);
-
-    auto *seek =
-        gst_event_new_seek(1.0, GST_FORMAT_TIME,
-                           static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                                     GST_SEEK_FLAG_KEY_UNIT),
-                           GST_SEEK_TYPE_SET, position,
-                           GST_SEEK_TYPE_SET, GST_CLOCK_TIME_NONE);
-    if(!gst_element_send_event(streamer_data.pipeline, seek))
+    if(!do_seek(streamer_data.pipeline, position))
         return false;
 
     if(streamer_data.current_stream->is_network_stream())

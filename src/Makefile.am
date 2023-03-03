@@ -40,7 +40,7 @@ streamplayer_SOURCES = \
     backtrace.c backtrace.h \
     dbus.cc dbus.hh \
     boosted_threads.cc boosted_threads.hh \
-    streamer.cc streamer.hh stream_id.h stream_id.hh buffering.hh \
+    streamer.cc streamer.hh stream_id.h stream_id.hh buffering.hh maybe.hh \
     stream_logging.cc stream_logging.hh \
     cookie_manager_impl.cc cookie_manager_impl.hh cookie_manager.hh \
     urlfifo.hh playitem.hh streamdata.hh gvariantwrapper.hh \
