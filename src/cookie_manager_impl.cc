@@ -47,7 +47,11 @@ class PendingCookies
     PendingCookies(PendingCookies &&) = delete;
     PendingCookies &operator=(const PendingCookies &) = delete;
     PendingCookies &operator=(PendingCookies &&) = delete;
-    explicit PendingCookies() = default;
+
+    explicit PendingCookies()
+    {
+        LoggedLock::configure(lock_, "PendingCookies", MESSAGE_LEVEL_DEBUG);
+    }
 
     auto block_notifications()
     {

@@ -79,7 +79,9 @@ class Queue
 
     explicit Queue(size_t max_number_of_items = 8):
         max_number_of_items_(max_number_of_items)
-    {}
+    {
+        LoggedLock::configure(lock_, "Queue", MESSAGE_LEVEL_DEBUG);
+    }
 
     /*!
      * Lock access to the URL FIFO.

@@ -198,7 +198,9 @@ class StreamerData
         next_allowed_tag_update_time(0),
         stream_has_just_started(false),
         supposed_play_status(Streamer::PlayStatus::STOPPED)
-    {}
+    {
+        LoggedLock::configure(lock_, "StreamerData", MESSAGE_LEVEL_DEBUG);
+    }
 
     LoggedLock::UniqueLock<LoggedLock::RecMutex> lock() const
     {
