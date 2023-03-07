@@ -404,32 +404,24 @@ static void teardown_playbin(StreamerData &data)
     data.pipeline = nullptr;
 }
 
-static int create_playbin(StreamerData &data, const char *context);
-
-static int rebuild_playbin(StreamerData &data,
-                           LoggedLock::UniqueLock<LoggedLock::RecMutex> &data_lock,
-                           const char *context)
+static void reset_playbin(StreamerData &data, const char *context)
 {
     data.boosted_threads_.throttle(context);
     disconnect_playbin_signals(data);
+    set_stream_state(data.pipeline, GST_STATE_NULL, "reset/rebuild");
+}
 
-    /* allow signal handlers already waiting for the lock to pass */
-    LOGGED_LOCK_CONTEXT_HINT_CLEAR;
-    data_lock.unlock();
-    while(g_main_context_iteration(nullptr, FALSE))
-        ;
-    LOGGED_LOCK_CONTEXT_HINT;
-    data_lock.lock();
+static int create_playbin(StreamerData &data, const char *context);
 
-    set_stream_state(data.pipeline, GST_STATE_NULL, "rebuild");
+static int rebuild_playbin(StreamerData &data, const char *context)
+{
+    reset_playbin(data, context);
     teardown_playbin(data);
-
     return create_playbin(data, context);
 }
 
 static void do_stop_pipeline_and_recover_from_error(
-        StreamerData &data, LoggedLock::UniqueLock<LoggedLock::RecMutex> &data_lock,
-        PlayQueue::Queue<PlayQueue::Item> &url_fifo)
+        StreamerData &data, PlayQueue::Queue<PlayQueue::Item> &url_fifo)
 {
     static const char context[] = "deferred stop";
 
@@ -453,7 +445,7 @@ static void do_stop_pipeline_and_recover_from_error(
      * There is no real cure to that problem, but destroying the whole pipeline
      * and creating a new one seems to work.
      */
-    rebuild_playbin(data, data_lock, context);
+    rebuild_playbin(data, context);
 
     msg_info("Stop reason is %s", as_string(data.fail.reason));
 
@@ -485,7 +477,7 @@ static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
         [&data, &data_lock]
         (PlayQueue::Queue<PlayQueue::Item> &fifo)
         {
-            do_stop_pipeline_and_recover_from_error(data, data_lock, fifo);
+            do_stop_pipeline_and_recover_from_error(data, fifo);
         });
 
     return G_SOURCE_REMOVE;
@@ -512,10 +504,9 @@ static void recover_from_error_now_or_later(StreamerData &data,
 }
 
 static void rebuild_playbin_for_workarounds(StreamerData &data,
-                                            LoggedLock::UniqueLock<LoggedLock::RecMutex> &data_lock,
                                             const char *context)
 {
-    rebuild_playbin(data, data_lock, context);
+    rebuild_playbin(data, context);
     data.current_stream_protected_once = true;
     data.stream_has_just_started = false;
     data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
@@ -1517,7 +1508,7 @@ determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
 }
 
 static bool try_refresh_uri_or_resolve_alternative_uri(
-        StreamerData &data, LoggedLock::UniqueLock<LoggedLock::RecMutex> &data_lock,
+        StreamerData &data,
         const GErrorWrapper &error, bool is_prefetching_for_gapless)
 {
     if(data.current_stream == nullptr)
@@ -1538,7 +1529,7 @@ static bool try_refresh_uri_or_resolve_alternative_uri(
     if(data.current_time.position_s > 0 &&
        data.current_time.position_s < INT64_MAX / GST_SECOND)
         data.initial_seek_position_ns = data.current_time.position_s * GST_SECOND;
-    rebuild_playbin(data, data_lock, context);
+    reset_playbin(data, context);
 
     return resolve_selected_url_or_play_uri(
             data, *data.current_stream,
@@ -1628,7 +1619,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
       case StoppedReasons::Reason::DECRYPTION_NOT_SUPPORTED:
         /* worth a retry */
         if(try_refresh_uri_or_resolve_alternative_uri(
-                data, data_lock, error,
+                data, error,
                 which_stream_failed == WhichStreamFailed::GAPLESS_NEXT ||
                 which_stream_failed == WhichStreamFailed::GAPLESS_NEXT_WITH_PREFAIL_REASON))
             return;
@@ -2966,7 +2957,7 @@ bool Streamer::start(const char *reason)
 
           case GST_STATE_READY:
           case GST_STATE_NULL:
-            rebuild_playbin_for_workarounds(streamer_data, data_lock, context);
+            rebuild_playbin_for_workarounds(streamer_data, context);
 
             LOGGED_LOCK_CONTEXT_HINT;
             streamer_data.url_fifo_LOCK_ME->locked_rw(
