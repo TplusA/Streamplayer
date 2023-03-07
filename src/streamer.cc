@@ -50,6 +50,7 @@
 #include "dbus/de_tahifi_streamplayer.hh"
 #include "dbus/de_tahifi_artcache.hh"
 #include "maybe.hh"
+#include "guard.hh"
 
 #if LOGGED_LOCKS_ENABLED
 bool LoggedLock::log_messages_enabled = true;
@@ -204,9 +205,19 @@ class StreamerData
         LoggedLock::configure(lock_, "StreamerData", MESSAGE_LEVEL_DEBUG);
     }
 
-    LoggedLock::UniqueLock<LoggedLock::RecMutex> lock() const
+    std::pair<bool, LoggedLock::UniqueLock<LoggedLock::RecMutex>>
+    lock(const GstElement *expected_pipeline, const char *context) const
     {
-        return LoggedLock::UniqueLock<LoggedLock::RecMutex>(lock_);
+        auto result =
+            std::make_pair(false, LoggedLock::UniqueLock<LoggedLock::RecMutex>(lock_));
+        if(expected_pipeline == nullptr || expected_pipeline == pipeline ||
+           !GST_IS_PIPELINE(expected_pipeline))
+            result.first = true;
+        else
+            msg_vinfo(MESSAGE_LEVEL_IMPORTANT,
+                      "LOCK: Pipeline %s has been replaced [%s]",
+                      GST_ELEMENT_NAME(expected_pipeline), context);
+        return result;
     }
 
     template <typename F>
@@ -464,20 +475,52 @@ static void do_stop_pipeline_and_recover_from_error(
     data.fail.reset();
 }
 
+class PipelineCallbackData
+{
+  public:
+    StreamerData &data_;
+    GstElement *pipeline_;
+    GstMessage *message_;
+
+    PipelineCallbackData(const PipelineCallbackData &) = delete;
+    PipelineCallbackData(PipelineCallbackData &&) = delete;
+    PipelineCallbackData &operator=(const PipelineCallbackData &) = delete;
+    PipelineCallbackData &operator=(PipelineCallbackData &&) = delete;
+
+    explicit PipelineCallbackData(StreamerData &data,
+                                  GstMessage *msg = nullptr):
+        data_(data),
+        pipeline_(GST_ELEMENT(gst_object_ref(data_.pipeline))),
+        message_(gst_message_ref(msg))
+    {}
+
+    ~PipelineCallbackData()
+    {
+        gst_object_unref(pipeline_);
+        gst_message_unref(message_);
+    }
+};
+
 static gboolean stop_pipeline_and_recover_from_error(gpointer user_data)
 {
     msg_vinfo(MESSAGE_LEVEL_DIAG, "Recover from error");
 
-    auto &data = *static_cast<StreamerData *>(user_data);
-    LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto *pcbdata = static_cast<PipelineCallbackData *>(user_data);
+    Guard guard([pcbdata] { delete pcbdata; });
 
     LOGGED_LOCK_CONTEXT_HINT;
-    data.url_fifo_LOCK_ME->locked_rw(
-        [&data, &data_lock]
+    auto data_lock(pcbdata->data_.lock(pcbdata->pipeline_,
+                                       "stop, recover from error"));
+
+    if(!data_lock.first)
+        return G_SOURCE_REMOVE;
+
+    LOGGED_LOCK_CONTEXT_HINT;
+    pcbdata->data_.url_fifo_LOCK_ME->locked_rw(
+        [pcbdata]
         (PlayQueue::Queue<PlayQueue::Item> &fifo)
         {
-            do_stop_pipeline_and_recover_from_error(data, fifo);
+            do_stop_pipeline_and_recover_from_error(pcbdata->data_, fifo);
         });
 
     return G_SOURCE_REMOVE;
@@ -491,7 +534,8 @@ static void schedule_error_recovery(StreamerData &data,
     data.fail.reason = reason;
     data.fail.clear_fifo_on_error = false;
 
-    g_idle_add(stop_pipeline_and_recover_from_error, &data);
+    g_idle_add(stop_pipeline_and_recover_from_error,
+               new PipelineCallbackData(data));
 }
 
 static void recover_from_error_now_or_later(StreamerData &data,
@@ -716,9 +760,15 @@ static void do_encourage_buffering(StreamerData &locked_data)
     }
 }
 
-static bool on_link_resolved(StreamerData &locked_data, PlayQueue::Item &stream,
-                             GstState next_state, bool is_prefetching_for_gapless)
+static bool on_link_resolved(StreamerData &locked_data,
+                             bool pipeline_has_changed,
+                             PlayQueue::Item &stream,
+                             GstState next_state,
+                             bool is_prefetching_for_gapless)
 {
+    if(pipeline_has_changed)
+        return false;
+
     g_object_set(locked_data.pipeline, "uri",
                  stream.get_url_for_playing().c_str(), nullptr);
     locked_data.next_stream_request = NextStreamRequestState::NOT_REQUESTED;
@@ -745,6 +795,7 @@ static bool on_link_resolved(StreamerData &locked_data, PlayQueue::Item &stream,
 }
 
 static bool resolve_selected_url_or_play_uri(StreamerData &data,
+                                             bool pipeline_has_changed,
                                              PlayQueue::Item &stream,
                                              GstState next_state,
                                              bool is_prefetching_for_gapless,
@@ -801,7 +852,8 @@ class ResolveAirableRedirectContext: public DBusRNF::ContextData
 
         auto &redir_call(static_cast<DBusRNF::ResolveAirableRedirectCall &>(call));
         LOGGED_LOCK_CONTEXT_HINT;
-        auto data_lock(streamer_data_.lock());
+        auto data_lock(streamer_data_.lock(nullptr,
+                                           "ResolveAirableRedirectContext::notify()"));
         LOGGED_LOCK_CONTEXT_HINT;
         auto fifo_lock(streamer_data_.url_fifo_LOCK_ME->lock());
 
@@ -861,7 +913,8 @@ class ResolveAirableRedirectContext: public DBusRNF::ContextData
         {
           case PlayQueue::Item::ResolverResult::RESOLVED:
             /* we got a direct URL, so let's pass it on to GStreamer */
-            on_link_resolved(streamer_data_, *next_item, next_state_,
+            on_link_resolved(streamer_data_, !data_lock.first,
+                             *next_item, next_state_,
                              is_prefetching_for_gapless_);
             break;
 
@@ -871,8 +924,8 @@ class ResolveAirableRedirectContext: public DBusRNF::ContextData
             if(!next_item->select_next_url())
                 break;
 
-            resolve_selected_url_or_play_uri(streamer_data_, *next_item,
-                                             next_state_,
+            resolve_selected_url_or_play_uri(streamer_data_, !data_lock.first,
+                                             *next_item, next_state_,
                                              is_prefetching_for_gapless_,
                                              "try resolving next URI for stream");
             break;
@@ -888,6 +941,7 @@ class ResolveAirableRedirectContext: public DBusRNF::ContextData
 };
 
 static bool resolve_selected_url_or_play_uri(StreamerData &data,
+                                             bool pipeline_has_changed,
                                              PlayQueue::Item &stream,
                                              GstState next_state,
                                              bool is_prefetching_for_gapless,
@@ -927,17 +981,20 @@ static bool resolve_selected_url_or_play_uri(StreamerData &data,
         return false;
     }
 
-    return on_link_resolved(data, stream, next_state,
+    return on_link_resolved(data, pipeline_has_changed, stream, next_state,
                             is_prefetching_for_gapless);
 
 }
 
 static bool play_next_stream(StreamerData &data,
+                             bool pipeline_has_changed,
                              PlayQueue::Item *replaced_stream,
                              PlayQueue::Item &next_stream,
                              GstState next_state, bool is_skipping,
                              bool is_prefetching_for_gapless, const char *context)
 {
+    msg_log_assert(!pipeline_has_changed);
+
     switch(next_stream.get_state())
     {
       case PlayQueue::ItemState::ACTIVE_HALF_PLAYING:
@@ -979,15 +1036,18 @@ static bool play_next_stream(StreamerData &data,
                                    ? PlayQueue::ItemState::ABOUT_TO_BE_SKIPPED
                                    : PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
 
-    return resolve_selected_url_or_play_uri(data, next_stream, next_state,
+    return resolve_selected_url_or_play_uri(data, pipeline_has_changed,
+                                            next_stream, next_state,
                                             is_prefetching_for_gapless, context);
 }
 
 static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
+                                                 bool pipeline_has_changed,
                                                  const char *context)
 {
     MSG_BUG_IF(data.next_stream_request == NextStreamRequestState::NOT_REQUESTED,
                "GStreamer has not requested the next stream yet [%s]", context);
+    msg_log_assert(!pipeline_has_changed);
 
     bool is_next_in_fifo;
     auto *const next_stream = pick_next_item(data.current_stream.get(),
@@ -1008,7 +1068,7 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
         data.current_stream->set_state(PlayQueue::ItemState::ABOUT_TO_PHASE_OUT);
     }
     else
-        play_next_stream(data,
+        play_next_stream(data, pipeline_has_changed,
                          is_next_in_fifo ? nullptr : data.current_stream.get(),
                          *next_stream, GST_STATE_NULL, false, true, context);
 }
@@ -1018,9 +1078,14 @@ static void queue_stream_from_url_fifo__unlocked(StreamerData &data,
  */
 static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 {
+    static const char context[] = "about-to-finish";
+
     auto &data = *static_cast<StreamerData *>(user_data);
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(elem, context));
+
+    if(!data_lock.first)
+        return;
 
     if(data.is_failing)
         return;
@@ -1029,7 +1094,7 @@ static void queue_stream_from_url_fifo(GstElement *elem, gpointer user_data)
 
     LOGGED_LOCK_CONTEXT_HINT;
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
-    queue_stream_from_url_fifo__unlocked(data, "need next stream");
+    queue_stream_from_url_fifo__unlocked(data, !data_lock.first, context);
 }
 
 static gboolean do_restart_playing(gpointer user_data)
@@ -1045,7 +1110,10 @@ static void handle_end_of_stream(GstMessage *message, StreamerData &data)
     msg_info("End of stream notification received");
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "EOS"));
+    if(!data_lock.first)
+        return;
+
     bool restart_required_now = false;
 
     set_stream_state(data.pipeline, GST_STATE_READY, "EOS");
@@ -1404,7 +1472,7 @@ static gboolean emit_tags(gpointer user_data)
 {
     auto &data = *static_cast<StreamerData *>(user_data);
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(nullptr, "emit tags"));
 
     if(data.current_stream != nullptr)
         emit_tags__unlocked(data);
@@ -1420,7 +1488,7 @@ static void handle_tag(GstMessage *message, StreamerData &data)
               __func__, GST_MESSAGE_SRC_NAME(message));
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "handle tag"));
 
     if(data.current_stream == nullptr)
         return;
@@ -1508,10 +1576,13 @@ determine_failed_stream(const StreamerData &data, const GLibString &current_uri,
 }
 
 static bool try_refresh_uri_or_resolve_alternative_uri(
-        StreamerData &data,
+        StreamerData &data, bool pipeline_has_changed,
         const GErrorWrapper &error, bool is_prefetching_for_gapless)
 {
     if(data.current_stream == nullptr)
+        return false;
+
+    if(pipeline_has_changed)
         return false;
 
     if(!data.current_stream->select_next_url())
@@ -1532,7 +1603,7 @@ static bool try_refresh_uri_or_resolve_alternative_uri(
     reset_playbin(data, context);
 
     return resolve_selected_url_or_play_uri(
-            data, *data.current_stream,
+            data, pipeline_has_changed, *data.current_stream,
             data.supposed_play_status == Streamer::PlayStatus::PLAYING
             ? GST_STATE_PLAYING
             : GST_STATE_PAUSED,
@@ -1547,7 +1618,10 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
     GErrorWrapper error(Streamer::log_error_message(message));
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "handle error"));
+    if(!data_lock.first)
+        return;
+
     LOGGED_LOCK_CONTEXT_HINT;
     const auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
@@ -1619,7 +1693,7 @@ static void handle_error_message(GstMessage *message, StreamerData &data)
       case StoppedReasons::Reason::DECRYPTION_NOT_SUPPORTED:
         /* worth a retry */
         if(try_refresh_uri_or_resolve_alternative_uri(
-                data, error,
+                data, !data_lock.first, error,
                 which_stream_failed == WhichStreamFailed::GAPLESS_NEXT ||
                 which_stream_failed == WhichStreamFailed::GAPLESS_NEXT_WITH_PREFAIL_REASON))
             return;
@@ -1714,7 +1788,7 @@ static gboolean report_progress(gpointer user_data)
 {
     auto &data = *static_cast<StreamerData *>(user_data);
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(nullptr, "report progress"));
     return report_progress__unlocked(data);
 }
 
@@ -1911,7 +1985,9 @@ static void handle_stream_state_change(GstMessage *message, StreamerData &data)
               __func__, GST_MESSAGE_SRC_NAME(message));
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "state change"));
+    if(!data_lock.first)
+        return;
 
     const bool is_ours =
         (GST_MESSAGE_SRC(message) == GST_OBJECT(data.pipeline));
@@ -2127,14 +2203,16 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    static const char context[] = "stream started";
+
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), context));
     LOGGED_LOCK_CONTEXT_HINT;
     auto fifo_lock(data.url_fifo_LOCK_ME->lock());
 
     if(!data.stream_buffering_data.is_buffering() &&
        data.current_stream->is_realtime_processing_allowed())
-        data.boosted_threads_.boost("stream started");
+        data.boosted_threads_.boost(context);
 
     bool failed = false;
     bool with_bug = false;
@@ -2287,7 +2365,8 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &data)
     if(need_push_next_stream)
     {
         data.next_stream_request = NextStreamRequestState::REQUESTED;
-        queue_stream_from_url_fifo__unlocked(data, "deferred set uri");
+        queue_stream_from_url_fifo__unlocked(data, !data_lock.first,
+                                             "deferred set uri");
     }
 }
 
@@ -2355,6 +2434,10 @@ static void handle_buffering(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "buffering"));
+    if(!data_lock.first)
+        return;
+
     switch(data.supposed_play_status)
     {
       case Streamer::PlayStatus::STOPPED:
@@ -2420,7 +2503,9 @@ static void handle_stream_duration_async(GstMessage *message, StreamerData &data
     gst_message_parse_async_done(message, &running_time);
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "prerolled"));
+    if(!data_lock.first)
+        return;
 
     if(running_time != GST_CLOCK_TIME_NONE)
         data.current_time.duration_s = running_time / (1000LL * 1000LL * 1000LL);
@@ -2446,13 +2531,22 @@ static void handle_clock_lost_message(GstMessage *message, StreamerData &data)
     msg_vinfo(MESSAGE_LEVEL_TRACE, "%s(): %s",
               __func__, GST_MESSAGE_SRC_NAME(message));
 
-    LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(data.lock());
-
     static const char context[] = "clock lost";
+
+    LOGGED_LOCK_CONTEXT_HINT;
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), context));
+    if(!data_lock.first)
+        return;
 
     set_stream_state(data.pipeline, GST_STATE_PAUSED, context);
     set_stream_state(data.pipeline, GST_STATE_PLAYING, context);
+}
+
+static void handle_latency_message(GstMessage *message, StreamerData &data)
+{
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "latency"));
+    if(data_lock.first)
+        gst_bin_recalculate_latency(GST_BIN(data.pipeline));
 }
 
 static void handle_request_state_message(GstMessage *message, StreamerData &data)
@@ -2467,7 +2561,9 @@ static void handle_request_state_message(GstMessage *message, StreamerData &data
     msg_info("Setting state to %s as requested by %s",
              gst_element_state_get_name(state), name.get());
 
-    set_stream_state(data.pipeline, state, "requested by pipeline element");
+    auto data_lock(data.lock(GST_ELEMENT(GST_MESSAGE_SRC(message)), "state request"));
+    if(data_lock.first)
+        set_stream_state(data.pipeline, state, "requested by pipeline element");
 }
 
 /*
@@ -2537,7 +2633,7 @@ static gboolean bus_message_handler(GstBus *bus, GstMessage *message,
         break;
 
       case GST_MESSAGE_LATENCY:
-        gst_bin_recalculate_latency(GST_BIN(data.pipeline));
+        handle_latency_message(message, data);
         break;
 
       case GST_MESSAGE_REQUEST_STATE:
@@ -2754,7 +2850,7 @@ static int create_playbin(StreamerData &data, const char *context)
     return 0;
 }
 
-static void try_play_next_stream(StreamerData &data,
+static void try_play_next_stream(StreamerData &data, bool pipeline_has_changed,
                                  PlayQueue::Queue<PlayQueue::Item> &url_fifo,
                                  GstState next_state, const char *context)
 {
@@ -2764,7 +2860,7 @@ static void try_play_next_stream(StreamerData &data,
         try_take_next(data, url_fifo, true, is_next_current, is_just_queued, context);
 
     if(next_stream != nullptr && (is_next_current || is_just_queued))
-        play_next_stream(data, nullptr, *next_stream, next_state,
+        play_next_stream(data, pipeline_has_changed, nullptr, *next_stream, next_state,
                          false, false, context);
 }
 
@@ -2874,7 +2970,7 @@ void Streamer::shutdown(GMainLoop *loop)
 void Streamer::activate()
 {
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "activate"));
 
     if(streamer_data.is_player_activated)
         MSG_BUG("Already activated");
@@ -2890,7 +2986,7 @@ void Streamer::deactivate()
     static const char context[] = "deactivate";
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, context));
 
     if(!streamer_data.is_player_activated)
         MSG_BUG("Already deactivated");
@@ -2909,16 +3005,16 @@ void Streamer::deactivate()
 
 bool Streamer::start(const char *reason)
 {
+    static const char context[] = "start playing";
+
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, context));
 
     if(!streamer_data.is_player_activated)
     {
         MSG_BUG("Start request while inactive (%s)", reason);
         return false;
     }
-
-    static const char context[] = "start playing";
 
     msg_info("Starting as requested (%s)", reason);
 
@@ -2961,9 +3057,9 @@ bool Streamer::start(const char *reason)
 
             LOGGED_LOCK_CONTEXT_HINT;
             streamer_data.url_fifo_LOCK_ME->locked_rw(
-                [] (PlayQueue::Queue<PlayQueue::Item> &fifo)
+                [&data_lock] (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
-                    try_play_next_stream(streamer_data, fifo,
+                    try_play_next_stream(streamer_data, !data_lock.first, fifo,
                                          GST_STATE_PLAYING, context);
                 });
             break;
@@ -2996,8 +3092,10 @@ static bool is_pipeline_uri_empty(GstElement *pipeline)
 
 bool Streamer::stop(const char *reason)
 {
+    static const char context[] = "stop playing";
+
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, context));
 
     if(!streamer_data.is_player_activated)
     {
@@ -3010,8 +3108,6 @@ bool Streamer::stop(const char *reason)
         msg_info("Ignored stop request with uri property (%s)", reason);
         return false;
     }
-
-    static const char context[] = "stop playing";
 
     msg_info("Stopping as requested (%s)", reason);
 
@@ -3052,8 +3148,10 @@ bool Streamer::stop(const char *reason)
  */
 bool Streamer::pause(const char *reason)
 {
+    static const char context[] = "pause stream";
+
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, context));
 
     if(!streamer_data.is_player_activated)
     {
@@ -3066,8 +3164,6 @@ bool Streamer::pause(const char *reason)
         msg_info("Ignored pause request with uri property (%s)", reason);
         return false;
     }
-
-    static const char context[] = "pause stream";
 
     msg_info("Pausing as requested (%s)", reason);
     msg_log_assert(streamer_data.pipeline != nullptr);
@@ -3090,9 +3186,9 @@ bool Streamer::pause(const char *reason)
       case GST_STATE_NULL:
         LOGGED_LOCK_CONTEXT_HINT;
         streamer_data.url_fifo_LOCK_ME->locked_rw(
-            [] (PlayQueue::Queue<PlayQueue::Item> &fifo)
+            [&data_lock] (PlayQueue::Queue<PlayQueue::Item> &fifo)
             {
-                try_play_next_stream(streamer_data, fifo,
+                try_play_next_stream(streamer_data, !data_lock.first, fifo,
                                      GST_STATE_PAUSED, context);
             });
 
@@ -3160,7 +3256,7 @@ bool Streamer::seek(int64_t position, const char *units)
     }
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "seek"));
 
     if(!streamer_data.is_player_activated)
     {
@@ -3216,16 +3312,16 @@ bool Streamer::seek(int64_t position, const char *units)
 Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
                                     uint32_t &out_skipped_id, uint32_t &out_next_id)
 {
+    static const char context[] = "skip to next";
+
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, context));
 
     if(!streamer_data.is_player_activated)
     {
         MSG_BUG("Next request while inactive");
         return Streamer::PlayStatus::STOPPED;
     }
-
-    static const char context[] = "skip to next";
 
     msg_info("Next requested");
     msg_log_assert(streamer_data.pipeline != nullptr);
@@ -3332,7 +3428,7 @@ Streamer::PlayStatus Streamer::next(bool skip_only_if_not_stopped,
                 break;
             }
 
-            if(play_next_stream(streamer_data,
+            if(play_next_stream(streamer_data, !data_lock.first,
                                 is_next_current ? nullptr : streamer_data.current_stream.get(),
                                 *next_stream, next_state, true, false,
                                 context))
@@ -3350,7 +3446,7 @@ void Streamer::clear_queue(int keep_first_n_entries,
                            GVariantWrapper &queued, GVariantWrapper &dropped)
 {
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "clear queue"));
 
     LOGGED_LOCK_CONTEXT_HINT;
     streamer_data.url_fifo_LOCK_ME->locked_rw(
@@ -3374,7 +3470,7 @@ bool Streamer::is_playing()
 bool Streamer::get_current_stream_id(stream_id_t &id)
 {
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "get current ID"));
 
     if(streamer_data.current_stream != nullptr &&
        !streamer_data.current_stream->empty())
@@ -3395,7 +3491,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
     static const Timebase timebase;
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "push item"));
     bool is_active = streamer_data.is_player_activated;
 
     if(!is_active)
@@ -3427,7 +3523,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
 
     LOGGED_LOCK_CONTEXT_HINT;
     return streamer_data.url_fifo_LOCK_ME->locked_rw(
-                [&item, &keep_items, &out_dropped_ids_now]
+                [&data_lock, &item, &keep_items, &out_dropped_ids_now]
                 (PlayQueue::Queue<PlayQueue::Item> &fifo)
                 {
                     if(fifo.push(std::move(item), keep_items) == 0)
@@ -3439,6 +3535,7 @@ bool Streamer::push_item(stream_id_t stream_id, GVariantWrapper &&stream_key,
                         if(streamer_data.current_stream != nullptr &&
                            streamer_data.current_stream->get_state() == PlayQueue::ItemState::ABOUT_TO_PHASE_OUT)
                             queue_stream_from_url_fifo__unlocked(streamer_data,
+                                                                 !data_lock.first,
                                                                  "immediately queued on push");
                         break;
 
@@ -3495,7 +3592,7 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
     };
 
     LOGGED_LOCK_CONTEXT_HINT;
-    LoggedLock::UniqueLock<LoggedLock::RecMutex> data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "fs path removed"));
 
     if(streamer_data.is_player_activated && streamer_data.current_stream != nullptr)
     {
@@ -3521,26 +3618,24 @@ bool Streamer::remove_items_for_root_path(const char *root_path)
 
 static gboolean post_injected_failure(gpointer user_data)
 {
-    auto *msg = static_cast<GstMessage *>(user_data);
+    auto *pcbdata = static_cast<PipelineCallbackData *>(user_data);
+    Guard guard([pcbdata] { delete pcbdata; });
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
-    GstElement *pipeline = streamer_data.pipeline;
+    auto data_lock(pcbdata->data_.lock(pcbdata->pipeline_,
+                                       "do inject failure"));
 
-    if(pipeline == nullptr)
+    if(!data_lock.first)
     {
         msg_error(0, LOG_NOTICE,
-                  "Failed posting stream error message: pipeline is NULL");
-        gst_message_unref(msg);
+                  "Failed injecting error: pipeline has changed");
         return G_SOURCE_REMOVE;
     }
 
-    g_object_ref(pipeline);
-    data_lock.unlock();
+    data_lock.second.unlock();
 
     /* don't want to hold any locks, just to be completely safe... */
-    gst_element_post_message(pipeline, msg);
-    g_object_unref(pipeline);
+    gst_element_post_message(pcbdata->pipeline_, pcbdata->message_);
 
     return G_SOURCE_REMOVE;
 }
@@ -3564,7 +3659,7 @@ void Streamer::inject_stream_failure(const char *domain, unsigned int code)
     }
 
     LOGGED_LOCK_CONTEXT_HINT;
-    auto data_lock(streamer_data.lock());
+    auto data_lock(streamer_data.lock(nullptr, "inject failure"));
 
     if(streamer_data.pipeline == nullptr)
     {
@@ -3583,5 +3678,6 @@ void Streamer::inject_stream_failure(const char *domain, unsigned int code)
     g_error_free(error);
 
     /* let's be extra careful and not post from here */
-    g_idle_add(post_injected_failure, msg);
+    g_idle_add(post_injected_failure,
+               new PipelineCallbackData(streamer_data, msg));
 }

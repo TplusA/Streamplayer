@@ -36,7 +36,7 @@ bin_PROGRAMS = streamplayer
 
 streamplayer_SOURCES = \
     streamplayer.cc messages.c messages.h messages_glib.c messages_glib.h \
-    messages_dbus.c messages_dbus.h debug_levels.cc logged_lock.hh \
+    messages_dbus.c messages_dbus.h debug_levels.cc logged_lock.hh guard.hh \
     backtrace.c backtrace.h \
     dbus.cc dbus.hh \
     boosted_threads.cc boosted_threads.hh \
