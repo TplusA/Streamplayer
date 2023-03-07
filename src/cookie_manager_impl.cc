@@ -156,7 +156,7 @@ class PendingCookies
         const auto fn(std::move(it->second));
         notification_functions_.erase(it);
 
-        LOGGED_LOCK_CONTEXT_HINT_CLEAR;
+        LOGGED_LOCK_CONTEXT_HINT;
         lock.unlock();
 
         try
@@ -190,7 +190,7 @@ class PendingCookies
         const auto fn(std::move(it->second));
         fetch_functions_.erase(it);
 
-        LOGGED_LOCK_CONTEXT_HINT_CLEAR;
+        LOGGED_LOCK_CONTEXT_HINT;
         lock.unlock();
 
         try

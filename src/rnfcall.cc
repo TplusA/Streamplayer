@@ -82,7 +82,7 @@ bool DBusRNF::CallBase::abort_request_internal(bool suppress_errors)
         return true;
     }
 
-    LOGGED_LOCK_CONTEXT_HINT_CLEAR;
+    LOGGED_LOCK_CONTEXT_HINT;
     lock.unlock();
 
     try
