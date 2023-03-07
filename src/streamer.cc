@@ -418,15 +418,16 @@ static void teardown_playbin(StreamerData &data)
 static void reset_playbin(StreamerData &data, const char *context)
 {
     data.boosted_threads_.throttle(context);
-    disconnect_playbin_signals(data);
-    set_stream_state(data.pipeline, GST_STATE_NULL, "reset/rebuild");
+    set_stream_state(data.pipeline, GST_STATE_NULL, "reset");
 }
 
 static int create_playbin(StreamerData &data, const char *context);
 
 static int rebuild_playbin(StreamerData &data, const char *context)
 {
-    reset_playbin(data, context);
+    data.boosted_threads_.throttle(context);
+    disconnect_playbin_signals(data);
+    set_stream_state(data.pipeline, GST_STATE_NULL, "rebuild");
     teardown_playbin(data);
     return create_playbin(data, context);
 }
