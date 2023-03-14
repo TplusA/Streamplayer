@@ -255,30 +255,112 @@ class PipelineData:
     }
 };
 
-struct PresentationDataLocked
+class StreamerData;
+
+class ThrottledMetaDataUpdate
 {
-    struct time_data previous_time_;
-    struct time_data current_time_;
-
+  private:
     GstClock *system_clock_;
-    bool is_tag_update_scheduled_;
     GstClockTime next_allowed_tag_update_time_;
-    guint progress_watcher_;
+    bool is_update_scheduled_;
+    stream_id_t current_stream_id_;
 
-    explicit PresentationDataLocked():
-        previous_time_{},
-        current_time_{},
+    static constexpr unsigned long COOLDOWN = 800;
+
+  public:
+    ThrottledMetaDataUpdate(const ThrottledMetaDataUpdate &) = delete;
+    ThrottledMetaDataUpdate(ThrottledMetaDataUpdate &&) = delete;
+
+    explicit ThrottledMetaDataUpdate():
         system_clock_(nullptr),
-        is_tag_update_scheduled_(false),
         next_allowed_tag_update_time_(0),
-        progress_watcher_(0)
+        is_update_scheduled_(false),
+        current_stream_id_(STREAM_ID_SOURCE_INVALID)
     {}
+
+    void init()
+    {
+        system_clock_ = gst_system_clock_obtain();
+        next_allowed_tag_update_time_ = gst_clock_get_time(system_clock_);
+    }
 
     void shutdown()
     {
         gst_object_unref(GST_OBJECT(system_clock_));
         system_clock_ = nullptr;
     }
+
+    bool try_emit_for_stream_id(stream_id_t stream_id)
+    {
+        if(stream_id == current_stream_id_)
+            return current_stream_id_ != STREAM_ID_SOURCE_INVALID;
+
+        is_update_scheduled_ = false;
+        return false;
+    }
+
+    bool timer_activated()
+    {
+        if(!is_update_scheduled_)
+            return false;
+
+        is_update_scheduled_ = false;
+        return true;
+    }
+
+    void emitted_tags_timed()
+    {
+        next_allowed_tag_update_time_ =
+            gst_clock_get_time(system_clock_) + COOLDOWN * GST_MSECOND;
+        is_update_scheduled_ = false;
+    }
+
+    void emitted_nothing_timed()
+    {
+        is_update_scheduled_ = false;
+    }
+
+    void emitted_tags_now_playing(stream_id_t stream_id)
+    {
+        next_allowed_tag_update_time_ =
+            gst_clock_get_time(system_clock_) + COOLDOWN * GST_MSECOND;
+        is_update_scheduled_ = false;
+        current_stream_id_ = stream_id;
+    }
+
+    bool try_emit_tags(GSourceFunc fn, StreamerData &sdata)
+    {
+        if(is_update_scheduled_)
+            return false;
+
+        GstClockTime now = gst_clock_get_time(system_clock_);
+        const auto remaining =
+            GST_CLOCK_DIFF(now, next_allowed_tag_update_time_);
+
+        if(remaining <= 0L)
+            return true;
+
+        is_update_scheduled_ = true;
+        g_timeout_add(GST_TIME_AS_MSECONDS(remaining), fn, &sdata);
+        return false;
+    }
+};
+
+struct PresentationDataLocked
+{
+    struct time_data previous_time_;
+    struct time_data current_time_;
+    guint progress_watcher_;
+    ThrottledMetaDataUpdate md_update_;
+
+    explicit PresentationDataLocked():
+        previous_time_{},
+        current_time_{},
+        progress_watcher_(0)
+    {}
+
+    void init() { md_update_.init(); }
+    void shutdown() { md_update_.shutdown(); }
 };
 
 class PresentationData:
@@ -1688,26 +1770,31 @@ static void emit_tags__unlocked(const PipelineDataLocked &locked_pldata,
     auto &sd = locked_pldata.current_stream_->get_stream_data();
     GVariant *meta_data = tag_list_to_g_variant(sd.get_tag_list(), sd.get_extra_tags());
 
-    TDBus::get_exported_iface<tdbussplayPlayback>().emit(
-        tdbus_splay_playback_emit_meta_data_changed,
-        locked_pldata.current_stream_->stream_id_, meta_data);
+    if(locked_prdata.md_update_.try_emit_for_stream_id(
+                                    locked_pldata.current_stream_->stream_id_))
+    {
+        TDBus::get_exported_iface<tdbussplayPlayback>().emit(
+            tdbus_splay_playback_emit_meta_data_changed,
+            locked_pldata.current_stream_->stream_id_, meta_data);
 
-    locked_prdata.next_allowed_tag_update_time_ =
-        gst_clock_get_time(locked_prdata.system_clock_) + 500UL * GST_MSECOND;
-    locked_prdata.is_tag_update_scheduled_ = false;
+        locked_prdata.md_update_.emitted_tags_timed();
+    }
 }
 
-static gboolean emit_tags(gpointer user_data)
+static gboolean timed_emit_tags(gpointer user_data)
 {
     auto &sdata = *static_cast<StreamerData *>(user_data);
     LOGGED_LOCK_CONTEXT_HINT;
     const auto locked_pldata(sdata.pipeline_data_.lock_ro(nullptr, "emit tags"));
     const auto locked_prdata(sdata.presentation_data_.lock_rw());
 
+    if(!locked_prdata.first.md_update_.timer_activated())
+        return FALSE;
+
     if(locked_pldata.first.first.current_stream_ != nullptr)
         emit_tags__unlocked(locked_pldata.first.first, locked_prdata.first);
     else
-        locked_prdata.first.is_tag_update_scheduled_ = false;
+        locked_prdata.first.md_update_.emitted_nothing_timed();
 
     return FALSE;
 }
@@ -1735,24 +1822,13 @@ static void handle_tag(GstMessage *message, StreamerData &sdata)
     LOGGED_LOCK_CONTEXT_HINT;
     const auto locked_prdata(sdata.presentation_data_.lock_rw());
 
-    if(locked_prdata.first.is_tag_update_scheduled_)
-        return;
-
-    GstClockTime now = gst_clock_get_time(locked_prdata.first.system_clock_);
-    GstClockTimeDiff cooldown =
-        GST_CLOCK_DIFF(now, locked_prdata.first.next_allowed_tag_update_time_);
-
-    if(cooldown <= 0L)
+    if(locked_prdata.first.md_update_.try_emit_tags(timed_emit_tags, sdata))
         emit_tags__unlocked(locked_pldata.first.first, locked_prdata.first);
-    else
-    {
-        locked_prdata.first.is_tag_update_scheduled_ = true;
-        g_timeout_add(GST_TIME_AS_MSECONDS(cooldown), emit_tags, &sdata);
-    }
 }
 
 static void emit_now_playing(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                              const PipelineDataLocked &locked_pldata,
+                             PresentationDataLocked &locked_prdata,
                              PlayQueue::Queue<PlayQueue::Item> &locked_queue)
 {
     if(locked_pldata.current_stream_ == nullptr)
@@ -1770,6 +1846,9 @@ static void emit_now_playing(TDBus::Iface<tdbussplayPlayback> &playback_iface,
                         locked_queue.full(),
                         GVariantWrapper::move(dropped_ids),
                         meta_data);
+
+    locked_prdata.md_update_.emitted_tags_now_playing(
+                                locked_pldata.current_stream_->stream_id_);
 }
 
 static WhichStreamFailed
@@ -2687,17 +2766,17 @@ static void handle_start_of_stream(GstMessage *message, StreamerData &sdata)
                         140, cover_art_url.c_str());
 
             LOGGED_LOCK_CONTEXT_HINT;
-            sdata.presentation_data_.locked_rw([&locked_pldata] (auto &pr)
-            {
-                invalidate_position_information(pr.previous_time_);
-                query_seconds(gst_element_query_duration,
-                              locked_pldata.first.first.pipeline_,
-                              pr.current_time_.duration_s);
-
+            sdata.presentation_data_.locked_rw(
+                [&locked_pldata, &locked_queue] (auto &pr)
+                {
+                    invalidate_position_information(pr.previous_time_);
+                    query_seconds(gst_element_query_duration,
+                                  locked_pldata.first.first.pipeline_,
+                                  pr.current_time_.duration_s);
+                    emit_now_playing(TDBus::get_exported_iface<tdbussplayPlayback>(),
+                                     locked_pldata.first.first, pr,
+                                     locked_queue);
             });
-
-            emit_now_playing(TDBus::get_exported_iface<tdbussplayPlayback>(),
-                             locked_pldata.first.first, locked_queue);
         }
 
         break;
@@ -3340,13 +3419,7 @@ int Streamer::setup(GMainLoop *loop, guint soup_http_block_size,
         return -1;
 
     LOGGED_LOCK_CONTEXT_HINT;
-    streamer_data.presentation_data_.locked_rw(
-        [] (auto &pr)
-        {
-            pr.system_clock_ = gst_system_clock_obtain();
-            pr.next_allowed_tag_update_time_ =
-                gst_clock_get_time(pr.system_clock_);
-        });
+    streamer_data.presentation_data_.locked_rw([] (auto &pr) { pr.init(); });
 
     static bool initialized;
 
