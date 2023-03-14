@@ -1,3 +1,25 @@
+2023-03-14  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 7.0 released.
+
+	* Airable: Resolution of Airable links when needed, including
+	  processing of alternative URLs and error handling.
+
+	* Airable: Links are resolved again on error if they are likely to
+	  have expired, and playback is attempted to resume at the same
+	  position where the stream has previously stopped with an error.
+
+	* Streamer: Improve error handling in case of server-side stream
+	  errors.
+
+	* Performance: Improve meta data reporting.
+
+	* Performance: Improve seek performance by reducing accuracy.
+	
+	* Misc: Simple stream failure injection.
+
+	* Misc: Maintenance work.
+
 2023-02-06  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 6.15 released.
