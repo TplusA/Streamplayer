@@ -1,3 +1,11 @@
+2023-03-24  Robert Tiemann  <r.tiemann@ta-hifi.de>
+
+	* Version 7.1 released.
+
+	* Streamer: Report correct stream duration also near end of stream.
+
+	* Misc: Maintenance work.
+
 2023-03-14  Robert Tiemann  <r.tiemann@ta-hifi.de>
 
 	* Version 7.0 released.
