@@ -2173,8 +2173,6 @@ static gboolean report_progress__unlocked(const PipelineDataLocked &locked_pldat
       case GST_STATE_PAUSED:
         query_seconds(gst_element_query_position, locked_pldata.pipeline_,
                       locked_prdata.current_time_.position_s);
-        query_seconds(gst_element_query_duration, locked_pldata.pipeline_,
-                      locked_prdata.current_time_.duration_s);
         break;
 
       case GST_STATE_READY:
