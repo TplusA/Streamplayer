@@ -1,6 +1,0 @@
-[gerrit]
-host=gerrit.tua.local
-port=29418
-project=Streamplayer
-defaultbranch=master
-defaultremote=origin
