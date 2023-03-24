@@ -12,4 +12,5 @@
 /types_c.taghl
 /types_py.taghl
 /.ccls
+/.gitreview
 Makefile.in
