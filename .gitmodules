@@ -1,6 +1,6 @@
 [submodule "dbus_interfaces"]
 	path = dbus_interfaces
-	url = http://git.tua.local/repo/DBus-Interfaces
+	url = https://github.com/TplusA/DBus-Interfaces.git
 [submodule "strbo_common"]
 	path = strbo_common
-	url = http://git.tua.local/repo/StrBo-Common
+	url = https://github.com/TplusA/StrBo-Common.git
